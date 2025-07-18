@@ -7,14 +7,6 @@ use super::ntt::{intt, montgomery_reduce, ntt};
 pub const Q: i32 = 8380417; // Dilithium's prime modulus
 pub const N: usize = 256; // Polynomial degree bound
 
-/// Simple modular reduction ensuring result is in [0, Q)
-#[inline(always)]
-fn mod_reduce(a: i64) -> i32 {
-    let mut t = (a % (Q as i64)) as i32;
-    t += (t >> 31) & Q; // Add Q if t is negative
-    t
-}
-
 /// Compute a^b mod Q using fast exponentiation
 fn pow_mod(a: i32, mut b: u32) -> i32 {
     let mut result = 1i64;
@@ -61,20 +53,28 @@ impl Polynomial {
 
                 if quotient % 2 == 0 {
                     // Even powers of X^N contribute positively
-                    result[pos] = mod_reduce(result[pos] as i64 + coeff as i64);
+                    result[pos] = Self::mod_reduce(result[pos] as i64 + coeff as i64);
                 } else {
                     // Odd powers of X^N contribute negatively (since X^N = -1)
-                    result[pos] = mod_reduce(result[pos] as i64 - coeff as i64);
+                    result[pos] = Self::mod_reduce(result[pos] as i64 - coeff as i64);
                 }
             }
         }
 
         // Ensure all coefficients are in [0, Q)
         for coeff in &mut result {
-            *coeff = mod_reduce(*coeff as i64);
+            *coeff = Self::mod_reduce(*coeff as i64);
         }
 
         Self { coeffs: result }
+    }
+
+    /// Simple modular reduction ensuring result is in [0, Q)
+    #[inline(always)]
+    fn mod_reduce(a: i64) -> i32 {
+        let mut t = (a % (Q as i64)) as i32;
+        t += (t >> 31) & Q; // Add Q if t is negative
+        t
     }
 
     /// Create zero polynomial.
@@ -171,7 +171,7 @@ impl From<[i32; N]> for Polynomial {
     fn from(coeffs: [i32; N]) -> Self {
         let mut result = coeffs;
         for coeff in &mut result {
-            *coeff = mod_reduce(*coeff as i64);
+            *coeff = Self::mod_reduce(*coeff as i64);
         }
         Self { coeffs: result }
     }
@@ -184,7 +184,7 @@ impl From<&[i32]> for Polynomial {
         result[..len].copy_from_slice(&coeffs[..len]);
 
         for coeff in &mut result {
-            *coeff = mod_reduce(*coeff as i64);
+            *coeff = Self::mod_reduce(*coeff as i64);
         }
         Self { coeffs: result }
     }
@@ -210,7 +210,7 @@ impl Add for Polynomial {
         let mut coeffs = [0i32; N];
         for i in 0..N {
             coeffs[i] =
-                mod_reduce(self.coeffs[i] as i64 + other.coeffs[i] as i64);
+                Self::mod_reduce(self.coeffs[i] as i64 + other.coeffs[i] as i64);
         }
         Self { coeffs }
     }
@@ -223,7 +223,7 @@ impl Sub for Polynomial {
         let mut coeffs = [0i32; N];
         for i in 0..N {
             coeffs[i] =
-                mod_reduce(self.coeffs[i] as i64 - other.coeffs[i] as i64);
+                Self::mod_reduce(self.coeffs[i] as i64 - other.coeffs[i] as i64);
         }
         Self { coeffs }
     }
@@ -235,7 +235,7 @@ impl Mul<i32> for Polynomial {
     fn mul(self, scalar: i32) -> Self {
         let mut coeffs = [0i32; N];
         for i in 0..N {
-            coeffs[i] = mod_reduce(self.coeffs[i] as i64 * scalar as i64);
+            coeffs[i] = Self::mod_reduce(self.coeffs[i] as i64 * scalar as i64);
         }
         Self { coeffs }
     }
@@ -255,7 +255,7 @@ impl Neg for Polynomial {
     fn neg(self) -> Self {
         let mut coeffs = [0i32; N];
         for i in 0..N {
-            coeffs[i] = mod_reduce(-(self.coeffs[i] as i64));
+            coeffs[i] = Self::mod_reduce(-(self.coeffs[i] as i64));
         }
         Self { coeffs }
     }
