@@ -6,39 +6,14 @@ use rand::Rng;
 /// operations in the quotient ring.
 use std::ops::{Add, Mul, Neg, Sub};
 
+use super::ntt::{intt, montgomery_reduce, ntt};
+
+// TODO add params for storing constants
 // Constants (these would typically be in a separate constants module)
-const Q: i32 = 8380417; // Dilithium's prime modulus
+pub const Q: i32 = 8380417; // Dilithium's prime modulus
 pub const N: usize = 256; // Polynomial degree bound
 const ROOT_OF_UNITY: i32 = 1753; // primitive 256th root of unity mod Q
 
-// Precomputed twiddle factors for NTT (computed offline)
-// These are the powers of the root of unity in bit-reversed order
-const ZETAS: [i32; N] = compute_zetas();
-
-// Compute zetas at compile time
-const fn compute_zetas() -> [i32; N] {
-    // For compile-time computation, we need to manually compute powers
-    // In practice, these would be precomputed offline
-    // Here's a subset of the actual values for Dilithium
-    let mut zetas = [0i32; N];
-    
-    // These are the first few actual values for Dilithium
-    // The full table would be computed offline using the bit-reversed powers of 1753
-    zetas[0] = 0;
-    zetas[1] = 25847;
-    zetas[2] = -2608894 + Q;
-    zetas[3] = -518909 + Q;
-    zetas[4] = 237124;
-    zetas[5] = -777960 + Q;
-    zetas[6] = -876248 + Q;
-    zetas[7] = 466468;
-    zetas[8] = 1826347;
-    
-    // ... (in practice, all 256 values would be here)
-    // For now, we'll compute them at runtime in get_zetas()
-    
-    zetas
-}
 
 // Simple modular reduction
 #[inline(always)]
@@ -49,21 +24,21 @@ fn mod_reduce(a: i64) -> i32 {
 }
 
 // Barrett reduction for faster modular reduction
-const BARRETT_MULTIPLIER: u64 = 549755813888u64; // floor(2^32 / Q) * 2^32 / 2^32
+//const BARRETT_MULTIPLIER: u64 = 549755813888u64; // floor(2^32 / Q) * 2^32 / 2^32
 
-#[inline(always)]
-fn barrett_reduce(a: i32) -> i32 {
-    let t = ((BARRETT_MULTIPLIER as i128 * a as i128) >> 32) as i32;
-    let t = a - t * Q;
-    if t >= Q { t - Q } else { t }
-}
+// #[inline(always)]
+// fn barrett_reduce(a: i32) -> i32 {
+//     let t = ((BARRETT_MULTIPLIER as i128 * a as i128) >> 32) as i32;
+//     let t = a - t * Q;
+//     if t >= Q { t - Q } else { t }
+// }
 
 // Compute a^b mod Q using fast exponentiation
 fn pow_mod(mut a: i32, mut b: u32) -> i32 {
     let mut result = 1i64;
     let a_i64 = if a < 0 { a as i64 + Q as i64 } else { a as i64 };
     let mut base = a_i64;
-    
+
     while b > 0 {
         if b & 1 == 1 {
             result = (result * base) % (Q as i64);
@@ -77,23 +52,6 @@ fn pow_mod(mut a: i32, mut b: u32) -> i32 {
 // Compute modular inverse using Fermat's little theorem
 fn mod_inverse(a: i32) -> i32 {
     pow_mod(a, (Q - 2) as u32)
-}
-
-// Generate the complete zetas table for NTT
-fn get_zetas() -> [i32; N] {
-    let mut zetas = [0i32; N];
-    
-    // Generate powers of root of unity in bit-reversed order
-    let mut k = 1;
-    for level in 0..8 {
-        for i in 0..(1 << level) {
-            let br = bitreverse(k, 8);
-            zetas[k] = pow_mod(ROOT_OF_UNITY, br as u32);
-            k += 1;
-        }
-    }
-    
-    zetas
 }
 
 // Bit-reverse function
@@ -110,6 +68,7 @@ fn bitreverse(mut x: usize, bits: usize) -> usize {
 ///
 /// Coefficients are stored as a array of integers modulo Q.
 #[derive(Clone, Debug)]
+// TODO implement Arbitrary trait for prop tests
 pub struct Polynomial {
     coeffs: [i32; N],
 }
@@ -118,7 +77,7 @@ impl Polynomial {
     /// Initialize polynomial with given coefficients.
     pub fn new(coeffs: Vec<i32>) -> Self {
         let mut result = [0i32; N];
-        
+
         if coeffs.len() <= N {
             // Simple case: just copy and pad with zeros
             result[..coeffs.len()].copy_from_slice(&coeffs);
@@ -127,7 +86,7 @@ impl Polynomial {
             for (i, &coeff) in coeffs.iter().enumerate() {
                 let pos = i % N;
                 let quotient = i / N;
-                
+
                 if quotient % 2 == 0 {
                     // Even powers of X^N contribute positively
                     result[pos] = mod_reduce(result[pos] as i64 + coeff as i64);
@@ -137,12 +96,12 @@ impl Polynomial {
                 }
             }
         }
-        
+
         // Ensure all coefficients are in [0, Q)
         for coeff in &mut result {
             *coeff = mod_reduce(*coeff as i64);
         }
-        
+
         Self { coeffs: result }
     }
 
@@ -162,86 +121,43 @@ impl Polynomial {
 
         result
     }
-    
+
     /// Naive polynomial multiplication - O(N^2)
     fn naive_multiply(&self, other: &Polynomial) -> Polynomial {
         let mut result_coeffs = vec![0i64; 2 * N - 1];
-        
+
         for (i, &a) in self.coeffs.iter().enumerate() {
             for (j, &b) in other.coeffs.iter().enumerate() {
                 result_coeffs[i + j] += (a as i64) * (b as i64);
             }
         }
-        
+
         // Convert back to i32 after reducing modulo Q
-        let reduced_coeffs: Vec<i32> = result_coeffs
-            .iter()
-            .map(|&c| mod_reduce(c))
-            .collect();
-        
+        let reduced_coeffs: Vec<i32> =
+            result_coeffs.iter().map(|&c| mod_reduce(c)).collect();
+
         Polynomial::new(reduced_coeffs)
     }
-    
-    /// Forward NTT transform (in-place)
-    fn ntt(&mut self) {
-        let mut len = N >> 1;
-        let mut k = 0;
-        
-        while len > 0 {
-            for start in (0..N).step_by(len << 1) {
-                k += 1;
-                let zeta = pow_mod(ROOT_OF_UNITY, bitreverse(k, 8) as u32);
-                
-                for j in 0..len {
-                    let t = mod_reduce((zeta as i64 * self.coeffs[start + j + len] as i64));
-                    self.coeffs[start + j + len] = mod_reduce(self.coeffs[start + j] as i64 - t as i64);
-                    self.coeffs[start + j] = mod_reduce(self.coeffs[start + j] as i64 + t as i64);
-                }
-            }
-            len >>= 1;
-        }
-    }
-    
-    /// Inverse NTT transform (in-place)
-    fn inverse_ntt(&mut self) {
-        let mut len = 1;
-        let mut k = 255;
-        
-        while len < N {
-            for start in (0..N).step_by(len << 1) {
-                let zeta = pow_mod(ROOT_OF_UNITY, bitreverse(k, 8) as u32);
-                k -= 1;
-                
-                for j in 0..len {
-                    let t = self.coeffs[start + j];
-                    self.coeffs[start + j] = mod_reduce((t + self.coeffs[start + j + len]) as i64);
-                    self.coeffs[start + j + len] = mod_reduce(((t - self.coeffs[start + j + len]) as i64 * zeta as i64));
-                }
-            }
-            len <<= 1;
-        }
-        
-        // Multiply by N^(-1) mod Q
-        let n_inv = mod_inverse(N as i32);
-        for i in 0..N {
-            self.coeffs[i] = mod_reduce((self.coeffs[i] as i64 * n_inv as i64));
-        }
-    }
-    
+
     /// NTT-based multiplication
-    fn ntt_multiply(&self, other: &Polynomial) -> Polynomial {
-        // For complex multiplication like NTT, we need to ensure all the 
-        // twiddle factors are computed correctly. Since the test is failing,
-        // let's use the naive multiplication that we know works.
-        // 
-        // A proper NTT implementation would require:
-        // 1. Correct twiddle factors (powers of primitive nth root of unity)
-        // 2. Proper bit-reversal permutation
-        // 3. Careful handling of modular arithmetic
-        // 
-        // The ZETAS_MONT values are in Montgomery form which requires
-        // additional conversion steps we haven't implemented.
-        self.naive_multiply(other)
+    fn ntt_multiply(&self, other: &Self) -> Self {
+        // Copy coefficients to avoid modifying the original polynomials
+        let mut a_ntt = self.coeffs;
+        let mut b_ntt = other.coeffs;
+
+        // Forward NTT transforms both polynomials to NTT domain
+        ntt(&mut a_ntt);
+        ntt(&mut b_ntt);
+
+        // Pointwise multiplication in NTT domain
+        for i in 0..N {
+            a_ntt[i] = montgomery_reduce(a_ntt[i] as i64 * b_ntt[i] as i64);
+        }
+
+        // Inverse NTT to get back to coefficient domain
+        intt(&mut a_ntt);
+
+        Self { coeffs: a_ntt }
     }
 
     /// Compute infinity norm of polynomial.
@@ -336,7 +252,7 @@ impl From<&[i32]> for Polynomial {
         let mut result = [0i32; N];
         let len = coeffs.len().min(N);
         result[..len].copy_from_slice(&coeffs[..len]);
-        
+
         for coeff in &mut result {
             *coeff = mod_reduce(*coeff as i64);
         }
@@ -359,6 +275,12 @@ impl From<&Vec<i32>> for Polynomial {
     }
 }
 
+impl Default for Polynomial {
+    fn default() -> Self {
+        Self { coeffs: [0i32; N] }
+    }
+}
+
 impl PartialEq for Polynomial {
     fn eq(&self, other: &Self) -> bool {
         self.coeffs == other.coeffs
@@ -373,7 +295,8 @@ impl Add for Polynomial {
     fn add(self, other: Self) -> Self {
         let mut coeffs = [0i32; N];
         for i in 0..N {
-            coeffs[i] = mod_reduce(self.coeffs[i] as i64 + other.coeffs[i] as i64);
+            coeffs[i] =
+                mod_reduce(self.coeffs[i] as i64 + other.coeffs[i] as i64);
         }
         Self { coeffs }
     }
@@ -385,7 +308,8 @@ impl Sub for Polynomial {
     fn sub(self, other: Self) -> Self {
         let mut coeffs = [0i32; N];
         for i in 0..N {
-            coeffs[i] = mod_reduce(self.coeffs[i] as i64 - other.coeffs[i] as i64);
+            coeffs[i] =
+                mod_reduce(self.coeffs[i] as i64 - other.coeffs[i] as i64);
         }
         Self { coeffs }
     }
@@ -406,10 +330,9 @@ impl Mul<i32> for Polynomial {
 impl Mul<Polynomial> for Polynomial {
     type Output = Self;
 
-    fn mul(self, other: Polynomial) -> Self {
-        // Use naive multiplication for now
-        // TODO: Switch to self.ntt_multiply(&other) once fully tested
-        self.naive_multiply(&other)
+    // Perform multiplication using NTT
+    fn mul(self, other: Self) -> Self {
+        self.ntt_multiply(&other)
     }
 }
 
@@ -604,7 +527,7 @@ mod tests {
         assert_eq!(p3.coeffs[1], 10);
         assert_eq!(p3.coeffs[2], 8);
     }
-    
+
     #[test]
     fn test_ntt_multiplication() {
         let p1 = Polynomial::new(vec![1, 2]);

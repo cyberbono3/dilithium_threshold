@@ -1,3 +1,3 @@
-pub mod poly;
 pub mod error;
-
+pub mod ntt;
+pub mod poly;
