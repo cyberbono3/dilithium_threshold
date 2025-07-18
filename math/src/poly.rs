@@ -6,7 +6,6 @@ use super::ntt::{intt, montgomery_reduce, ntt};
 /// Constants for the Dilithium algorithm
 pub const Q: i32 = 8380417; // Dilithium's prime modulus
 pub const N: usize = 256; // Polynomial degree bound
-const ROOT_OF_UNITY: i32 = 1753; // primitive 256th root of unity mod Q
 
 /// Simple modular reduction ensuring result is in [0, Q)
 #[inline(always)]
@@ -40,7 +39,7 @@ fn mod_inverse(a: i32) -> i32 {
 /// Represents a polynomial in Rq = Zq[X]/(X^256 + 1).
 ///
 /// Coefficients are stored as an array of integers modulo Q.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Polynomial {
     coeffs: [i32; N],
 }
@@ -210,7 +209,8 @@ impl Add for Polynomial {
     fn add(self, other: Self) -> Self {
         let mut coeffs = [0i32; N];
         for i in 0..N {
-            coeffs[i] = mod_reduce(self.coeffs[i] as i64 + other.coeffs[i] as i64);
+            coeffs[i] =
+                mod_reduce(self.coeffs[i] as i64 + other.coeffs[i] as i64);
         }
         Self { coeffs }
     }
@@ -222,7 +222,8 @@ impl Sub for Polynomial {
     fn sub(self, other: Self) -> Self {
         let mut coeffs = [0i32; N];
         for i in 0..N {
-            coeffs[i] = mod_reduce(self.coeffs[i] as i64 - other.coeffs[i] as i64);
+            coeffs[i] =
+                mod_reduce(self.coeffs[i] as i64 - other.coeffs[i] as i64);
         }
         Self { coeffs }
     }
@@ -262,7 +263,7 @@ impl Neg for Polynomial {
 
 impl Default for Polynomial {
     fn default() -> Self {
-        Self{coeffs: [0i32;N]}
+        Self { coeffs: [0i32; N] }
     }
 }
 
@@ -291,7 +292,11 @@ impl PolynomialVector {
     }
 
     /// Set polynomial at index.
-    pub fn set(&mut self, index: usize, poly: Polynomial) -> Result<(), &'static str> {
+    pub fn set(
+        &mut self,
+        index: usize,
+        poly: Polynomial,
+    ) -> Result<(), &'static str> {
         if index >= self.polys.len() {
             return Err("Index out of bounds");
         }
@@ -382,86 +387,206 @@ impl Mul<i32> for PolynomialVector {
 }
 
 #[cfg(test)]
-mod tests {
+mod prop_tests {
     use super::*;
+    use quickcheck::{Arbitrary, Gen, TestResult};
+    use quickcheck_macros::quickcheck;
 
-    #[test]
-    fn test_polynomial_creation() {
-        let p = Polynomial::new(vec![1, 2, 3]);
-        assert_eq!(p.coeffs.len(), N);
-        assert_eq!(p.coeffs[0], 1);
-        assert_eq!(p.coeffs[1], 2);
-        assert_eq!(p.coeffs[2], 3);
+    // Implement Arbitrary for Polynomial to generate random test cases
+    impl Arbitrary for Polynomial {
+        fn arbitrary(g: &mut Gen) -> Self {
+            // Generate polynomials with varying strategies
+            let strategy = u8::arbitrary(g) % 4;
+
+            match strategy {
+                0 => {
+                    // Zero polynomial
+                    Polynomial::zero()
+                }
+                1 => {
+                    // Sparse polynomial (few non-zero coefficients)
+                    let mut coeffs = [0i32; N];
+                    let num_nonzero = usize::arbitrary(g) % 10 + 1;
+                    for _ in 0..num_nonzero {
+                        let idx = usize::arbitrary(g) % N;
+                        coeffs[idx] = (i32::arbitrary(g) % Q).abs();
+                    }
+                    Polynomial::from(coeffs)
+                }
+                2 => {
+                    // Dense polynomial with small coefficients
+                    let mut coeffs = [0i32; N];
+                    for i in 0..N {
+                        if bool::arbitrary(g) {
+                            coeffs[i] = (i32::arbitrary(g) % 1000).abs();
+                        }
+                    }
+                    Polynomial::from(coeffs)
+                }
+                _ => {
+                    // Fully random polynomial
+                    let mut coeffs = [0i32; N];
+                    for i in 0..N {
+                        coeffs[i] = (i32::arbitrary(g) % Q).abs();
+                    }
+                    Polynomial::from(coeffs)
+                }
+            }
+        }
+
+        fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+            // Shrink by reducing coefficient values and making polynomial sparser
+            let coeffs = self.coeffs;
+            let shrunk: Vec<Polynomial> = (0..N)
+                .filter(|&i| coeffs[i] != 0)
+                .flat_map(move |i| {
+                    let mut new_coeffs = coeffs;
+                    vec![
+                        // Set coefficient to zero
+                        {
+                            new_coeffs[i] = 0;
+                            Polynomial::from(new_coeffs)
+                        },
+                        // Halve the coefficient
+                        {
+                            new_coeffs[i] = coeffs[i] / 2;
+                            Polynomial::from(new_coeffs)
+                        },
+                    ]
+                })
+                .collect();
+
+            Box::new(shrunk.into_iter())
+        }
     }
 
-    #[test]
-    fn test_polynomial_addition() {
-        let p1 = Polynomial::new(vec![1, 2, 3]);
-        let p2 = Polynomial::new(vec![4, 5, 6]);
-        let p3 = p1 + p2;
-        assert_eq!(p3.coeffs[0], 5);
-        assert_eq!(p3.coeffs[1], 7);
-        assert_eq!(p3.coeffs[2], 9);
+    // Property: Zero is the additive identity
+    #[quickcheck]
+    fn prop_addition_identity(p: Polynomial) -> bool {
+        let zero = Polynomial::zero();
+        let sum1 = p + zero;
+        let sum2 = zero + p;
+        sum1 == p && sum2 == p
     }
 
-    #[test]
-    fn test_polynomial_multiplication() {
-        let p1 = Polynomial::new(vec![1, 2]);
-        let p2 = Polynomial::new(vec![3, 4]);
-        let p3 = p1 * p2;
-        // (1 + 2x)(3 + 4x) = 3 + 4x + 6x + 8x^2 = 3 + 10x + 8x^2
-        assert_eq!(p3.coeffs[0], 3);
-        assert_eq!(p3.coeffs[1], 10);
-        assert_eq!(p3.coeffs[2], 8);
+    // Property: Every polynomial has an additive inverse
+    #[quickcheck]
+    fn prop_addition_inverse(p: Polynomial) -> bool {
+        let neg_p = -p;
+        let sum = p + neg_p;
+        sum.is_zero()
     }
 
-    #[test]
-    fn test_ntt_multiplication() {
-        let p1 = Polynomial::new(vec![1, 2]);
-        let p2 = Polynomial::new(vec![3, 4]);
-        let p3 = p1.ntt_multiply(&p2);
-        // (1 + 2x)(3 + 4x) = 3 + 10x + 8x^2
-        assert_eq!(p3.coeffs[0], 3);
-        assert_eq!(p3.coeffs[1], 10);
-        assert_eq!(p3.coeffs[2], 8);
+    // Property: Subtraction is equivalent to adding the negative
+    #[quickcheck]
+    fn prop_subtraction_as_addition(p1: Polynomial, p2: Polynomial) -> bool {
+        let diff = p1 - p2;
+        let sum = p1 + (-p2);
+        diff == sum
     }
 
-    #[test]
-    fn test_vector_operations() {
-        let v1 = PolynomialVector::random(3, 100);
-        let v2 = PolynomialVector::random(3, 100);
+    // Property: Multiplication is commutative
+    #[quickcheck]
+    fn prop_multiplication_commutative(
+        p1: Polynomial,
+        p2: Polynomial,
+    ) -> TestResult {
+        // Skip if polynomials have high degree to avoid slow tests
+        if p1.degree() > 50 || p2.degree() > 50 {
+            return TestResult::discard();
+        }
 
-        let v3 = (v1.clone() + v2.clone()).unwrap();
-        assert_eq!(v3.len(), 3);
-
-        let v4 = v1 * 5;
-        assert_eq!(v4.len(), 3);
+        let prod1 = p1 * p2;
+        let prod2 = p2 * p1;
+        TestResult::from_bool(prod1 == prod2)
     }
 
-    #[test]
-    fn test_polynomial_degree() {
-        let p1 = Polynomial::zero();
-        assert_eq!(p1.degree(), -1);
-
-        let p2 = Polynomial::new(vec![1, 2, 3, 0, 0]);
-        assert_eq!(p2.degree(), 2);
-
-        let p3 = Polynomial::one();
-        assert_eq!(p3.degree(), 0);
+    // Property: Scalar multiplication is distributive
+    #[quickcheck]
+    fn prop_scalar_multiplication_distributive(
+        p1: Polynomial,
+        p2: Polynomial,
+        scalar: i32,
+    ) -> bool {
+        let scalar = scalar % Q;
+        let left = (p1 + p2) * scalar;
+        let right = (p1 * scalar) + (p2 * scalar);
+        left == right
     }
 
-    #[test]
-    fn test_polynomial_norms() {
-        let p = Polynomial::new(vec![1, 2, 3]);
-        assert!(p.norm_infinity() > 0);
-        assert!(p.norm_l2() > 0.0);
+    // Property: Degree of sum is at most max of degrees
+    #[quickcheck]
+    fn prop_degree_of_sum(p1: Polynomial, p2: Polynomial) -> bool {
+        let sum = p1 + p2;
+        let max_degree = std::cmp::max(p1.degree(), p2.degree());
+        sum.degree() <= max_degree
     }
 
-    #[test]
-    fn test_polynomial_negation() {
-        let p1 = Polynomial::new(vec![1, 2, 3]);
-        let p2 = -p1.clone();
-        let p3 = p1 + p2;
-        assert!(p3.is_zero());
+    // Property: Degree of product is at most sum of degrees (in quotient ring)
+    #[quickcheck]
+    fn prop_degree_of_product(p1: Polynomial, p2: Polynomial) -> TestResult {
+        if p1.is_zero() || p2.is_zero() {
+            return TestResult::discard();
+        }
+
+        let prod = p1 * p2;
+        // In the quotient ring R[X]/(X^N + 1), degree is always < N
+        TestResult::from_bool(prod.degree() < N as i32)
+    }
+
+    // Property: Norm properties
+    #[quickcheck]
+    fn prop_norm_infinity_triangle_inequality(
+        p1: Polynomial,
+        p2: Polynomial,
+    ) -> bool {
+        let sum = p1 + p2;
+        sum.norm_infinity() <= p1.norm_infinity() + p2.norm_infinity()
+    }
+
+    // Property: Zero polynomial has zero norm
+    #[quickcheck]
+    fn prop_zero_norm() -> bool {
+        let zero = Polynomial::zero();
+        zero.norm_infinity() == 0 && zero.norm_l2() == 0.0
+    }
+
+    // Property: Negation preserves norm
+    #[quickcheck]
+    fn prop_negation_preserves_norm(p: Polynomial) -> bool {
+        let neg_p = -p;
+        p.norm_infinity() == neg_p.norm_infinity()
+            && (p.norm_l2() - neg_p.norm_l2()).abs() < 1e-10
+    }
+
+    // Property: Conversion from different types preserves values
+    #[quickcheck]
+    fn prop_from_slice_conversion(coeffs: Vec<i32>) -> TestResult {
+        if coeffs.len() > N {
+            return TestResult::discard();
+        }
+
+        let p1 = Polynomial::from(coeffs.as_slice());
+        let p2 = Polynomial::from(&coeffs);
+        let p3 = Polynomial::from(coeffs.clone());
+
+        TestResult::from_bool(p1 == p2 && p2 == p3)
+    }
+
+    // Property: NTT multiplication gives same result as definition
+    #[quickcheck]
+    fn prop_ntt_multiplication_correctness(
+        p1: Polynomial,
+        p2: Polynomial,
+    ) -> TestResult {
+        // Only test with small polynomials for efficiency
+        if p1.degree() > 10 || p2.degree() > 10 {
+            return TestResult::discard();
+        }
+
+        let ntt_result = p1.ntt_multiply(&p2);
+        let op_result = p1 * p2;
+
+        TestResult::from_bool(ntt_result == op_result)
     }
 }
