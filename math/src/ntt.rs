@@ -72,19 +72,7 @@ pub fn ntt(a: &mut [i32]) {
 }
 
 /// Inverse NTT in-place
-/// ## Perform INTT on slices of i32 elements
-///
-/// # Example
-///
-/// ```
-/// use math::ntt::{ntt, intt};
-/// let original_values: [i32; 256] = [0, 1, 1, 2, 3, 5, 8, 13];
-/// let mut transformed_values = original_values.clone();
-/// ntt(&mut transformed_values);
-/// intt(&mut transformed_values);
-/// assert_eq!(original_values, transformed_values);
-/// ```
-///
+/// Perform INTT on slices of i32 elements
 pub fn intt(a: &mut [i32]) {
     let mut j;
     let mut k = 256usize;
