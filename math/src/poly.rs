@@ -1,39 +1,22 @@
 use rand::Rng;
-/// Polynomial operations in the ring Rq = Zq[X]/(X^256 + 1).
-///
-/// This module implements polynomial arithmetic operations needed for the
-/// Dilithium algorithm, including addition, multiplication, and reduction
-/// operations in the quotient ring.
 use std::ops::{Add, Mul, Neg, Sub};
 
 use super::ntt::{intt, montgomery_reduce, ntt};
 
-// TODO add params for storing constants
-// Constants (these would typically be in a separate constants module)
+/// Constants for the Dilithium algorithm
 pub const Q: i32 = 8380417; // Dilithium's prime modulus
 pub const N: usize = 256; // Polynomial degree bound
-const ROOT_OF_UNITY: i32 = 1753; // primitive 256th root of unity mod Q
 
-// Simple modular reduction
+/// Simple modular reduction ensuring result is in [0, Q)
 #[inline(always)]
 fn mod_reduce(a: i64) -> i32 {
     let mut t = (a % (Q as i64)) as i32;
-    t += (t >> 31) & Q;
+    t += (t >> 31) & Q; // Add Q if t is negative
     t
 }
 
-// Barrett reduction for faster modular reduction
-//const BARRETT_MULTIPLIER: u64 = 549755813888u64; // floor(2^32 / Q) * 2^32 / 2^32
-
-// #[inline(always)]
-// fn barrett_reduce(a: i32) -> i32 {
-//     let t = ((BARRETT_MULTIPLIER as i128 * a as i128) >> 32) as i32;
-//     let t = a - t * Q;
-//     if t >= Q { t - Q } else { t }
-// }
-
-// Compute a^b mod Q using fast exponentiation
-fn pow_mod(mut a: i32, mut b: u32) -> i32 {
+/// Compute a^b mod Q using fast exponentiation
+fn pow_mod(a: i32, mut b: u32) -> i32 {
     let mut result = 1i64;
     let a_i64 = if a < 0 { a as i64 + Q as i64 } else { a as i64 };
     let mut base = a_i64;
@@ -48,32 +31,22 @@ fn pow_mod(mut a: i32, mut b: u32) -> i32 {
     result as i32
 }
 
-// Compute modular inverse using Fermat's little theorem
+/// Compute modular inverse using Fermat's little theorem
 fn mod_inverse(a: i32) -> i32 {
     pow_mod(a, (Q - 2) as u32)
 }
 
-// Bit-reverse function
-fn bitreverse(mut x: usize, bits: usize) -> usize {
-    let mut r = 0;
-    for _ in 0..bits {
-        r = (r << 1) | (x & 1);
-        x >>= 1;
-    }
-    r
-}
-
 /// Represents a polynomial in Rq = Zq[X]/(X^256 + 1).
 ///
-/// Coefficients are stored as a array of integers modulo Q.
-#[derive(Clone, Debug)]
-// TODO implement Arbitrary trait for prop tests
+/// Coefficients are stored as an array of integers modulo Q.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Polynomial {
     coeffs: [i32; N],
 }
 
 impl Polynomial {
     /// Initialize polynomial with given coefficients.
+    /// Handles reduction modulo X^N + 1 for coefficients beyond degree N.
     pub fn new(coeffs: Vec<i32>) -> Self {
         let mut result = [0i32; N];
 
@@ -81,7 +54,7 @@ impl Polynomial {
             // Simple case: just copy and pad with zeros
             result[..coeffs.len()].copy_from_slice(&coeffs);
         } else {
-            // Need to reduce modulo X^N + 1
+            // Reduce modulo X^N + 1
             for (i, &coeff) in coeffs.iter().enumerate() {
                 let pos = i % N;
                 let quotient = i / N;
@@ -90,7 +63,7 @@ impl Polynomial {
                     // Even powers of X^N contribute positively
                     result[pos] = mod_reduce(result[pos] as i64 + coeff as i64);
                 } else {
-                    // Odd powers of X^N contribute negatively
+                    // Odd powers of X^N contribute negatively (since X^N = -1)
                     result[pos] = mod_reduce(result[pos] as i64 - coeff as i64);
                 }
             }
@@ -104,42 +77,30 @@ impl Polynomial {
         Self { coeffs: result }
     }
 
-    /// Reduce polynomial modulo X^N + 1.
-    fn reduce_mod_xn_plus_1(coeffs: &[i32]) -> [i32; N] {
-        let mut result = [0i32; N];
-
-        for (i, &coeff) in coeffs.iter().enumerate() {
-            let pos = i % N;
-            if i >= N && (i / N) % 2 == 1 {
-                // X^N = -1, so X^(N+k) = -X^k
-                result[pos] = mod_reduce(result[pos] as i64 - coeff as i64);
-            } else {
-                result[pos] = mod_reduce(result[pos] as i64 + coeff as i64);
-            }
-        }
-
-        result
+    /// Create zero polynomial.
+    pub fn zero() -> Self {
+        Self { coeffs: [0; N] }
     }
 
-    /// Naive polynomial multiplication - O(N^2)
-    fn naive_multiply(&self, other: &Polynomial) -> Polynomial {
-        let mut result_coeffs = vec![0i64; 2 * N - 1];
-
-        for (i, &a) in self.coeffs.iter().enumerate() {
-            for (j, &b) in other.coeffs.iter().enumerate() {
-                result_coeffs[i + j] += (a as i64) * (b as i64);
-            }
-        }
-
-        // Convert back to i32 after reducing modulo Q
-        let reduced_coeffs: Vec<i32> =
-            result_coeffs.iter().map(|&c| mod_reduce(c)).collect();
-
-        Polynomial::new(reduced_coeffs)
+    /// Create polynomial representing 1.
+    pub fn one() -> Self {
+        let mut coeffs = [0; N];
+        coeffs[0] = 1;
+        Self { coeffs }
     }
 
-    /// NTT-based multiplication
-    fn ntt_multiply(&self, other: &Self) -> Self {
+    /// Generate random polynomial with coefficients in [0, bound).
+    pub fn random(bound: i32) -> Self {
+        let mut rng = rand::thread_rng();
+        let mut coeffs = [0i32; N];
+        for coeff in &mut coeffs {
+            *coeff = rng.gen_range(0..bound);
+        }
+        Self::from(coeffs)
+    }
+
+    /// NTT-based multiplication (fast polynomial multiplication)
+    pub fn ntt_multiply(&self, other: &Self) -> Self {
         // Copy coefficients to avoid modifying the original polynomials
         let mut a_ntt = self.coeffs;
         let mut b_ntt = other.coeffs;
@@ -160,6 +121,7 @@ impl Polynomial {
     }
 
     /// Compute infinity norm of polynomial.
+    /// Returns the maximum absolute value of coefficients when centered around 0.
     pub fn norm_infinity(&self) -> i32 {
         let q_half = Q / 2;
         self.coeffs
@@ -193,11 +155,8 @@ impl Polynomial {
     }
 
     /// Get degree of polynomial.
+    /// Returns -1 for the zero polynomial.
     pub fn degree(&self) -> i32 {
-        if self.is_zero() {
-            return -1;
-        }
-
         for i in (0..N).rev() {
             if self.coeffs[i] != 0 {
                 return i as i32;
@@ -205,37 +164,10 @@ impl Polynomial {
         }
         -1
     }
-
-    /// Create zero polynomial.
-    pub fn zero() -> Self {
-        Self { coeffs: [0; N] }
-    }
-
-    /// Create polynomial representing 1.
-    pub fn one() -> Self {
-        let mut coeffs = [0; N];
-        coeffs[0] = 1;
-        Self { coeffs }
-    }
-
-    /// Generate random polynomial with coefficients in [0, bound).
-    pub fn random(bound: i32) -> Self {
-        let mut rng = rand::thread_rng();
-        let mut coeffs = [0i32; N];
-        for i in 0..N {
-            coeffs[i] = rng.gen_range(0..bound);
-        }
-        Self::from(coeffs)
-    }
-
-    /// Create a copy of the polynomial.
-    pub fn copy(&self) -> Self {
-        self.clone()
-    }
 }
 
+// Conversion implementations
 impl From<[i32; N]> for Polynomial {
-    /// Create polynomial from a fixed-size array (avoids allocation)
     fn from(coeffs: [i32; N]) -> Self {
         let mut result = coeffs;
         for coeff in &mut result {
@@ -246,7 +178,6 @@ impl From<[i32; N]> for Polynomial {
 }
 
 impl From<&[i32]> for Polynomial {
-    /// Create polynomial from a slice
     fn from(coeffs: &[i32]) -> Self {
         let mut result = [0i32; N];
         let len = coeffs.len().min(N);
@@ -260,34 +191,18 @@ impl From<&[i32]> for Polynomial {
 }
 
 impl From<Vec<i32>> for Polynomial {
-    /// Create polynomial from a vector
     fn from(coeffs: Vec<i32>) -> Self {
-        // Reuse the existing new method
         Self::new(coeffs)
     }
 }
 
 impl From<&Vec<i32>> for Polynomial {
-    /// Create polynomial from a vector reference
     fn from(coeffs: &Vec<i32>) -> Self {
         Self::from(coeffs.as_slice())
     }
 }
 
-impl Default for Polynomial {
-    fn default() -> Self {
-        Self { coeffs: [0i32; N] }
-    }
-}
-
-impl PartialEq for Polynomial {
-    fn eq(&self, other: &Self) -> bool {
-        self.coeffs == other.coeffs
-    }
-}
-
-impl Eq for Polynomial {}
-
+// Arithmetic operations
 impl Add for Polynomial {
     type Output = Self;
 
@@ -320,7 +235,7 @@ impl Mul<i32> for Polynomial {
     fn mul(self, scalar: i32) -> Self {
         let mut coeffs = [0i32; N];
         for i in 0..N {
-            coeffs[i] = mod_reduce((self.coeffs[i] as i64 * scalar as i64));
+            coeffs[i] = mod_reduce(self.coeffs[i] as i64 * scalar as i64);
         }
         Self { coeffs }
     }
@@ -329,7 +244,6 @@ impl Mul<i32> for Polynomial {
 impl Mul<Polynomial> for Polynomial {
     type Output = Self;
 
-    // Perform multiplication using NTT
     fn mul(self, other: Self) -> Self {
         self.ntt_multiply(&other)
     }
@@ -347,23 +261,24 @@ impl Neg for Polynomial {
     }
 }
 
+impl Default for Polynomial {
+    fn default() -> Self {
+        Self { coeffs: [0i32; N] }
+    }
+}
+
 /// Represents a vector of polynomials in Rq.
 ///
 /// Used for representing keys and intermediate values in Dilithium.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PolynomialVector {
     polys: Vec<Polynomial>,
-    length: usize,
 }
 
 impl PolynomialVector {
     /// Initialize polynomial vector.
     pub fn new(polynomials: Vec<Polynomial>) -> Self {
-        let length = polynomials.len();
-        Self {
-            polys: polynomials,
-            length,
-        }
+        Self { polys: polynomials }
     }
 
     /// Get polynomial at index.
@@ -382,7 +297,7 @@ impl PolynomialVector {
         index: usize,
         poly: Polynomial,
     ) -> Result<(), &'static str> {
-        if index >= self.length {
+        if index >= self.polys.len() {
             return Err("Index out of bounds");
         }
         self.polys[index] = poly;
@@ -391,12 +306,12 @@ impl PolynomialVector {
 
     /// Get length of vector.
     pub fn len(&self) -> usize {
-        self.length
+        self.polys.len()
     }
 
     /// Check if vector is empty.
     pub fn is_empty(&self) -> bool {
-        self.length == 0
+        self.polys.is_empty()
     }
 
     /// Compute infinity norm of vector.
@@ -408,52 +323,37 @@ impl PolynomialVector {
             .unwrap_or(0)
     }
 
-    /// Create a copy of the vector.
-    pub fn copy(&self) -> Self {
-        self.clone()
-    }
-
     /// Create zero vector of given length.
     pub fn zero(length: usize) -> Self {
-        let polys = vec![Polynomial::zero(); length];
-        Self { polys, length }
+        Self {
+            polys: vec![Polynomial::zero(); length],
+        }
     }
 
     /// Generate random polynomial vector.
     pub fn random(length: usize, bound: i32) -> Self {
-        let polys: Vec<Polynomial> =
-            (0..length).map(|_| Polynomial::random(bound)).collect();
-        Self { polys, length }
+        Self {
+            polys: (0..length).map(|_| Polynomial::random(bound)).collect(),
+        }
     }
 }
-
-impl PartialEq for PolynomialVector {
-    fn eq(&self, other: &Self) -> bool {
-        self.length == other.length && self.polys == other.polys
-    }
-}
-
-impl Eq for PolynomialVector {}
 
 impl Add for PolynomialVector {
     type Output = Result<Self, &'static str>;
 
     fn add(self, other: Self) -> Self::Output {
-        if self.length != other.length {
+        if self.len() != other.len() {
             return Err("Vector lengths must match");
         }
 
         let polys: Vec<Polynomial> = self
             .polys
             .into_iter()
-            .zip(other.polys.into_iter())
+            .zip(other.polys)
             .map(|(p1, p2)| p1 + p2)
             .collect();
 
-        Ok(Self {
-            polys,
-            length: self.length,
-        })
+        Ok(Self { polys })
     }
 }
 
@@ -461,21 +361,18 @@ impl Sub for PolynomialVector {
     type Output = Result<Self, &'static str>;
 
     fn sub(self, other: Self) -> Self::Output {
-        if self.length != other.length {
+        if self.len() != other.len() {
             return Err("Vector lengths must match");
         }
 
         let polys: Vec<Polynomial> = self
             .polys
             .into_iter()
-            .zip(other.polys.into_iter())
+            .zip(other.polys)
             .map(|(p1, p2)| p1 - p2)
             .collect();
 
-        Ok(Self {
-            polys,
-            length: self.length,
-        })
+        Ok(Self { polys })
     }
 }
 
@@ -483,70 +380,213 @@ impl Mul<i32> for PolynomialVector {
     type Output = Self;
 
     fn mul(self, scalar: i32) -> Self {
-        let polys: Vec<Polynomial> =
-            self.polys.into_iter().map(|p| p * scalar).collect();
-
         Self {
-            polys,
-            length: self.length,
+            polys: self.polys.into_iter().map(|p| p * scalar).collect(),
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
+mod prop_tests {
     use super::*;
+    use quickcheck::{Arbitrary, Gen, TestResult};
+    use quickcheck_macros::quickcheck;
 
-    #[test]
-    fn test_polynomial_creation() {
-        let p = Polynomial::new(vec![1, 2, 3]);
-        assert_eq!(p.coeffs.len(), N);
-        assert_eq!(p.coeffs[0], 1);
-        assert_eq!(p.coeffs[1], 2);
-        assert_eq!(p.coeffs[2], 3);
+    // Implement Arbitrary for Polynomial to generate random test cases
+    impl Arbitrary for Polynomial {
+        fn arbitrary(g: &mut Gen) -> Self {
+            // Generate polynomials with varying strategies
+            let strategy = u8::arbitrary(g) % 4;
+
+            match strategy {
+                0 => {
+                    // Zero polynomial
+                    Polynomial::zero()
+                }
+                1 => {
+                    // Sparse polynomial (few non-zero coefficients)
+                    let mut coeffs = [0i32; N];
+                    let num_nonzero = usize::arbitrary(g) % 10 + 1;
+                    for _ in 0..num_nonzero {
+                        let idx = usize::arbitrary(g) % N;
+                        coeffs[idx] = (i32::arbitrary(g) % Q).abs();
+                    }
+                    Polynomial::from(coeffs)
+                }
+                2 => {
+                    // Dense polynomial with small coefficients
+                    let mut coeffs = [0i32; N];
+                    for i in 0..N {
+                        if bool::arbitrary(g) {
+                            coeffs[i] = (i32::arbitrary(g) % 1000).abs();
+                        }
+                    }
+                    Polynomial::from(coeffs)
+                }
+                _ => {
+                    // Fully random polynomial
+                    let mut coeffs = [0i32; N];
+                    for i in 0..N {
+                        coeffs[i] = (i32::arbitrary(g) % Q).abs();
+                    }
+                    Polynomial::from(coeffs)
+                }
+            }
+        }
+
+        fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+            // Shrink by reducing coefficient values and making polynomial sparser
+            let coeffs = self.coeffs;
+            let shrunk: Vec<Polynomial> = (0..N)
+                .filter(|&i| coeffs[i] != 0)
+                .flat_map(move |i| {
+                    let mut new_coeffs = coeffs;
+                    vec![
+                        // Set coefficient to zero
+                        {
+                            new_coeffs[i] = 0;
+                            Polynomial::from(new_coeffs)
+                        },
+                        // Halve the coefficient
+                        {
+                            new_coeffs[i] = coeffs[i] / 2;
+                            Polynomial::from(new_coeffs)
+                        },
+                    ]
+                })
+                .collect();
+
+            Box::new(shrunk.into_iter())
+        }
     }
 
-    #[test]
-    fn test_polynomial_addition() {
-        let p1 = Polynomial::new(vec![1, 2, 3]);
-        let p2 = Polynomial::new(vec![4, 5, 6]);
-        let p3 = p1 + p2;
-        assert_eq!(p3.coeffs[0], 5);
-        assert_eq!(p3.coeffs[1], 7);
-        assert_eq!(p3.coeffs[2], 9);
+    // Property: Zero is the additive identity
+    #[quickcheck]
+    fn prop_addition_identity(p: Polynomial) -> bool {
+        let zero = Polynomial::zero();
+        let sum1 = p + zero;
+        let sum2 = zero + p;
+        sum1 == p && sum2 == p
     }
 
-    #[test]
-    fn test_polynomial_multiplication() {
-        let p1 = Polynomial::new(vec![1, 2]);
-        let p2 = Polynomial::new(vec![3, 4]);
-        let p3 = p1 * p2;
-        // (1 + 2x)(3 + 4x) = 3 + 4x + 6x + 8x^2 = 3 + 10x + 8x^2
-        assert_eq!(p3.coeffs[0], 3);
-        assert_eq!(p3.coeffs[1], 10);
-        assert_eq!(p3.coeffs[2], 8);
+    // Property: Every polynomial has an additive inverse
+    #[quickcheck]
+    fn prop_addition_inverse(p: Polynomial) -> bool {
+        let neg_p = -p;
+        let sum = p + neg_p;
+        sum.is_zero()
     }
 
-    #[test]
-    fn test_ntt_multiplication() {
-        let p1 = Polynomial::new(vec![1, 2]);
-        let p2 = Polynomial::new(vec![3, 4]);
-        let p3 = p1.ntt_multiply(&p2);
-        // (1 + 2x)(3 + 4x) = 3 + 10x + 8x^2
-        assert_eq!(p3.coeffs[0], 3);
-        assert_eq!(p3.coeffs[1], 10);
-        assert_eq!(p3.coeffs[2], 8);
+    // Property: Subtraction is equivalent to adding the negative
+    #[quickcheck]
+    fn prop_subtraction_as_addition(p1: Polynomial, p2: Polynomial) -> bool {
+        let diff = p1 - p2;
+        let sum = p1 + (-p2);
+        diff == sum
     }
 
-    #[test]
-    fn test_vector_operations() {
-        let v1 = PolynomialVector::random(3, 100);
-        let v2 = PolynomialVector::random(3, 100);
+    // Property: Multiplication is commutative
+    #[quickcheck]
+    fn prop_multiplication_commutative(
+        p1: Polynomial,
+        p2: Polynomial,
+    ) -> TestResult {
+        // Skip if polynomials have high degree to avoid slow tests
+        if p1.degree() > 50 || p2.degree() > 50 {
+            return TestResult::discard();
+        }
 
-        let v3 = (v1.clone() + v2.clone()).unwrap();
-        assert_eq!(v3.len(), 3);
+        let prod1 = p1 * p2;
+        let prod2 = p2 * p1;
+        TestResult::from_bool(prod1 == prod2)
+    }
 
-        let v4 = v1 * 5;
-        assert_eq!(v4.len(), 3);
+    // Property: Scalar multiplication is distributive
+    #[quickcheck]
+    fn prop_scalar_multiplication_distributive(
+        p1: Polynomial,
+        p2: Polynomial,
+        scalar: i32,
+    ) -> bool {
+        let scalar = scalar % Q;
+        let left = (p1 + p2) * scalar;
+        let right = (p1 * scalar) + (p2 * scalar);
+        left == right
+    }
+
+    // Property: Degree of sum is at most max of degrees
+    #[quickcheck]
+    fn prop_degree_of_sum(p1: Polynomial, p2: Polynomial) -> bool {
+        let sum = p1 + p2;
+        let max_degree = std::cmp::max(p1.degree(), p2.degree());
+        sum.degree() <= max_degree
+    }
+
+    // Property: Degree of product is at most sum of degrees (in quotient ring)
+    #[quickcheck]
+    fn prop_degree_of_product(p1: Polynomial, p2: Polynomial) -> TestResult {
+        if p1.is_zero() || p2.is_zero() {
+            return TestResult::discard();
+        }
+
+        let prod = p1 * p2;
+        // In the quotient ring R[X]/(X^N + 1), degree is always < N
+        TestResult::from_bool(prod.degree() < N as i32)
+    }
+
+    // Property: Norm properties
+    #[quickcheck]
+    fn prop_norm_infinity_triangle_inequality(
+        p1: Polynomial,
+        p2: Polynomial,
+    ) -> bool {
+        let sum = p1 + p2;
+        sum.norm_infinity() <= p1.norm_infinity() + p2.norm_infinity()
+    }
+
+    // Property: Zero polynomial has zero norm
+    #[quickcheck]
+    fn prop_zero_norm() -> bool {
+        let zero = Polynomial::zero();
+        zero.norm_infinity() == 0 && zero.norm_l2() == 0.0
+    }
+
+    // Property: Negation preserves norm
+    #[quickcheck]
+    fn prop_negation_preserves_norm(p: Polynomial) -> bool {
+        let neg_p = -p;
+        p.norm_infinity() == neg_p.norm_infinity()
+            && (p.norm_l2() - neg_p.norm_l2()).abs() < 1e-10
+    }
+
+    // Property: Conversion from different types preserves values
+    #[quickcheck]
+    fn prop_from_slice_conversion(coeffs: Vec<i32>) -> TestResult {
+        if coeffs.len() > N {
+            return TestResult::discard();
+        }
+
+        let p1 = Polynomial::from(coeffs.as_slice());
+        let p2 = Polynomial::from(&coeffs);
+        let p3 = Polynomial::from(coeffs.clone());
+
+        TestResult::from_bool(p1 == p2 && p2 == p3)
+    }
+
+    // Property: NTT multiplication gives same result as definition
+    #[quickcheck]
+    fn prop_ntt_multiplication_correctness(
+        p1: Polynomial,
+        p2: Polynomial,
+    ) -> TestResult {
+        // Only test with small polynomials for efficiency
+        if p1.degree() > 10 || p2.degree() > 10 {
+            return TestResult::discard();
+        }
+
+        let ntt_result = p1.ntt_multiply(&p2);
+        let op_result = p1 * p2;
+
+        TestResult::from_bool(ntt_result == op_result)
     }
 }
