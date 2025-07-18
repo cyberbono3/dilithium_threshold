@@ -42,7 +42,7 @@ const QINV: i32 = 58728449;
 
 pub fn montgomery_reduce(a: i64) -> i32 {
     let mut t = (a as i32).wrapping_mul(QINV) as i64;
-    t = (a as i64 - t * Q as i64) >> 32;
+    t = (a - t * Q as i64) >> 32;
     t as i32
 }
 
