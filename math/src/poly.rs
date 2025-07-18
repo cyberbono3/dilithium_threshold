@@ -14,7 +14,6 @@ pub const Q: i32 = 8380417; // Dilithium's prime modulus
 pub const N: usize = 256; // Polynomial degree bound
 const ROOT_OF_UNITY: i32 = 1753; // primitive 256th root of unity mod Q
 
-
 // Simple modular reduction
 #[inline(always)]
 fn mod_reduce(a: i64) -> i32 {
