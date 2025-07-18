@@ -72,6 +72,19 @@ pub fn ntt(a: &mut [i32]) {
 }
 
 /// Inverse NTT in-place
+/// ## Perform INTT on slices of i32 elements
+///
+/// # Example
+///
+/// ```
+/// use math::ntt::{ntt, intt};
+/// let original_values: [i32; 256] = [0, 1, 1, 2, 3, 5, 8, 13];
+/// let mut transformed_values = original_values.clone();
+/// ntt(&mut transformed_values);
+/// intt(&mut transformed_values);
+/// assert_eq!(original_values, transformed_values);
+/// ```
+///
 pub fn intt(a: &mut [i32]) {
     let mut j;
     let mut k = 256usize;
@@ -96,7 +109,31 @@ pub fn intt(a: &mut [i32]) {
         }
         len <<= 1;
     }
-    for j in 0..N {
-        a[j] = montgomery_reduce(F * a[j] as i64);
+
+    (0..N).for_each(|j| a[j] = montgomery_reduce(F * a[j] as i64));
+
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_montgomery_reduce() {
+        // Test Montgomery reduction properties
+        let a: i64 = 12345;
+        let b: i64 = 67890;
+        
+        // Test that montgomery_reduce is deterministic
+        let r1 = montgomery_reduce(a);
+        let r2 = montgomery_reduce(a);
+        assert_eq!(r1, r2, "Montgomery reduce should be deterministic");
+        
+        // Test bounds: result should be in [-Q, Q]
+        for i in 0..100 {
+            let x = (i * 12345) as i64;
+            let r = montgomery_reduce(x);
+            assert!(r.abs() <= Q, "Montgomery reduce out of bounds: {}", r);
+        }
     }
 }
