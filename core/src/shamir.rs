@@ -1,5 +1,5 @@
 use rand::prelude::*;
-use thiserror::Error;
+
 
 use math::{
     poly::{Polynomial, N, Q},
@@ -7,36 +7,37 @@ use math::{
 };
 
 use crate::config::validate_threshold_config;
+use crate::error::ThresholdError;
 
-#[derive(Error, Debug)]
-pub enum ThresholdError {
-    #[error("Invalid threshold configuration: threshold {threshold} > participant_number {participant_number}")]
-    InvalidThreshold {
-        threshold: usize,
-        participant_number: usize,
-    },
+// #[derive(Error, Debug)]
+// pub enum ThresholdError {
+//     #[error("Invalid threshold configuration: threshold {threshold} > participant_number {participant_number}")]
+//     InvalidThreshold {
+//         threshold: usize,
+//         participant_number: usize,
+//     },
 
-    #[error("Insufficient shares: need {required}, got {provided}")]
-    InsufficientShares { required: usize, provided: usize },
+//     #[error("Insufficient shares: need {required}, got {provided}")]
+//     InsufficientShares { required: usize, provided: usize },
 
-    #[error("Invalid participant ID: {0}")]
-    InvalidParticipantId(usize),
+//     #[error("Invalid participant ID: {0}")]
+//     InvalidParticipantId(usize),
 
-    #[error("Inconsistent share lengths")]
-    InconsistentShareLengths,
+//     #[error("Inconsistent share lengths")]
+//     InconsistentShareLengths,
 
-    #[error("Modular inverse does not exist")]
-    ModularInverseError,
+//     #[error("Modular inverse does not exist")]
+//     ModularInverseError,
 
-    #[error("Signature generation failed after maximum attempts")]
-    SignatureGenerationFailed,
+//     #[error("Signature generation failed after maximum attempts")]
+//     SignatureGenerationFailed,
 
-    #[error("Invalid signature bounds")]
-    InvalidSignatureBounds,
+//     #[error("Invalid signature bounds")]
+//     InvalidSignatureBounds,
 
-    #[error("Invalid polynomial index: {index} >= {length}")]
-    InvalidPolynomialIndex { index: usize, length: usize },
-}
+//     #[error("Invalid polynomial index: {index} >= {length}")]
+//     InvalidPolynomialIndex { index: usize, length: usize },
+// }
 
 pub type Result<T> = std::result::Result<T, ThresholdError>;
 
