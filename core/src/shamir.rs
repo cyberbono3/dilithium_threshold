@@ -339,7 +339,7 @@ impl AdaptedShamirSSS {
         let a = a.rem_euclid(q);
         let b = b.rem_euclid(q);
 
-        // For very large moduli, we might need Montgomery multiplication
+        // TODO add Montgomery multiplication
         // For Q = 8380417, direct multiplication fits in i64
         ((a * b) % q) as i32
     }
