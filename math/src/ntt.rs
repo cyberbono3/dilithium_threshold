@@ -53,8 +53,7 @@ pub fn ntt(a: &mut [i32]) {
     let mut len = 128;
 
     while len > 0 {
-        let mut start = 0;
-        while start < N {
+        for start in (0..N).step_by(2 * len) {
             k += 1;
             let zeta = ZETAS[k];
             let end = start + len;
@@ -63,7 +62,6 @@ pub fn ntt(a: &mut [i32]) {
                 a[j + len] = a[j] - t;
                 a[j] += t;
             }
-            start += 2 * len;
         }
         len >>= 1;
     }
@@ -72,26 +70,20 @@ pub fn ntt(a: &mut [i32]) {
 /// Inverse NTT in-place
 /// Perform INTT on slices of i32 elements
 pub fn intt(a: &mut [i32]) {
-    let mut j;
     let mut k = 256usize;
     let mut len = 1;
-    let (mut t, mut zeta);
     const F: i64 = 41978; // mont^2/256
 
     while len < N {
-        let mut start = 0;
-        while start < 256 {
+        for start in (0..N).step_by(2 * len) {
             k -= 1;
-            zeta = -ZETAS[k] as i64;
-            j = start;
-            while j < (start + len) {
-                t = a[j];
-                a[j] = t + a[j + len];
-                a[j + len] = t - a[j + len];
-                a[j + len] = montgomery_reduce(zeta * a[j + len] as i64);
-                j += 1
+            let zeta = -ZETAS[k];
+            let end = start + len;
+            for j in start..end {
+                let (u, v) = (a[j], a[j + len]);
+                a[j] = u.wrapping_add(v);
+                a[j + len] = montgomery_reduce(zeta * (u - v) as i64);
             }
-            start = j + len;
         }
         len <<= 1;
     }
