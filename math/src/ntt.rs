@@ -1,7 +1,7 @@
 use super::poly::{N, Q};
 
 // Roots of unity in order needed by forward ntt
-const ZETAS: [i32; N] = [
+const ZETAS: [i64; N] = [
     0, 25847, -2608894, -518909, 237124, -777960, -876248, 466468, 1826347,
     2353451, -359251, -2091905, 3119733, -2884855, 3111497, 2680103, 2725464,
     1024112, -1079900, 3585928, -549488, -1119584, 2619752, -2108549, -2118186,
@@ -48,24 +48,20 @@ pub fn montgomery_reduce(a: i64) -> i32 {
 
 /// Forward NTT, in-place.
 pub fn ntt(a: &mut [i32]) {
-    let mut j;
+    let mut t;
     let mut k = 0usize;
     let mut len = 128;
-    let (mut t, mut zeta);
 
     while len > 0 {
-        let mut start = 0;
-        while start < N {
+        for start in (0..N).step_by(2 * len) {
             k += 1;
-            zeta = ZETAS[k] as i64;
-            j = start;
-            while j < (start + len) {
+            let zeta = ZETAS[k];
+            let end = start + len;
+            for j in start..end {
                 t = montgomery_reduce(zeta * a[j + len] as i64);
                 a[j + len] = a[j] - t;
                 a[j] += t;
-                j += 1;
             }
-            start = j + len;
         }
         len >>= 1;
     }
@@ -74,26 +70,20 @@ pub fn ntt(a: &mut [i32]) {
 /// Inverse NTT in-place
 /// Perform INTT on slices of i32 elements
 pub fn intt(a: &mut [i32]) {
-    let mut j;
     let mut k = 256usize;
     let mut len = 1;
-    let (mut t, mut zeta);
     const F: i64 = 41978; // mont^2/256
 
     while len < N {
-        let mut start = 0;
-        while start < 256 {
+        for start in (0..N).step_by(2 * len) {
             k -= 1;
-            zeta = -ZETAS[k] as i64;
-            j = start;
-            while j < (start + len) {
-                t = a[j];
-                a[j] = t + a[j + len];
-                a[j + len] = t - a[j + len];
-                a[j + len] = montgomery_reduce(zeta * a[j + len] as i64);
-                j += 1
+            let zeta = -ZETAS[k];
+            let end = start + len;
+            for j in start..end {
+                let (u, v) = (a[j], a[j + len]);
+                a[j] = u.wrapping_add(v);
+                a[j + len] = montgomery_reduce(zeta * (u - v) as i64);
             }
-            start = j + len;
         }
         len <<= 1;
     }
