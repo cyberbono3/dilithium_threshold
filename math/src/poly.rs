@@ -1,4 +1,3 @@
-
 use std::ops::{Add, Mul, Neg, Sub};
 
 use rand::Rng;
@@ -34,10 +33,12 @@ impl Polynomial {
 
                 if quotient % 2 == 0 {
                     // Even powers of X^N contribute positively
-                    result[pos] = Self::mod_reduce(result[pos] as i64 + coeff as i64);
+                    result[pos] =
+                        Self::mod_reduce(result[pos] as i64 + coeff as i64);
                 } else {
                     // Odd powers of X^N contribute negatively (since X^N = -1)
-                    result[pos] = Self::mod_reduce(result[pos] as i64 - coeff as i64);
+                    result[pos] =
+                        Self::mod_reduce(result[pos] as i64 - coeff as i64);
                 }
             }
         }
@@ -190,8 +191,9 @@ impl Add for Polynomial {
     fn add(self, other: Self) -> Self {
         let mut coeffs = [0i32; N];
         for i in 0..N {
-            coeffs[i] =
-                Self::mod_reduce(self.coeffs[i] as i64 + other.coeffs[i] as i64);
+            coeffs[i] = Self::mod_reduce(
+                self.coeffs[i] as i64 + other.coeffs[i] as i64,
+            );
         }
         Self { coeffs }
     }
@@ -203,8 +205,9 @@ impl Sub for Polynomial {
     fn sub(self, other: Self) -> Self {
         let mut coeffs = [0i32; N];
         for i in 0..N {
-            coeffs[i] =
-                Self::mod_reduce(self.coeffs[i] as i64 - other.coeffs[i] as i64);
+            coeffs[i] = Self::mod_reduce(
+                self.coeffs[i] as i64 - other.coeffs[i] as i64,
+            );
         }
         Self { coeffs }
     }
@@ -247,8 +250,6 @@ impl Default for Polynomial {
         Self { coeffs: [0i32; N] }
     }
 }
-
-
 
 #[cfg(test)]
 mod prop_tests {
