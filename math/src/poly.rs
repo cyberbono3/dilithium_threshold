@@ -51,6 +51,10 @@ impl Polynomial {
         Self { coeffs: result }
     }
 
+    pub fn coeffs(&self) -> [i32; N] {
+        self.coeffs
+    }
+
     /// Simple modular reduction ensuring result is in [0, Q)
     #[inline(always)]
     fn mod_reduce(a: i64) -> i32 {
