@@ -1,4 +1,4 @@
-use std::ops::{Add, Mul, Neg, Sub};
+use std::ops::{Add, AddAssign, Mul, Neg, Sub};
 
 use rand::Rng;
 
@@ -108,6 +108,7 @@ impl Polynomial {
 
     /// Compute infinity norm of polynomial.
     /// Returns the maximum absolute value of coefficients when centered around 0.
+    /// TODO test it properly
     pub fn norm_infinity(&self) -> i32 {
         let q_half = Q / 2;
         self.coeffs
@@ -203,6 +204,16 @@ impl Add for Polynomial {
     }
 }
 
+impl AddAssign for Polynomial {
+    fn add_assign(&mut self, other: Self) {
+        for i in 0..N {
+            self.coeffs[i] = Self::mod_reduce(
+                self.coeffs[i] as i64 + other.coeffs[i] as i64,
+            );
+        }
+    }
+}
+
 impl Sub for Polynomial {
     type Output = Self;
 
@@ -237,6 +248,14 @@ impl Mul<Polynomial> for Polynomial {
     }
 }
 
+impl Mul<&Polynomial> for Polynomial {
+    type Output = Self;
+
+    fn mul(self, other: &Polynomial) -> Self {
+        self.ntt_multiply(other)
+    }
+}
+
 impl Neg for Polynomial {
     type Output = Self;
 
@@ -260,6 +279,18 @@ mod prop_tests {
     use super::*;
     use quickcheck::{Arbitrary, Gen, TestResult};
     use quickcheck_macros::quickcheck;
+
+    #[test]
+    fn test_add_assign_basic() {
+        let mut p1 = Polynomial::from(vec![1, 2, 3]);
+        let p2 = Polynomial::from(vec![4, 5, 6]);
+
+        p1 += p2;
+
+        assert_eq!(p1.coeffs[0], 5);
+        assert_eq!(p1.coeffs[1], 7);
+        assert_eq!(p1.coeffs[2], 9);
+    }
 
     // Implement Arbitrary for Polynomial to generate random test cases
     impl Arbitrary for Polynomial {
