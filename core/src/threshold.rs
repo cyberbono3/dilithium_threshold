@@ -213,7 +213,7 @@ impl ThresholdSignature {
         let challenge = self.generate_partial_challenge(&mu, &w_partial);
 
         // Compute partial response z_partial = y_partial + c * s1_share
-        let c_s1 = key_share.s1_share.share_vector.clone() * &challenge;
+        let c_s1 = key_share.s1_share.share_vector.clone() * challenge;
         let z_partial = c_s1 + y_partial;
 
         Ok(PartialSignature::new(
@@ -258,7 +258,7 @@ impl ThresholdSignature {
         // Reconstruct hint h (simplified for this implementation)
         let h = self.reconstruct_hint(active_partials, public_key)?;
 
-        Ok(DilithiumSignature::new(z, h, challenge.clone()))
+        Ok(DilithiumSignature::new(z, h, *challenge))
     }
 
     /// Verify a partial signature.
@@ -282,16 +282,6 @@ impl ThresholdSignature {
         // Verify partial signature bounds
         self.check_partial_bounds(partial_sig)
     }
-
-    /// Hash message using SHAKE256
-    // fn hash_message(&self, message: &[u8]) -> Vec<u8> {
-    //     let mut hasher = Shake256::default();
-    //     hasher.update(message);
-    //     let mut reader = hasher.finalize_xof();
-    //     let mut output = vec![0u8; 64];
-    //     reader.read(&mut output);
-    //     output
-    // }
 
     /// Derive participant-specific randomness.
     fn derive_participant_randomness(
@@ -349,6 +339,7 @@ impl ThresholdSignature {
     }
 
     /// Generate challenge polynomial (simplified version).
+    /// TODO update it
     fn generate_partial_challenge(
         &self,
         mu: &[u8],
@@ -399,6 +390,7 @@ impl ThresholdSignature {
     }
 
     /// Reconstruct z vector from partial signatures using Lagrange interpolation.
+    /// TODO update it
     fn reconstruct_z_vector(
         &self,
         partial_signatures: &[PartialSignature],
@@ -450,6 +442,7 @@ impl ThresholdSignature {
     }
 
     /// Reconstruct hint vector (simplified implementation).
+    /// TODO make onliner
     fn reconstruct_hint(
         &self,
         _partial_signatures: &[PartialSignature],
@@ -540,11 +533,6 @@ impl ThresholdSignature {
         ((a * b) % q) as i32
     }
 
-    //   fn check_z_bounds(&self, z: &PolynomialVector) -> bool {
-    //     z.as_slice()
-    //     .iter()
-    //     .all(|poly| poly.coeffs().iter().all(|coeff| coeff.abs() < self.config.gamma1 - self.config.beta))
-    // }
 
     /// Check if partial signature satisfies bound requirements.
     fn check_partial_bounds(&self, partial_sig: &PartialSignature) -> bool {

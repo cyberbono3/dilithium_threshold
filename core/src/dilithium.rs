@@ -7,7 +7,7 @@ use sha3::{
 use crate::error::Result;
 use crate::utils::{get_randomness, hash_message};
 use crate::{config::DilithiumConfig, error::ThresholdError};
-//use crate::threshold::utils::matrix_vector_multiply;
+
 
 use math::{
     poly::{Polynomial, N, Q},
@@ -65,8 +65,6 @@ impl DilithiumPublicKey {
 pub struct DilithiumPrivateKey {
     pub(crate) s1: PolynomialVector,
     pub(crate) s2: PolynomialVector,
-    // pub security_level: usize,
-    //pub config: DilithiumConfig,
     pub dilithium: Dilithium,
 }
 
@@ -77,7 +75,6 @@ impl DilithiumPrivateKey {
         s2: PolynomialVector,
         security_level: usize,
     ) -> Self {
-        //let config = DilithiumConfig::new(security_level);
         let dilithium = Dilithium::new(security_level);
         DilithiumPrivateKey { s1, s2, dilithium }
     }
@@ -163,13 +160,12 @@ impl Dilithium {
         private_key: &DilithiumPrivateKey,
         randomness: Option<&[u8]>,
     ) -> Result<DilithiumSignature> {
+        const MAX_ATTEMPTS: u16 = 1000;
         let randomness = get_randomness(randomness);
 
         // Hash message
         let mu = hash_message(message);
 
-        // Initialize signing loop
-        let max_attempts = 1000;
 
         // Generate matrix A from public key (would need to be passed or stored)
         // For now, we'll regenerate it (in practice, this should be optimized)
@@ -178,7 +174,7 @@ impl Dilithium {
 
         let mut signature = None;
 
-        for kappa in 0..max_attempts {
+        for kappa in 0..MAX_ATTEMPTS {
             // Sample mask vector y
             let y = self.sample_y(&randomness, kappa);
 
@@ -279,6 +275,7 @@ impl Dilithium {
 
     /// Sample uniform polynomial from seed.
     /// TODO test it
+    /// TODO update it
     fn sample_uniform(&self, seed: &[u8]) -> Vec<i32> {
         let mut hasher = Shake256::default();
         hasher.update(seed);
@@ -301,42 +298,6 @@ impl Dilithium {
 
         coeffs
     }
-
-    /// Sample secret vector s1.
-    /// TODO test it
-    /// TODO  convert sample_s1 and sample_s2 into one function function sample_s to avoid code duplication
-    // fn sample_s1(&self, rho_prime: &[u8]) -> PolynomialVector {
-    //     let mut polys = Vec::with_capacity(self.config.l);
-
-    //     for i in 0..self.config.l {
-    //         let mut seed = rho_prime.to_vec();
-    //         seed.extend_from_slice(b"s1");
-    //         seed.push(i as u8);
-
-    //         let coeffs = self.sample_eta(&seed);
-    //         polys.push(Polynomial::from(coeffs));
-    //     }
-
-    //     PolynomialVector::new(polys)
-    // }
-
-    /// Sample secret vector s2.
-    /// TRODO test it
-    /// TODO  convert sample_s1 and sample_s2 into one function function sample_s to avoid code duplication
-    // fn sample_s2(&self, rho_prime: &[u8]) -> PolynomialVector {
-    //     let mut polys = Vec::with_capacity(self.config.k);
-
-    //     for i in 0..self.config.k {
-    //         let mut seed = rho_prime.to_vec();
-    //         seed.extend_from_slice(b"s2");
-    //         seed.push(i as u8);
-
-    //         let coeffs = self.sample_eta(&seed);
-    //         polys.push(Polynomial::from(coeffs));
-    //     }
-
-    //     PolynomialVector::new(polys)
-    // }
 
     /// Sample secret vector s1 or s2.
     fn sample_s(
@@ -437,16 +398,6 @@ impl Dilithium {
         PolynomialVector::new(result_polys)
     }
 
-    /// Hash message using SHAKE256.
-    // fn hash_message(message: &[u8]) -> Vec<u8> {
-    //     let mut hasher = Shake256::default();
-    //     hasher.update(message);
-    //     let mut reader = hasher.finalize_xof();
-    //     let mut output = vec![0u8; 64];
-    //     reader.read(&mut output);
-    //     output
-    // }
-
     /// Generate challenge polynomial from message hash and w1.
     fn generate_challenge(
         &self,
@@ -483,17 +434,7 @@ impl Dilithium {
         Polynomial::from(coeffs)
     }
 
-    // TODO remove it
-    fn check_c_bounds(&self, p: &Polynomial) -> (bool, usize) {
-        p.coeffs().iter().fold((true, 0), |(valid, count), &coeff| {
-            if coeff != 0 {
-                (valid && coeff.abs() <= 1, count + 1)
-            } else {
-                (valid, count)
-            }
-        })
-    }
-
+   
     fn check_z_bounds(&self, z: &PolynomialVector) -> bool {
         z.norm_infinity() < self.config.gamma1 - self.config.beta
     }
