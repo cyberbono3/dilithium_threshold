@@ -1,6 +1,6 @@
 pub const DEFAULT_SECURITY_LEVEL: usize = 2;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct DilithiumConfig {
     pub k: usize,
     pub l: usize,

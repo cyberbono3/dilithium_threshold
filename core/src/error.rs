@@ -1,36 +1,42 @@
 use std::fmt;
 
-
 #[derive(Debug)]
 pub enum ThresholdError {
     InvalidThreshold {
         threshold: usize,
         participant_number: usize,
     },
-    InsufficientShares { 
-        required: usize, 
-        provided: usize 
+    InsufficientShares {
+        required: usize,
+        provided: usize,
     },
     InvalidParticipantId(usize),
     InconsistentShareLengths,
     ModularInverseError,
     SignatureGenerationFailed,
     InvalidSignatureBounds,
-    InvalidPolynomialIndex { 
-        index: usize, 
-        length: usize 
+    InvalidPolynomialIndex {
+        index: usize,
+        length: usize,
     },
 }
 
 impl fmt::Display for ThresholdError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ThresholdError::InvalidThreshold { threshold, participant_number } => {
+            ThresholdError::InvalidThreshold {
+                threshold,
+                participant_number,
+            } => {
                 write!(f, "Invalid threshold configuration: threshold {} > participant_number {}", 
                     threshold, participant_number)
             }
             ThresholdError::InsufficientShares { required, provided } => {
-                write!(f, "Insufficient shares: need {}, got {}", required, provided)
+                write!(
+                    f,
+                    "Insufficient shares: need {}, got {}",
+                    required, provided
+                )
             }
             ThresholdError::InvalidParticipantId(id) => {
                 write!(f, "Invalid participant ID: {}", id)
@@ -55,3 +61,5 @@ impl fmt::Display for ThresholdError {
 }
 
 impl std::error::Error for ThresholdError {}
+
+pub type Result<T> = std::result::Result<T, ThresholdError>;

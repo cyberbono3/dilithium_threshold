@@ -16,6 +16,11 @@ impl PolynomialVector {
         Self { polys: polynomials }
     }
 
+    /// Get a slice of the underlying polynomial data
+    pub fn as_slice(&self) -> &[Polynomial] {
+        &self.polys
+    }
+
     /// Get polynomial at index.
     pub fn get(&self, index: usize) -> Option<&Polynomial> {
         self.polys.get(index)
@@ -74,12 +79,10 @@ impl PolynomialVector {
 }
 
 impl Add for PolynomialVector {
-    type Output = Result<Self, &'static str>;
+    type Output = Self;
 
     fn add(self, other: Self) -> Self::Output {
-        if self.len() != other.len() {
-            return Err("Vector lengths must match");
-        }
+        assert!(self.len() == other.len());
 
         let polys: Vec<Polynomial> = self
             .polys
@@ -88,17 +91,38 @@ impl Add for PolynomialVector {
             .map(|(p1, p2)| p1 + p2)
             .collect();
 
-        Ok(Self { polys })
+        Self { polys }
+    }
+}
+
+impl Add<&PolynomialVector> for PolynomialVector {
+    type Output = Self;
+
+    fn add(self, other: &Self) -> Self::Output {
+        assert!(
+            self.len() == other.len(),
+            "Vector lengths  must match for addition"
+        );
+
+        let polys: Vec<Polynomial> = self
+            .polys
+            .into_iter()
+            .zip(other.polys.clone())
+            .map(|(p1, p2)| p1 + p2)
+            .collect();
+
+        Self { polys }
     }
 }
 
 impl Sub for PolynomialVector {
-    type Output = Result<Self, &'static str>;
+    type Output = Self;
 
     fn sub(self, other: Self) -> Self::Output {
-        if self.len() != other.len() {
-            return Err("Vector lengths must match");
-        }
+        assert!(
+            self.len() == other.len(),
+            "Vector lengths  must match for subtraction"
+        );
 
         let polys: Vec<Polynomial> = self
             .polys
@@ -107,8 +131,102 @@ impl Sub for PolynomialVector {
             .map(|(p1, p2)| p1 - p2)
             .collect();
 
-        Ok(Self { polys })
+        Self { polys }
     }
+}
+
+impl Sub<&PolynomialVector> for PolynomialVector {
+    type Output = Self;
+
+    fn sub(self, other: &Self) -> Self::Output {
+        assert!(
+            self.len() == other.len(),
+            "Vector lengths  must match for subtraction"
+        );
+
+        let polys: Vec<Polynomial> = self
+            .polys
+            .into_iter()
+            .zip(other.polys.clone())
+            .map(|(p1, p2)| p1 - p2)
+            .collect();
+
+        Self { polys }
+    }
+}
+// TODO add proper testing
+impl Mul for PolynomialVector {
+    type Output = Self;
+
+    fn mul(self, other: Self) -> Self::Output {
+        assert!(
+            self.len() == other.len(),
+            "Vector lengths must match for element-wise multiplication"
+        );
+
+        let polys: Vec<Polynomial> = self
+            .polys
+            .into_iter()
+            .zip(other.polys)
+            .map(|(p1, p2)| p1 * p2)
+            .collect();
+
+        Self { polys }
+    }
+}
+
+impl Mul<PolynomialVector> for &Vec<Vec<Polynomial>> {
+    type Output = PolynomialVector;
+
+    fn mul(self, vector: PolynomialVector) -> Self::Output {
+        matrix_vector_multiply(self, &vector)
+    }
+}
+
+impl Mul<&PolynomialVector> for &Vec<Vec<Polynomial>>{
+    type Output = PolynomialVector;
+
+    fn mul(self, vector: &PolynomialVector) -> Self::Output {
+        matrix_vector_multiply(self, vector)
+    }
+}
+
+pub fn matrix_vector_multiply(
+    m: &[Vec<Polynomial>],
+    v: &PolynomialVector,
+) -> PolynomialVector {
+   // Check matrix is not empty
+    assert!(!m.is_empty(), "Matrix cannot be empty");
+    
+    let cols = m[0].len();
+    
+    // Check matrix columns match vector length
+    assert_eq!(
+        cols, v.len(),
+        "Matrix columns ({}) must match vector length ({})",
+        cols, v.len()
+    );
+    
+    // Check all rows have same length (rectangular matrix)
+    assert!(
+        m.iter().all(|row| row.len() == cols),
+        "All matrix rows must have the same length"
+    );
+
+    let result = m
+        .iter()
+        .map(|row| {
+            row.iter().zip(v.as_slice()).fold(
+                Polynomial::zero(),
+                |mut acc, (a_ij, v_j)| {
+                    acc += *a_ij * v_j;
+                    acc
+                },
+            )
+        })
+        .collect();
+
+    PolynomialVector::new(result)
 }
 
 impl Mul<i32> for PolynomialVector {
@@ -117,6 +235,26 @@ impl Mul<i32> for PolynomialVector {
     fn mul(self, scalar: i32) -> Self {
         Self {
             polys: self.polys.into_iter().map(|p| p * scalar).collect(),
+        }
+    }
+}
+
+impl Mul<Polynomial> for PolynomialVector {
+    type Output = Self;
+
+    fn mul(self, poly: Polynomial) -> Self {
+        Self {
+            polys: self.polys.into_iter().map(|p| p * poly).collect(),
+        }
+    }
+}
+
+impl Mul<&Polynomial> for PolynomialVector {
+    type Output = Self;
+
+    fn mul(self, poly: &Polynomial) -> Self {
+        Self {
+            polys: self.polys.into_iter().map(|p| p * poly).collect(),
         }
     }
 }

@@ -1,45 +1,12 @@
 use rand::prelude::*;
 
-
 use math::{
     poly::{Polynomial, N, Q},
     poly_vector::PolynomialVector,
 };
 
 use crate::config::validate_threshold_config;
-use crate::error::ThresholdError;
-
-// #[derive(Error, Debug)]
-// pub enum ThresholdError {
-//     #[error("Invalid threshold configuration: threshold {threshold} > participant_number {participant_number}")]
-//     InvalidThreshold {
-//         threshold: usize,
-//         participant_number: usize,
-//     },
-
-//     #[error("Insufficient shares: need {required}, got {provided}")]
-//     InsufficientShares { required: usize, provided: usize },
-
-//     #[error("Invalid participant ID: {0}")]
-//     InvalidParticipantId(usize),
-
-//     #[error("Inconsistent share lengths")]
-//     InconsistentShareLengths,
-
-//     #[error("Modular inverse does not exist")]
-//     ModularInverseError,
-
-//     #[error("Signature generation failed after maximum attempts")]
-//     SignatureGenerationFailed,
-
-//     #[error("Invalid signature bounds")]
-//     InvalidSignatureBounds,
-
-//     #[error("Invalid polynomial index: {index} >= {length}")]
-//     InvalidPolynomialIndex { index: usize, length: usize },
-// }
-
-pub type Result<T> = std::result::Result<T, ThresholdError>;
+use crate::error::{Result, ThresholdError};
 
 /// Adapted Shamir's Secret Sharing
 #[derive(Clone, Debug, PartialEq)]
@@ -112,8 +79,7 @@ impl AdaptedShamirSSS {
         secret_vector: &PolynomialVector,
     ) -> Result<Vec<ShamirShare>> {
         let vector_length = secret_vector.len();
-        let mut participant_shares: Vec<Vec<Share>> =
-            vec![
+        let mut participant_shares: Vec<Vec<Share>> = vec![
                 Vec::with_capacity(vector_length * N);
                 self.participant_number
             ];
@@ -268,7 +234,7 @@ impl AdaptedShamirSSS {
     /// Create a Shamir polynomial with given secret as constant term.
     fn create_shamir_polynomial(&self, secret: i32) -> Vec<i32> {
         std::iter::once(secret)
-            .chain((1..self.threshold).map(|_| rand::random_range(0..Q))) 
+            .chain((1..self.threshold).map(|_| rand::random_range(0..Q)))
             .collect()
     }
 
