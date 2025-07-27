@@ -8,7 +8,6 @@ use crate::error::Result;
 use crate::utils::{get_randomness, hash_message};
 use crate::{config::DilithiumConfig, error::ThresholdError};
 
-
 use math::{
     poly::{Polynomial, N, Q},
     poly_vector::PolynomialVector,
@@ -123,12 +122,15 @@ impl Dilithium {
     /// Generate a Dilithium key pair.
     /// self not needed
     pub fn keygen(self, seed: Option<&[u8]>) -> DilithiumKeyPair {
-        let seed = seed.map(|s| s.to_vec()).unwrap_or_else(|| {
-            let mut rng = rng();
-            let mut bytes = vec![0u8; 32];
-            rng.fill_bytes(&mut bytes);
-            bytes
-        });
+        let seed = match seed {
+            Some(s) => s.to_vec(),
+            None => {
+                let mut rng = rng();
+                let mut bytes = vec![0u8; 32];
+                rng.fill_bytes(&mut bytes);
+                bytes
+            }
+        };
 
         // Expand seed to generate randomness
         let (rho, rho_prime, _k) = Self::expand_seed(&seed);
@@ -165,7 +167,6 @@ impl Dilithium {
 
         // Hash message
         let mu = hash_message(message);
-
 
         // Generate matrix A from public key (would need to be passed or stored)
         // For now, we'll regenerate it (in practice, this should be optimized)
@@ -434,7 +435,6 @@ impl Dilithium {
         Polynomial::from(coeffs)
     }
 
-   
     fn check_z_bounds(&self, z: &PolynomialVector) -> bool {
         z.norm_infinity() < self.config.gamma1 - self.config.beta
     }

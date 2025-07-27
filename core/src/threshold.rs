@@ -262,26 +262,26 @@ impl ThresholdSignature {
     }
 
     /// Verify a partial signature.
-    pub fn verify_partial_signature(
-        &self,
-        message: &[u8],
-        partial_sig: &PartialSignature,
-        key_share: &ThresholdKeyShare,
-    ) -> bool {
-        // Hash message
-        let mu = hash_message(message);
+    // pub fn verify_partial_signature(
+    //     &self,
+    //     message: &[u8],
+    //     partial_sig: &PartialSignature,
+    //     key_share: &ThresholdKeyShare,
+    // ) -> bool {
+    //     // Hash message
+    //     let mu = hash_message(message);
 
-        // Verify challenge consistency
-        let expected_challenge =
-            self.generate_partial_challenge(&mu, &partial_sig.commitment);
+    //     // Verify challenge consistency
+    //     let expected_challenge =
+    //         self.generate_partial_challenge(&mu, &partial_sig.commitment);
 
-        if partial_sig.challenge != expected_challenge {
-            return false;
-        }
+    //     if partial_sig.challenge != expected_challenge {
+    //         return false;
+    //     }
 
-        // Verify partial signature bounds
-        self.check_partial_bounds(partial_sig)
-    }
+    //     // Verify partial signature bounds
+    //     self.check_partial_bounds(partial_sig)
+    // }
 
     /// Derive participant-specific randomness.
     fn derive_participant_randomness(
@@ -533,14 +533,13 @@ impl ThresholdSignature {
         ((a * b) % q) as i32
     }
 
-
     /// Check if partial signature satisfies bound requirements.
-    fn check_partial_bounds(&self, partial_sig: &PartialSignature) -> bool {
-        let gamma1 = self.dilithium.config.gamma1;
-        let beta = self.dilithium.config.beta;
+    // fn check_partial_bounds(&self, partial_sig: &PartialSignature) -> bool {
+    //     let gamma1 = self.dilithium.config.gamma1;
+    //     let beta = self.dilithium.config.beta;
 
-        partial_sig.z_partial.norm_infinity() < gamma1 - beta
-    }
+    //     partial_sig.z_partial.norm_infinity() < gamma1 - beta
+    // }
 
     /// Get information about the threshold configuration.
     pub fn get_threshold_info(&self) -> HashMap<&'static str, usize> {
