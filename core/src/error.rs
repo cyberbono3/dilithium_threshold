@@ -14,6 +14,7 @@ pub enum ThresholdError {
     InconsistentShareLengths,
     ModularInverseError,
     SignatureGenerationFailed,
+    PartialSignatureChallengeMismatch,
     InvalidSignatureBounds,
     InvalidPolynomialIndex {
         index: usize,
@@ -49,6 +50,9 @@ impl fmt::Display for ThresholdError {
             }
             ThresholdError::SignatureGenerationFailed => {
                 write!(f, "Signature generation failed after maximum attempts")
+            }
+            ThresholdError::PartialSignatureChallengeMismatch => {
+                 write!(f, "All partial signatures must use the same challenge")
             }
             ThresholdError::InvalidSignatureBounds => {
                 write!(f, "Invalid signature bounds")

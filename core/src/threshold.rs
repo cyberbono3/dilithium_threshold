@@ -246,7 +246,7 @@ impl ThresholdSignature {
             .iter()
             .all(|ps| &ps.challenge == challenge)
         {
-            return Err(ThresholdError::SignatureGenerationFailed);
+            return Err(ThresholdError::PartialSignatureChallengeMismatch);
         }
 
         // Use first threshold partial signatures
