@@ -400,8 +400,6 @@ mod tests {
 
         #[test]
         fn test_share_creation() {
-            // let poly1 = Polynomial::from(vec![1, 2, 3, 4, 5]);
-            /// let poly2 = Polynomial::from(vec![6, 7, 8, 9, 10]);
             let poly1 = Polynomial::from(vec![1, 2, 3, 4, 5]);
             let poly2 = Polynomial::from(vec![6, 7, 8, 9, 10]);
             let share_vector = PolynomialVector::new(vec![poly1, poly2]);
