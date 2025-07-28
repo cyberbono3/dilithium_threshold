@@ -34,7 +34,7 @@ impl DilithiumKeyPair {
 }
 
 /// Dilithium public key containing matrix m and vector t.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DilithiumPublicKey {
     pub m: Vec<Vec<Polynomial>>,
     pub t: PolynomialVector,

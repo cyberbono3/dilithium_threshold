@@ -1,7 +1,7 @@
 pub const DEFAULT_SECURITY_LEVEL: usize = 2;
 use math::poly::N;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DilithiumConfig {
     pub k: usize,
     pub l: usize,
