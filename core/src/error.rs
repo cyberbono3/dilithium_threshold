@@ -52,7 +52,7 @@ impl fmt::Display for ThresholdError {
                 write!(f, "Signature generation failed after maximum attempts")
             }
             ThresholdError::PartialSignatureChallengeMismatch => {
-                 write!(f, "All partial signatures must use the same challenge")
+                write!(f, "All partial signatures must use the same challenge")
             }
             ThresholdError::InvalidSignatureBounds => {
                 write!(f, "Invalid signature bounds")

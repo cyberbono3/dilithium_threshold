@@ -7,9 +7,7 @@ use sha3::{
 use std::collections::HashMap;
 
 use crate::{
-    config::{
-        validate_threshold_config, DilithiumConfig, DEFAULT_SECURITY_LEVEL,
-    },
+    config::{validate_threshold_config, DEFAULT_SECURITY_LEVEL},
     error::{Result, ThresholdError},
     shamir::{AdaptedShamirSSS, ShamirShare},
     utils::{get_randomness, hash_message},
@@ -96,6 +94,7 @@ impl std::fmt::Display for PartialSignature {
 ///
 /// Provides distributed key generation, partial signing, and signature
 /// combination functionality while preventing secret leakage.
+#[derive(Debug)]
 pub struct ThresholdSignature {
     threshold: usize,
     participants: usize,
@@ -104,7 +103,6 @@ pub struct ThresholdSignature {
     shamir_s1: AdaptedShamirSSS,
     shamir_s2: AdaptedShamirSSS,
     participant_ids: Vec<usize>,
-    config: DilithiumConfig,
 }
 
 impl ThresholdSignature {
@@ -122,7 +120,6 @@ impl ThresholdSignature {
         }
 
         let security_level = security_level.unwrap_or(DEFAULT_SECURITY_LEVEL);
-        let config = DilithiumConfig::new(security_level);
 
         // Initialize underlying schemes
         let dilithium = Dilithium::new(security_level);
@@ -140,7 +137,6 @@ impl ThresholdSignature {
             shamir_s1,
             shamir_s2,
             participant_ids,
-            config,
         })
     }
 
@@ -203,18 +199,22 @@ impl ThresholdSignature {
         // Compute partial commitment w_partial = A * y_partial
         // Note: This is simplified - in practice, we need coordination
         // between participants to compute the full commitment
-        let w_partial = Self::compute_partial_commitment(
-            &key_share.public_key.m,
-            &y_partial,
-        );
+        // let w_partial = Self::compute_partial_commitment(
+        //     &key_share.public_key.m,
+        //     &y_partial,
+        // );
+
+        let w_partial =  &key_share.public_key.m * &y_partial;
 
         // For now, use a simplified challenge generation
         // In practice, this requires coordination between participants
+        // TODO remove w_partial argument 
         let challenge = self.generate_partial_challenge(&mu, &w_partial);
+      
 
         // Compute partial response z_partial = y_partial + c * s1_share
         let c_s1 = key_share.s1_share.share_vector.clone() * challenge;
-        let z_partial = c_s1 + y_partial;
+        let z_partial = y_partial + c_s1;
 
         Ok(PartialSignature::new(
             key_share.participant_id,
@@ -262,26 +262,32 @@ impl ThresholdSignature {
     }
 
     /// Verify a partial signature.
-    // pub fn verify_partial_signature(
-    //     &self,
-    //     message: &[u8],
-    //     partial_sig: &PartialSignature,
-    //     key_share: &ThresholdKeyShare,
-    // ) -> bool {
-    //     // Hash message
-    //     let mu = hash_message(message);
+    pub fn verify_partial_signature(
+        &self,
+        message: &[u8],
+        partial_sig: &PartialSignature,
+        key_share: &ThresholdKeyShare,
+    ) -> bool {
+        println!("verify partial signature");
+        // Hash message
+        let mu = hash_message(message);
+        
+        // for testing purposes
 
-    //     // Verify challenge consistency
-    //     let expected_challenge =
-    //         self.generate_partial_challenge(&mu, &partial_sig.commitment);
 
-    //     if partial_sig.challenge != expected_challenge {
-    //         return false;
-    //     }
+        // Verify challenge consistency
+        let expected_challenge =
+            self.generate_partial_challenge(&mu, &partial_sig.commitment);
 
-    //     // Verify partial signature bounds
-    //     self.check_partial_bounds(partial_sig)
-    // }
+       
+        if partial_sig.challenge != expected_challenge {
+            println!("Partial and expected challenges do not match");
+            return false;
+        }
+
+        // Verify partial signature bounds
+        self.check_partial_bounds(partial_sig)
+    }
 
     /// Derive participant-specific randomness.
     fn derive_participant_randomness(
@@ -293,101 +299,157 @@ impl ThresholdSignature {
         Digest::update(&mut hasher, base_randomness);
         Digest::update(&mut hasher, participant_id.to_le_bytes());
         Digest::update(&mut hasher, b"participant_randomness");
+        // hasher.update(base_randomness);
+        // hasher.update(&participant_id.to_le_bytes());
+        // hasher.update(b"participant_randomness");
         hasher.finalize().to_vec()
     }
 
     /// Sample partial mask vector y.
     fn sample_partial_y(&self, randomness: &[u8]) -> PolynomialVector {
-        let mut polys = Vec::with_capacity(self.config.l);
-
-        for i in 0..self.config.l {
-            let mut seed = randomness.to_vec();
-            seed.push(i as u8);
-            let coeffs = self.sample_gamma1(&seed);
-            polys.push(Polynomial::from(coeffs));
-        }
+        let polys = (0..self.dilithium.config.l)
+        .map(|i| Polynomial::from(self.sample_gamma1(&[randomness, &[i as u8]].concat()))).collect();
 
         PolynomialVector::new(polys)
     }
 
     /// Sample coefficients from gamma1 distribution
-    fn sample_gamma1(&self, seed: &[u8]) -> Vec<i32> {
-        let gamma1 = self.config.gamma1;
-        let mut rng = StdRng::from_seed({
-            let mut hasher = Sha256::new();
-            Digest::update(&mut hasher, seed);
-            let hash = hasher.finalize();
-            let mut seed_bytes = [0u8; 32];
-            seed_bytes.copy_from_slice(&hash);
-            seed_bytes
-        });
+    // fn sample_gamma1(&self, seed: &[u8]) -> Vec<i32> {
+    //     let gamma1 = self.dilithium.config.gamma1;
+    //     let mut rng = StdRng::from_seed({
+    //         let mut hasher = Sha256::new();
+    //         Digest::update(&mut hasher, seed);
+    //         let hash = hasher.finalize();
+    //         let mut seed_bytes = [0u8; 32];
+    //         seed_bytes.copy_from_slice(&hash);
+    //         seed_bytes
+    //     });
 
-        let mut coeffs = vec![0i32; N];
-        for i in 0..N {
-            coeffs[i] = rng.gen_range(-gamma1..=gamma1);
-        }
+    //     let coeffs: Vec<i32> = (0..N).map(|i| rng.random_range(-gamma1..=gamma1)).collect();
+    //     // let mut coeffs = vec![0i32; N];
+    //     // for i in 0..N {
+    //     //     coeffs[i] = rng.random_range(-gamma1..=gamma1);
+    //     // }
+    //     coeffs
+    // }
+    // TODO optimize it
+    /// Sample coefficients from gamma1 distribution
+    fn sample_gamma1(&self, seed: &[u8]) -> Vec<i32> {
+        // Create SHAKE256 hasher and generate output
+        let mut hasher = Shake256::default();
+        hasher.update(seed);
+        let mut reader = hasher.finalize_xof();
+
+        // Read N * 4 bytes
+        let mut hash_output = vec![0u8; N * 4];
+        reader.read(&mut hash_output);
+
+        // Convert bytes to u32 values and transform to coefficients
+        let coeffs: Vec<i32> = hash_output
+            .chunks_exact(4)
+            .take(N)
+            .map(|chunk| {
+                let value = u32::from_le_bytes([
+                    chunk[0], chunk[1], chunk[2], chunk[3],
+                ]);
+                // Map to range [-gamma1, gamma1] then reduce mod Q
+                let coeff = (value as i32
+                    % (2 * self.dilithium.config.gamma1 + 1))
+                    - self.dilithium.config.gamma1;
+                coeff.rem_euclid(Q)
+            })
+            .collect();
+
         coeffs
     }
 
     /// Compute partial commitment w_partial.
-    fn compute_partial_commitment(
-        m: &Vec<Vec<Polynomial>>,
-        y_partial: &PolynomialVector,
-    ) -> PolynomialVector {
-        // Simplified partial commitment computation
-        m * y_partial
-    }
+    // fn compute_partial_commitment(
+    //     m: &Vec<Vec<Polynomial>>,
+    //     y_partial: &PolynomialVector,
+    // ) -> PolynomialVector {
+    //     // Simplified partial commitment computation
+    //     m * y_partial
+    // }
 
     /// Generate challenge polynomial (simplified version).
     /// TODO update it
+    // fn generate_partial_challenge(
+    //     &self,
+    //     mu: &[u8],
+    //     w_partial: &PolynomialVector,
+    // ) -> Polynomial {
+    //     // Simplified challenge generation
+    //     let mut hasher = Shake256::default();
+    //     hasher.update(mu);
+
+    //     // Hash w_partial
+    //     for i in 0..w_partial.len() {
+    //         if let Some(poly) = w_partial.get(i) {
+    //             for coeff in poly.coeffs() {
+    //                 hasher.update(&coeff.to_le_bytes());
+    //             }
+    //         }
+    //     }
+
+    //     let mut reader = hasher.finalize_xof();
+    //     let mut challenge_bytes = vec![0u8; 32];
+    //     reader.read(&mut challenge_bytes);
+
+    //     // Convert to polynomial with tau non-zero coefficients
+    //     self.sample_challenge(&challenge_bytes)
+    // }
+    // TODO remove w_1
     fn generate_partial_challenge(
         &self,
         mu: &[u8],
-        w_partial: &PolynomialVector,
+        _w1: &PolynomialVector,
     ) -> Polynomial {
-        // Simplified challenge generation
+         // Create seed
+        let mut seed = mu.to_vec();
+        seed.extend_from_slice(b"challenge");
+
+         // Initialize coefficients array
+        let mut coeffs = vec![0i32; N];
+
+        // Sample tau positions for ±1 coefficients
         let mut hasher = Shake256::default();
-        hasher.update(mu);
-
-        // Hash w_partial
-        for i in 0..w_partial.len() {
-            if let Some(poly) = w_partial.get(i) {
-                for coeff in poly.coeffs() {
-                    hasher.update(&coeff.to_le_bytes());
-                }
-            }
-        }
-
+        hasher.update(&seed);
         let mut reader = hasher.finalize_xof();
-        let mut challenge_bytes = vec![0u8; 32];
-        reader.read(&mut challenge_bytes);
+        let mut hash_output = vec![0u8; self.dilithium.config.tau * 2];
+        reader.read(&mut hash_output);
 
-        // Convert to polynomial with tau non-zero coefficients
-        self.sample_challenge(&challenge_bytes)
+         for i in 0..self.dilithium.config.tau {
+            let pos = (hash_output[i * 2] as usize) % N;
+            let sign = if hash_output[i * 2 + 1] % 2 == 0 { 1 } else { -1 };
+            coeffs[pos] = sign;
+        }
+        
+        Polynomial::new(coeffs)
     }
 
     /// Sample challenge polynomial
-    fn sample_challenge(&self, seed: &[u8]) -> Polynomial {
-        let mut rng = StdRng::from_seed({
-            let mut hasher = Sha256::new();
-            Digest::update(&mut hasher, seed);
-            let hash = hasher.finalize();
-            let mut seed_bytes = [0u8; 32];
-            seed_bytes.copy_from_slice(&hash);
-            seed_bytes
-        });
+    // fn sample_challenge(&self, seed: &[u8]) -> Polynomial {
+    //     let mut rng = StdRng::from_seed({
+    //         let mut hasher = Sha256::new();
+    //         Digest::update(&mut hasher, seed);
+    //         let hash = hasher.finalize();
+    //         let mut seed_bytes = [0u8; 32];
+    //         seed_bytes.copy_from_slice(&hash);
+    //         seed_bytes
+    //     });
 
-        let mut coeffs = vec![0i32; N];
-        let mut indices: Vec<usize> = (0..N).collect();
-        indices.shuffle(&mut rng);
+    //     let mut coeffs = vec![0i32; N];
+    //     let mut indices: Vec<usize> = (0..N).collect();
+    //     indices.shuffle(&mut rng);
 
-        // Set tau coefficients to ±1
-        for i in 0..self.config.tau {
-            coeffs[indices[i]] = if rng.random_bool(0.5) { 1 } else { -1 };
-        }
+    //     // Set tau coefficients to ±1
+    //     for i in 0..self.dilithium.config.tau {
+    //         coeffs[indices[i]] = if rng.random_bool(0.5) { 1 } else { -1 };
+    //     }
 
-        Polynomial::from(coeffs)
-    }
+    //     Polynomial::from(coeffs)
+    // }
 
     /// Reconstruct z vector from partial signatures using Lagrange interpolation.
     /// TODO update it
@@ -450,8 +512,8 @@ impl ThresholdSignature {
     ) -> Result<PolynomialVector> {
         // Simplified hint reconstruction
         // In practice, this would involve more complex coordination
-        let mut hint_polys = Vec::with_capacity(self.config.k);
-        for _ in 0..self.config.k {
+        let mut hint_polys = Vec::with_capacity(self.dilithium.config.k);
+        for _ in 0..self.dilithium.config.k {
             hint_polys.push(Polynomial::zero());
         }
 
@@ -534,12 +596,17 @@ impl ThresholdSignature {
     }
 
     /// Check if partial signature satisfies bound requirements.
-    // fn check_partial_bounds(&self, partial_sig: &PartialSignature) -> bool {
-    //     let gamma1 = self.dilithium.config.gamma1;
-    //     let beta = self.dilithium.config.beta;
+    fn check_partial_bounds(&self, partial_sig: &PartialSignature) -> bool {
+        let gamma1 = self.dilithium.config.gamma1;
+        let beta = self.dilithium.config.beta;
 
-    //     partial_sig.z_partial.norm_infinity() < gamma1 - beta
-    // }
+        let res =  partial_sig.z_partial.norm_infinity() < gamma1 - beta;
+        if !res {
+            println!("check_partial_bounds returned false");
+        }
+
+        res
+    }
 
     /// Get information about the threshold configuration.
     pub fn get_threshold_info(&self) -> HashMap<&'static str, usize> {

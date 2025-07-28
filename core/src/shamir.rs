@@ -52,6 +52,7 @@ impl Share {
     }
 }
 
+#[derive(Debug)]
 pub struct AdaptedShamirSSS {
     threshold: usize,
     participant_number: usize,
