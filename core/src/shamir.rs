@@ -114,7 +114,7 @@ impl AdaptedShamirSSS {
         let vector_length = active_shares[0].vector_length();
 
         let poly_indices: Vec<usize> = (0..vector_length).collect();
-        self.reconstruct_polynomials(active_shares, &poly_indices)
+        Self::reconstruct_polynomials(active_shares, &poly_indices)
     }
 
     #[cfg(test)]
@@ -127,12 +127,11 @@ impl AdaptedShamirSSS {
         self.validate_shares(shares)?;
 
         let active_shares = &shares[..self.threshold];
-        self.reconstruct_polynomials(active_shares, poly_indices)
+        Self::reconstruct_polynomials(active_shares, poly_indices)
     }
 
     /// Common logic for reconstructing polynomials
     fn reconstruct_polynomials(
-        &self,
         active_shares: &[ShamirShare],
         poly_indices: &[usize],
     ) -> Result<PolynomialVector> {
@@ -143,7 +142,7 @@ impl AdaptedShamirSSS {
 
             for (i, c) in coeffs.iter_mut().enumerate().take(N) {
                 let points =
-                    self.collect_points(active_shares, *poly_idx, i)?;
+                    Self::collect_points(active_shares, *poly_idx, i)?;
                 *c = lagrange_interpolation(&points, 0)?;
             }
 
@@ -175,7 +174,6 @@ impl AdaptedShamirSSS {
 
     /// Collect points for Lagrange interpolation
     fn collect_points(
-        &self,
         shares: &[ShamirShare],
         poly_idx: usize,
         coeff_idx: usize,
