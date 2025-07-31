@@ -183,7 +183,7 @@ impl Mul<PolynomialVector> for &Vec<Vec<Polynomial>> {
     }
 }
 
-impl Mul<&PolynomialVector> for &Vec<Vec<Polynomial>>{
+impl Mul<&PolynomialVector> for &Vec<Vec<Polynomial>> {
     type Output = PolynomialVector;
 
     fn mul(self, vector: &PolynomialVector) -> Self::Output {
@@ -195,18 +195,20 @@ pub fn matrix_vector_multiply(
     m: &[Vec<Polynomial>],
     v: &PolynomialVector,
 ) -> PolynomialVector {
-   // Check matrix is not empty
+    // Check matrix is not empty
     assert!(!m.is_empty(), "Matrix cannot be empty");
-    
+
     let cols = m[0].len();
-    
+
     // Check matrix columns match vector length
     assert_eq!(
-        cols, v.len(),
+        cols,
+        v.len(),
         "Matrix columns ({}) must match vector length ({})",
-        cols, v.len()
+        cols,
+        v.len()
     );
-    
+
     // Check all rows have same length (rectangular matrix)
     assert!(
         m.iter().all(|row| row.len() == cols),
