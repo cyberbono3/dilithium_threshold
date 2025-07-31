@@ -121,7 +121,6 @@ impl Dilithium {
     /// Generate a Dilithium key pair.
     /// self not needed
     pub fn keygen(self, seed: Option<&[u8]>) -> DilithiumKeyPair {
-        // TODO make standalone helper function
         let seed = match seed {
             Some(s) => s.to_vec(),
             None => {
