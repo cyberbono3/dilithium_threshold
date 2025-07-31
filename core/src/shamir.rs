@@ -114,7 +114,7 @@ impl AdaptedShamirSSS {
         let vector_length = active_shares[0].vector_length();
 
         let poly_indices: Vec<usize> = (0..vector_length).collect();
-        self.reconstruct_polynomials(active_shares, &poly_indices)
+        Self::reconstruct_polynomials(active_shares, &poly_indices)
     }
 
     #[cfg(test)]
@@ -127,12 +127,11 @@ impl AdaptedShamirSSS {
         self.validate_shares(shares)?;
 
         let active_shares = &shares[..self.threshold];
-        self.reconstruct_polynomials(active_shares, poly_indices)
+        Self::reconstruct_polynomials(active_shares, poly_indices)
     }
 
     /// Common logic for reconstructing polynomials
     fn reconstruct_polynomials(
-        &self,
         active_shares: &[ShamirShare],
         poly_indices: &[usize],
     ) -> Result<PolynomialVector> {
@@ -142,8 +141,7 @@ impl AdaptedShamirSSS {
             let mut coeffs = vec![0i32; N];
 
             for (i, c) in coeffs.iter_mut().enumerate().take(N) {
-                let points =
-                    self.collect_points(active_shares, *poly_idx, i)?;
+                let points = Self::collect_points(active_shares, *poly_idx, i)?;
                 *c = lagrange_interpolation(&points, 0)?;
             }
 
@@ -175,7 +173,6 @@ impl AdaptedShamirSSS {
 
     /// Collect points for Lagrange interpolation
     fn collect_points(
-        &self,
         shares: &[ShamirShare],
         poly_idx: usize,
         coeff_idx: usize,
@@ -234,85 +231,6 @@ impl AdaptedShamirSSS {
         for &coeff in coeffs {
             result = (result + (coeff as i64 * x_power)) % (Q as i64);
             x_power = (x_power * x as i64) % (Q as i64);
-        }
-
-        result as i32
-    }
-
-    // /// Perform Lagrange interpolation to find polynomial value at x
-    // fn lagrange_interpolation(
-    //     &self,
-    //     points: &[(i32, i32)],
-    //     x: i32,
-    // ) -> Result<i32> {
-    //     let mut result = 0i64;
-    //     let n = points.len();
-
-    //     for i in 0..n {
-    //         let (xi, yi) = points[i];
-    //         let mut numerator = 1i64;
-    //         let mut denominator = 1i64;
-
-    //         for j in 0..n {
-    //             if i != j {
-    //                 let xj = points[j].0;
-    //                 numerator =
-    //                     (numerator * (x - xj) as i64).rem_euclid(Q as i64);
-    //                 denominator =
-    //                     (denominator * (xi - xj) as i64).rem_euclid(Q as i64);
-    //             }
-    //         }
-
-    //         let denominator_inv = mod_inverse(denominator as i32)?;
-    //         //let denominator_inv = mod_pow(denominator as i32, Q - 2);
-
-    //         // Compute contribution using modular multiplication to avoid overflow
-    //         // contribution = (yi * numerator * denominator_inv) mod Q
-    //         let contribution =
-    //             self.mod_mul_three(yi, numerator as i32, denominator_inv);
-    //         result = (result + contribution as i64).rem_euclid(Q as i64);
-    //     }
-
-    //     Ok(result as i32)
-    // }
-
-    /// Multiply three numbers modulo Q without overflow
-    /// // TODO move to utils  and remove from here
-    fn mod_mul_three(&self, a: i32, b: i32, c: i32) -> i32 {
-        // First multiply a * b mod Q
-        let ab = self.mod_mul(a, b);
-        // Then multiply result by c mod Q
-        self.mod_mul(ab, c)
-    }
-
-    /// Multiply two numbers modulo Q without overflow
-    /// TODO move to utils
-    fn mod_mul(&self, a: i32, b: i32) -> i32 {
-        // Convert to i64 to prevent overflow during multiplication
-        let a = a as i64;
-        let b = b as i64;
-        let q = Q as i64;
-
-        // Ensure inputs are in range [0, Q)
-        let a = a.rem_euclid(q);
-        let b = b.rem_euclid(q);
-
-        // TODO add Montgomery multiplication
-        // For Q = 8380417, direct multiplication fits in i64
-        ((a * b) % q) as i32
-    }
-
-    /// Compute (base^exp) mod Q using fast exponentiation
-    fn mod_pow(&self, base: i32, mut exp: i32) -> i32 {
-        let mut result = 1i64;
-        let mut base = base as i64;
-
-        while exp > 0 {
-            if exp & 1 == 1 {
-                result = (result * base) % (Q as i64);
-            }
-            base = (base * base) % (Q as i64);
-            exp >>= 1;
         }
 
         result as i32
