@@ -141,8 +141,7 @@ impl AdaptedShamirSSS {
             let mut coeffs = vec![0i32; N];
 
             for (i, c) in coeffs.iter_mut().enumerate().take(N) {
-                let points =
-                    Self::collect_points(active_shares, *poly_idx, i)?;
+                let points = Self::collect_points(active_shares, *poly_idx, i)?;
                 *c = lagrange_interpolation(&points, 0)?;
             }
 
@@ -236,7 +235,6 @@ impl AdaptedShamirSSS {
 
         result as i32
     }
-
 }
 
 // #[cfg(test)]
