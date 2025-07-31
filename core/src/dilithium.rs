@@ -112,8 +112,7 @@ impl Dilithium {
     /// Initialize Dilithium with specified security level.
     pub fn new(security_level: usize) -> Self {
         let config = DilithiumConfig::new(security_level);
-
-        Dilithium {
+        Self {
             security_level,
             config,
         }
@@ -122,6 +121,7 @@ impl Dilithium {
     /// Generate a Dilithium key pair.
     /// self not needed
     pub fn keygen(self, seed: Option<&[u8]>) -> DilithiumKeyPair {
+        // TODO make standalone helper function
         let seed = match seed {
             Some(s) => s.to_vec(),
             None => {
@@ -168,7 +168,7 @@ impl Dilithium {
         // Hash message
         let mu = hash_message(message);
 
-        // Generate matrix A from public key (would need to be passed or stored)
+        // Generate matrix a from public key (would need to be passed or stored)
         // For now, we'll regenerate it (in practice, this should be optimized)
         let (rho, _, _) = Self::expand_seed(&randomness);
         let a = self.expand_a(&rho);
@@ -363,7 +363,7 @@ impl Dilithium {
         reader.read(&mut bytes);
 
         let mut coeffs = vec![0i32; N];
-        for i in 0..N {
+        coeffs.iter_mut().enumerate().take(N).for_each(|(i, c)| {
             let idx = i * 4;
             let val = u32::from_le_bytes([
                 bytes[idx],
@@ -371,10 +371,10 @@ impl Dilithium {
                 bytes[idx + 2],
                 bytes[idx + 3],
             ]);
-            let coeff = (val % (2 * self.config.gamma1 as u32 + 1)) as i32
-                - self.config.gamma1;
-            coeffs[i] = coeff.rem_euclid(Q);
-        }
+            *c = ((val % (2 * self.config.gamma1 as u32 + 1)) as i32
+                - self.config.gamma1)
+                .rem_euclid(Q);
+        });
 
         coeffs
     }
@@ -473,17 +473,6 @@ impl Dilithium {
 
     /// Check if signature components satisfy bound requirements.
     fn check_signature_bounds(&self, signature: &DilithiumSignature) -> bool {
-        // // Check z bounds
-        // if !check_z_bounds(&signature.z, self.config.gamma1, self.config.beta) {
-        //     return false;
-        // }
-
-        // let (valid, non_zero_count) = self.check_c_bounds(&signature.c);
-        // if valid {
-        //     non_zero_count <= self.config.tau
-        // } else {
-        //     false
-        // }
         signature.z.norm_infinity() < self.config.gamma1 - self.config.beta
             && signature.c.norm_infinity() <= self.config.tau as i32
     }

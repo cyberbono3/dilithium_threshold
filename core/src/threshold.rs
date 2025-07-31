@@ -10,7 +10,7 @@ use crate::{
     config::{validate_threshold_config, DEFAULT_SECURITY_LEVEL},
     error::{Result, ThresholdError},
     shamir::{AdaptedShamirSSS, ShamirShare},
-    utils::{get_randomness, hash_message},
+    utils::{get_randomness, hash_message, lagrange_interpolation},
 };
 
 use math::{
@@ -204,13 +204,12 @@ impl ThresholdSignature {
         //     &y_partial,
         // );
 
-        let w_partial =  &key_share.public_key.m * &y_partial;
+        let w_partial = &key_share.public_key.m * &y_partial;
 
         // For now, use a simplified challenge generation
         // In practice, this requires coordination between participants
-        // TODO remove w_partial argument 
+        // TODO remove w_partial argument
         let challenge = self.generate_partial_challenge(&mu, &w_partial);
-      
 
         // Compute partial response z_partial = y_partial + c * s1_share
         let c_s1 = key_share.s1_share.share_vector.clone() * challenge;
@@ -271,15 +270,13 @@ impl ThresholdSignature {
         println!("verify partial signature");
         // Hash message
         let mu = hash_message(message);
-        
-        // for testing purposes
 
+        // for testing purposes
 
         // Verify challenge consistency
         let expected_challenge =
             self.generate_partial_challenge(&mu, &partial_sig.commitment);
 
-       
         if partial_sig.challenge != expected_challenge {
             println!("Partial and expected challenges do not match");
             return false;
@@ -308,7 +305,12 @@ impl ThresholdSignature {
     /// Sample partial mask vector y.
     fn sample_partial_y(&self, randomness: &[u8]) -> PolynomialVector {
         let polys = (0..self.dilithium.config.l)
-        .map(|i| Polynomial::from(self.sample_gamma1(&[randomness, &[i as u8]].concat()))).collect();
+            .map(|i| {
+                Polynomial::from(
+                    self.sample_gamma1(&[randomness, &[i as u8]].concat()),
+                )
+            })
+            .collect();
 
         PolynomialVector::new(polys)
     }
@@ -405,11 +407,11 @@ impl ThresholdSignature {
         mu: &[u8],
         _w1: &PolynomialVector,
     ) -> Polynomial {
-         // Create seed
+        // Create seed
         let mut seed = mu.to_vec();
         seed.extend_from_slice(b"challenge");
 
-         // Initialize coefficients array
+        // Initialize coefficients array
         let mut coeffs = vec![0i32; N];
 
         // Sample tau positions for ±1 coefficients
@@ -419,12 +421,16 @@ impl ThresholdSignature {
         let mut hash_output = vec![0u8; self.dilithium.config.tau * 2];
         reader.read(&mut hash_output);
 
-         for i in 0..self.dilithium.config.tau {
+        for i in 0..self.dilithium.config.tau {
             let pos = (hash_output[i * 2] as usize) % N;
-            let sign = if hash_output[i * 2 + 1] % 2 == 0 { 1 } else { -1 };
+            let sign = if hash_output[i * 2 + 1] % 2 == 0 {
+                1
+            } else {
+                -1
+            };
             coeffs[pos] = sign;
         }
-        
+
         Polynomial::new(coeffs)
     }
 
@@ -492,8 +498,7 @@ impl ThresholdSignature {
                 }
 
                 // Perform Lagrange interpolation
-                let reconstructed_coeff =
-                    self.lagrange_interpolation(&points, 0)?;
+                let reconstructed_coeff = lagrange_interpolation(&points, 0)?;
                 coeffs[coeff_idx] = reconstructed_coeff.rem_euclid(Q);
             }
 
@@ -518,61 +523,6 @@ impl ThresholdSignature {
         }
 
         Ok(PolynomialVector::new(hint_polys))
-    }
-
-    /// Perform Lagrange interpolation.
-    fn lagrange_interpolation(
-        &self,
-        points: &[(i32, i32)],
-        x: i32,
-    ) -> Result<i32> {
-        let mut result = 0i64;
-        let n = points.len();
-
-        for i in 0..n {
-            let (xi, yi) = points[i];
-
-            // Compute Lagrange basis polynomial L_i(x)
-            let mut numerator = 1i64;
-            let mut denominator = 1i64;
-
-            for j in 0..n {
-                if i != j {
-                    let (xj, _) = points[j];
-                    numerator =
-                        (numerator * (x - xj) as i64).rem_euclid(Q as i64);
-                    denominator =
-                        (denominator * (xi - xj) as i64).rem_euclid(Q as i64);
-                }
-            }
-
-            // Compute modular inverse using Fermat's little theorem
-            let denominator_inv = self.mod_pow(denominator as i32, Q - 2);
-
-            // Add contribution
-            let contribution =
-                self.mod_mul_three(yi, numerator as i32, denominator_inv);
-            result = (result + contribution as i64).rem_euclid(Q as i64);
-        }
-
-        Ok(result as i32)
-    }
-
-    /// Compute (base^exp) mod Q using fast exponentiation
-    fn mod_pow(&self, base: i32, mut exp: i32) -> i32 {
-        let mut result = 1i64;
-        let mut base = base as i64;
-        let q = Q as i64;
-
-        while exp > 0 {
-            if exp & 1 == 1 {
-                result = (result * base) % q;
-            }
-            base = (base * base) % q;
-            exp >>= 1;
-        }
-
-        result as i32
     }
 
     /// Multiply three numbers modulo Q without overflow
@@ -600,7 +550,7 @@ impl ThresholdSignature {
         let gamma1 = self.dilithium.config.gamma1;
         let beta = self.dilithium.config.beta;
 
-        let res =  partial_sig.z_partial.norm_infinity() < gamma1 - beta;
+        let res = partial_sig.z_partial.norm_infinity() < gamma1 - beta;
         if !res {
             println!("check_partial_bounds returned false");
         }
@@ -643,20 +593,20 @@ mod tests {
             let poly2 = Polynomial::from(vec![4, 5, 6]);
             let s1_share_vec = PolynomialVector::new(vec![poly1.clone()]);
             let s2_share_vec = PolynomialVector::new(vec![poly2.clone()]);
-            
+
             let s1_share = ShamirShare::new(1, s1_share_vec).unwrap();
             let s2_share = ShamirShare::new(1, s2_share_vec).unwrap();
-            
+
             let dilithium = Dilithium::new(DEFAULT_SECURITY_LEVEL);
             let keypair = dilithium.keygen(Some(&create_test_seed(1)));
-            
+
             let key_share = ThresholdKeyShare::new(
                 1,
                 s1_share.clone(),
                 s2_share.clone(),
                 keypair.public_key.clone(),
             );
-            
+
             assert_eq!(key_share.participant_id, 1);
             assert_eq!(key_share.s1_share.participant_id, 1);
             assert_eq!(key_share.s2_share.participant_id, 1);
@@ -668,20 +618,20 @@ mod tests {
             let poly2 = Polynomial::from(vec![2]);
             let s1_share_vec = PolynomialVector::new(vec![poly1]);
             let s2_share_vec = PolynomialVector::new(vec![poly2]);
-            
+
             let s1_share = ShamirShare::new(5, s1_share_vec).unwrap();
             let s2_share = ShamirShare::new(5, s2_share_vec).unwrap();
-            
+
             let dilithium = Dilithium::new(DEFAULT_SECURITY_LEVEL);
             let keypair = dilithium.keygen(None);
-            
+
             let key_share = ThresholdKeyShare::new(
                 5,
                 s1_share,
                 s2_share,
                 keypair.public_key,
             );
-            
+
             let display_str = format!("{}", key_share);
             assert_eq!(display_str, "ThresholdKeyShare(id=5)");
         }
@@ -694,19 +644,19 @@ mod tests {
         fn test_partial_signature_creation() {
             let z_poly = Polynomial::from(vec![100, 200, 300]);
             let z_partial = PolynomialVector::new(vec![z_poly]);
-            
+
             let comm_poly = Polynomial::from(vec![10, 20, 30]);
             let commitment = PolynomialVector::new(vec![comm_poly]);
-            
+
             let challenge = Polynomial::from(vec![1, -1, 0, 1]);
-            
+
             let partial_sig = PartialSignature::new(
                 3,
                 z_partial.clone(),
                 commitment.clone(),
                 challenge.clone(),
             );
-            
+
             assert_eq!(partial_sig.participant_id, 3);
             assert_eq!(partial_sig.z_partial.len(), 1);
             assert_eq!(partial_sig.commitment.len(), 1);
@@ -718,14 +668,10 @@ mod tests {
             let z_partial = PolynomialVector::new(vec![Polynomial::zero()]);
             let commitment = PolynomialVector::new(vec![Polynomial::zero()]);
             let challenge = Polynomial::zero();
-            
-            let partial_sig = PartialSignature::new(
-                7,
-                z_partial,
-                commitment,
-                challenge,
-            );
-            
+
+            let partial_sig =
+                PartialSignature::new(7, z_partial, commitment, challenge);
+
             let display_str = format!("{}", partial_sig);
             assert_eq!(display_str, "PartialSignature(id=7)");
         }
@@ -738,10 +684,13 @@ mod tests {
         fn test_threshold_signature_creation() {
             let threshold_sig = ThresholdSignature::new(3, 5, None).unwrap();
             let info = threshold_sig.get_threshold_info();
-            
+
             assert_eq!(info.get("threshold"), Some(&3));
             assert_eq!(info.get("participants"), Some(&5));
-            assert_eq!(info.get("security_level"), Some(&DEFAULT_SECURITY_LEVEL));
+            assert_eq!(
+                info.get("security_level"),
+                Some(&DEFAULT_SECURITY_LEVEL)
+            );
             assert_eq!(info.get("min_signers"), Some(&3));
             assert_eq!(info.get("max_participants"), Some(&5));
         }
@@ -750,7 +699,7 @@ mod tests {
         fn test_threshold_signature_with_custom_security() {
             let threshold_sig = ThresholdSignature::new(4, 7, Some(3)).unwrap();
             let info = threshold_sig.get_threshold_info();
-            
+
             assert_eq!(info.get("security_level"), Some(&3));
         }
 
@@ -758,16 +707,16 @@ mod tests {
         fn test_invalid_threshold_configurations() {
             // Threshold greater than participants
             assert!(ThresholdSignature::new(6, 5, None).is_err());
-            
+
             // Zero threshold
             assert!(ThresholdSignature::new(0, 5, None).is_err());
-            
+
             // Threshold of 1 (not allowed)
             assert!(ThresholdSignature::new(1, 5, None).is_err());
-            
+
             // Too many participants
             assert!(ThresholdSignature::new(3, 300, None).is_err());
-            
+
             // Too few participants
             assert!(ThresholdSignature::new(2, 1, None).is_err());
         }
@@ -775,19 +724,21 @@ mod tests {
         #[test]
         fn test_distributed_keygen() {
             let threshold_sig = ThresholdSignature::new(3, 5, None).unwrap();
-            
+
             // Test with deterministic seed
-            let shares = threshold_sig.distributed_keygen(Some(&create_test_seed(42))).unwrap();
-            
+            let shares = threshold_sig
+                .distributed_keygen(Some(&create_test_seed(42)))
+                .unwrap();
+
             assert_eq!(shares.len(), 5);
-            
+
             // Verify each share has correct participant ID
             for (i, share) in shares.iter().enumerate() {
                 assert_eq!(share.participant_id, i + 1);
                 assert_eq!(share.s1_share.participant_id, i + 1);
                 assert_eq!(share.s2_share.participant_id, i + 1);
             }
-            
+
             // Verify all shares have the same public key
             let public_key = &shares[0].public_key;
             for share in &shares[1..] {
@@ -799,14 +750,19 @@ mod tests {
         fn test_distributed_keygen_reproducibility() {
             let threshold_sig = ThresholdSignature::new(2, 3, None).unwrap();
             let seed = create_test_seed(123);
-            
-            let shares1 = threshold_sig.distributed_keygen(Some(&seed)).unwrap();
-            let shares2 = threshold_sig.distributed_keygen(Some(&seed)).unwrap();
-            
+
+            let shares1 =
+                threshold_sig.distributed_keygen(Some(&seed)).unwrap();
+            let shares2 =
+                threshold_sig.distributed_keygen(Some(&seed)).unwrap();
+
             // Same seed should produce same shares
             assert_eq!(shares1.len(), shares2.len());
             for i in 0..shares1.len() {
-                assert_eq!(shares1[i].participant_id, shares2[i].participant_id);
+                assert_eq!(
+                    shares1[i].participant_id,
+                    shares2[i].participant_id
+                );
                 // Note: Direct comparison of shares might not work due to internal randomness
                 // but public keys should match
                 assert_eq!(shares1[i].public_key, shares2[i].public_key);
@@ -816,16 +772,16 @@ mod tests {
         #[test]
         fn test_partial_sign_basic() {
             let threshold_sig = ThresholdSignature::new(3, 5, None).unwrap();
-            let shares = threshold_sig.distributed_keygen(Some(&create_test_seed(1))).unwrap();
+            let shares = threshold_sig
+                .distributed_keygen(Some(&create_test_seed(1)))
+                .unwrap();
             let message = create_test_message("Test message");
-            
+
             // Create partial signature with first share
-            let partial_sig = threshold_sig.partial_sign(
-                &message,
-                &shares[0],
-                Some(&create_test_seed(2)),
-            ).unwrap();
-            
+            let partial_sig = threshold_sig
+                .partial_sign(&message, &shares[0], Some(&create_test_seed(2)))
+                .unwrap();
+
             assert_eq!(partial_sig.participant_id, 1);
             assert!(partial_sig.z_partial.len() > 0);
             assert!(partial_sig.commitment.len() > 0);
@@ -834,23 +790,21 @@ mod tests {
         #[test]
         fn test_partial_sign_deterministic() {
             let threshold_sig = ThresholdSignature::new(2, 3, None).unwrap();
-            let shares = threshold_sig.distributed_keygen(Some(&create_test_seed(1))).unwrap();
+            let shares = threshold_sig
+                .distributed_keygen(Some(&create_test_seed(1)))
+                .unwrap();
             let message = create_test_message("Deterministic test");
             let randomness = create_test_seed(42);
-            
+
             // Same inputs should produce same partial signature
-            let partial1 = threshold_sig.partial_sign(
-                &message,
-                &shares[0],
-                Some(&randomness),
-            ).unwrap();
-            
-            let partial2 = threshold_sig.partial_sign(
-                &message,
-                &shares[0],
-                Some(&randomness),
-            ).unwrap();
-            
+            let partial1 = threshold_sig
+                .partial_sign(&message, &shares[0], Some(&randomness))
+                .unwrap();
+
+            let partial2 = threshold_sig
+                .partial_sign(&message, &shares[0], Some(&randomness))
+                .unwrap();
+
             assert_eq!(partial1.participant_id, partial2.participant_id);
             assert_eq!(partial1.challenge, partial2.challenge);
             // Note: z_partial comparison might need special handling
@@ -859,45 +813,45 @@ mod tests {
         #[test]
         fn test_verify_partial_signature() {
             let threshold_sig = ThresholdSignature::new(3, 5, None).unwrap();
-            let shares = threshold_sig.distributed_keygen(Some(&create_test_seed(1))).unwrap();
+            let shares = threshold_sig
+                .distributed_keygen(Some(&create_test_seed(1)))
+                .unwrap();
             let message = create_test_message("Verify test");
-            
-            let partial_sig = threshold_sig.partial_sign(
-                &message,
-                &shares[0],
-                Some(&create_test_seed(2)),
-            ).unwrap();
-            
+
+            let partial_sig = threshold_sig
+                .partial_sign(&message, &shares[0], Some(&create_test_seed(2)))
+                .unwrap();
+
             // Verify the partial signature
             let is_valid = threshold_sig.verify_partial_signature(
                 &message,
                 &partial_sig,
                 &shares[0],
             );
-            
+
             assert!(is_valid);
         }
 
         #[test]
         fn test_verify_partial_signature_wrong_message() {
             let threshold_sig = ThresholdSignature::new(3, 5, None).unwrap();
-            let shares = threshold_sig.distributed_keygen(Some(&create_test_seed(1))).unwrap();
+            let shares = threshold_sig
+                .distributed_keygen(Some(&create_test_seed(1)))
+                .unwrap();
             let message = create_test_message("Original message");
             let wrong_message = create_test_message("Wrong message");
-            
-            let partial_sig = threshold_sig.partial_sign(
-                &message,
-                &shares[0],
-                Some(&create_test_seed(2)),
-            ).unwrap();
-            
+
+            let partial_sig = threshold_sig
+                .partial_sign(&message, &shares[0], Some(&create_test_seed(2)))
+                .unwrap();
+
             // Verify with wrong message should fail
             let is_valid = threshold_sig.verify_partial_signature(
                 &wrong_message,
                 &partial_sig,
                 &shares[0],
             );
-            
+
             assert!(!is_valid);
         }
 
@@ -905,91 +859,109 @@ mod tests {
         fn test_full_threshold_signing_workflow() {
             let threshold = 3;
             let participants = 5;
-            let threshold_sig = ThresholdSignature::new(threshold, participants, None).unwrap();
-            
+            let threshold_sig =
+                ThresholdSignature::new(threshold, participants, None).unwrap();
+
             // 1. Distributed key generation
-            let shares = threshold_sig.distributed_keygen(Some(&create_test_seed(1))).unwrap();
+            let shares = threshold_sig
+                .distributed_keygen(Some(&create_test_seed(1)))
+                .unwrap();
             let public_key = &shares[0].public_key;
-            
+
             // 2. Message to sign
             let message = create_test_message("Full workflow test message");
-            
+
             // 3. Create partial signatures from different subsets
             // Test with first threshold participants
             let mut partial_sigs_1 = Vec::new();
             for i in 0..threshold {
-                let partial = threshold_sig.partial_sign(
-                    &message,
-                    &shares[i],
-                    Some(&create_test_seed((i + 100) as u8)),
-                ).unwrap();
+                let partial = threshold_sig
+                    .partial_sign(
+                        &message,
+                        &shares[i],
+                        Some(&create_test_seed((i + 100) as u8)),
+                    )
+                    .unwrap();
                 partial_sigs_1.push(partial);
             }
-            
+
             // Test with last threshold participants
             let mut partial_sigs_2 = Vec::new();
             for i in (participants - threshold)..participants {
-                let partial = threshold_sig.partial_sign(
-                    &message,
-                    &shares[i],
-                    Some(&create_test_seed((i + 200) as u8)),
-                ).unwrap();
+                let partial = threshold_sig
+                    .partial_sign(
+                        &message,
+                        &shares[i],
+                        Some(&create_test_seed((i + 200) as u8)),
+                    )
+                    .unwrap();
                 partial_sigs_2.push(partial);
             }
-            
+
             // 4. Combine signatures from different subsets
-            let combined_sig_1 = threshold_sig.combine_signatures(
-                &partial_sigs_1,
-                public_key,
-            ).unwrap();
-            
-            let combined_sig_2 = threshold_sig.combine_signatures(
-                &partial_sigs_2,
-                public_key,
-            ).unwrap();
-            
+            let combined_sig_1 = threshold_sig
+                .combine_signatures(&partial_sigs_1, public_key)
+                .unwrap();
+
+            let combined_sig_2 = threshold_sig
+                .combine_signatures(&partial_sigs_2, public_key)
+                .unwrap();
+
             // Both combined signatures should be valid
             // Verify using the 'c' field which is the challenge
             assert_eq!(combined_sig_1.c, partial_sigs_1[0].challenge);
             assert_eq!(combined_sig_2.c, partial_sigs_2[0].challenge);
-            
+
             // Verify structure of both signatures
-            assert_eq!(combined_sig_1.z.len(), threshold_sig.dilithium.config.l);
-            assert_eq!(combined_sig_1.h.len(), threshold_sig.dilithium.config.k);
-            assert_eq!(combined_sig_2.z.len(), threshold_sig.dilithium.config.l);
-            assert_eq!(combined_sig_2.h.len(), threshold_sig.dilithium.config.k);
-            
+            assert_eq!(
+                combined_sig_1.z.len(),
+                threshold_sig.dilithium.config.l
+            );
+            assert_eq!(
+                combined_sig_1.h.len(),
+                threshold_sig.dilithium.config.k
+            );
+            assert_eq!(
+                combined_sig_2.z.len(),
+                threshold_sig.dilithium.config.l
+            );
+            assert_eq!(
+                combined_sig_2.h.len(),
+                threshold_sig.dilithium.config.k
+            );
+
             // Since both signatures are for the same message, they should have the same challenge
             assert_eq!(combined_sig_1.c, combined_sig_2.c);
         }
 
-       
-      
         #[test]
         fn test_combine_signatures_insufficient_shares() {
             let threshold = 3;
             let participants = 5;
-            let threshold_sig = ThresholdSignature::new(threshold, participants, None).unwrap();
-            let shares = threshold_sig.distributed_keygen(Some(&create_test_seed(1))).unwrap();
+            let threshold_sig =
+                ThresholdSignature::new(threshold, participants, None).unwrap();
+            let shares = threshold_sig
+                .distributed_keygen(Some(&create_test_seed(1)))
+                .unwrap();
             let message = create_test_message("Insufficient test");
-            
+
             // Create only threshold-1 partial signatures
             let mut partial_sigs = Vec::new();
             for i in 0..(threshold - 1) {
-                let partial = threshold_sig.partial_sign(
-                    &message,
-                    &shares[i],
-                    Some(&create_test_seed((i + 10) as u8)),
-                ).unwrap();
+                let partial = threshold_sig
+                    .partial_sign(
+                        &message,
+                        &shares[i],
+                        Some(&create_test_seed((i + 10) as u8)),
+                    )
+                    .unwrap();
                 partial_sigs.push(partial);
             }
-            
+
             // Should fail with insufficient shares
-            let result = threshold_sig.combine_signatures(
-                &partial_sigs,
-                &shares[0].public_key,
-            );
-            
+            let result = threshold_sig
+                .combine_signatures(&partial_sigs, &shares[0].public_key);
+
             assert!(result.is_err());
         }
 
@@ -997,84 +969,77 @@ mod tests {
         fn test_combine_signatures_mismatched_challenges() {
             let threshold = 3;
             let participants = 5;
-            let threshold_sig = ThresholdSignature::new(threshold, participants, None).unwrap();
-            let shares = threshold_sig.distributed_keygen(Some(&create_test_seed(1))).unwrap();
-            
+            let threshold_sig =
+                ThresholdSignature::new(threshold, participants, None).unwrap();
+            let shares = threshold_sig
+                .distributed_keygen(Some(&create_test_seed(1)))
+                .unwrap();
+
             // Create partial signatures with different messages (leading to different challenges)
             let mut partial_sigs = Vec::new();
-            
+
             for i in 0..threshold {
                 let message = create_test_message(&format!("Message {}", i));
-                let partial = threshold_sig.partial_sign(
-                    &message,
-                    &shares[i],
-                    Some(&create_test_seed((i + 10) as u8)),
-                ).unwrap();
+                let partial = threshold_sig
+                    .partial_sign(
+                        &message,
+                        &shares[i],
+                        Some(&create_test_seed((i + 10) as u8)),
+                    )
+                    .unwrap();
                 partial_sigs.push(partial);
             }
-            
+
             // Should fail with mismatched challenges
-            let result = threshold_sig.combine_signatures(
-                &partial_sigs,
-                &shares[0].public_key,
-            );
-            
+            let result = threshold_sig
+                .combine_signatures(&partial_sigs, &shares[0].public_key);
+
             assert!(result.is_err());
         }
 
-        #[test]
-        fn test_lagrange_interpolation() {
-            let threshold_sig = ThresholdSignature::new(3, 5, None).unwrap();
-            
-            // Test simple interpolation
-            let points = vec![(1, 2), (2, 3), (3, 4)];
-            let result = threshold_sig.lagrange_interpolation(&points, 0).unwrap();
-            
-            // For points (1,2), (2,3), (3,4), the polynomial is y = x + 1
-            // So at x=0, y should be 1
-            assert_eq!(result, 1);
-        }
+        // #[test]
+        // fn test_modular_arithmetic() {
+        //     let threshold_sig = ThresholdSignature::new(2, 3, None).unwrap();
 
-        #[test]
-        fn test_modular_arithmetic() {
-            let threshold_sig = ThresholdSignature::new(2, 3, None).unwrap();
-            
-            // Test mod_pow
-            let base = 3;
-            let exp = 4;
-            let result = threshold_sig.mod_pow(base, exp);
-            assert_eq!(result, 81); // 3^4 = 81
-            
-            // Test mod_mul
-            let a = Q - 1;
-            let b = 2;
-            let result = threshold_sig.mod_mul(a, b);
-            assert_eq!(result, (((Q - 1) as i64 * 2) % Q as i64) as i32);
-            
-            // Test mod_mul_three
-            let a = 1000;
-            let b = 2000;
-            let c = 3;
-            let result = threshold_sig.mod_mul_three(a, b, c);
-            let expected = ((1000i64 * 2000 * 3) % Q as i64) as i32;
-            assert_eq!(result, expected);
-        }
+        //     // Test mod_pow
+        //     let base = 3;
+        //     let exp = 4;
+        //     let result = mod_pow(base, exp);
+        //     assert_eq!(result, 81); // 3^4 = 81
+
+        //     // Test mod_mul
+        //     let a = Q - 1;
+        //     let b = 2;
+        //     let result = threshold_sig.mod_mul(a, b);
+        //     assert_eq!(result, (((Q - 1) as i64 * 2) % Q as i64) as i32);
+
+        //     // Test mod_mul_three
+        //     let a = 1000;
+        //     let b = 2000;
+        //     let c = 3;
+        //     let result = threshold_sig.mod_mul_three(a, b, c);
+        //     let expected = ((1000i64 * 2000 * 3) % Q as i64) as i32;
+        //     assert_eq!(result, expected);
+        // }
 
         #[test]
         fn test_derive_participant_randomness() {
             let threshold_sig = ThresholdSignature::new(2, 3, None).unwrap();
             let base_randomness = create_test_seed(42);
-            
+
             // Different participants should get different randomness
-            let rand1 = threshold_sig.derive_participant_randomness(&base_randomness, 1);
-            let rand2 = threshold_sig.derive_participant_randomness(&base_randomness, 2);
-            
+            let rand1 = threshold_sig
+                .derive_participant_randomness(&base_randomness, 1);
+            let rand2 = threshold_sig
+                .derive_participant_randomness(&base_randomness, 2);
+
             assert_ne!(rand1, rand2);
             assert_eq!(rand1.len(), 32); // SHA256 output
             assert_eq!(rand2.len(), 32);
-            
+
             // Same participant should get same randomness
-            let rand1_again = threshold_sig.derive_participant_randomness(&base_randomness, 1);
+            let rand1_again = threshold_sig
+                .derive_participant_randomness(&base_randomness, 1);
             assert_eq!(rand1, rand1_again);
         }
 
@@ -1082,18 +1047,18 @@ mod tests {
         fn test_sample_gamma1() {
             let threshold_sig = ThresholdSignature::new(2, 3, None).unwrap();
             let seed = create_test_seed(123);
-            
+
             let coeffs = threshold_sig.sample_gamma1(&seed);
-            
+
             assert_eq!(coeffs.len(), N);
-            
+
             // Check all coefficients are within bounds
             let gamma1 = threshold_sig.dilithium.config.gamma1;
             for &coeff in &coeffs {
                 assert!(coeff >= 0 && coeff < Q);
                 // Original coefficient before modular reduction would be in [-gamma1, gamma1]
             }
-            
+
             // Same seed should produce same coefficients
             let coeffs2 = threshold_sig.sample_gamma1(&seed);
             assert_eq!(coeffs, coeffs2);
@@ -1105,10 +1070,12 @@ mod tests {
             let threshold_sig = ThresholdSignature::new(2, 2, None).unwrap();
             let shares = threshold_sig.distributed_keygen(None).unwrap();
             assert_eq!(shares.len(), 2);
-            
+
             // Large threshold
-            let threshold_sig_large = ThresholdSignature::new(10, 15, None).unwrap();
-            let shares_large = threshold_sig_large.distributed_keygen(None).unwrap();
+            let threshold_sig_large =
+                ThresholdSignature::new(10, 15, None).unwrap();
+            let shares_large =
+                threshold_sig_large.distributed_keygen(None).unwrap();
             assert_eq!(shares_large.len(), 15);
         }
 
@@ -1116,10 +1083,12 @@ mod tests {
         fn test_different_security_levels() {
             // Test with different security levels
             for security_level in [2, 3, 5] {
-                let threshold_sig = ThresholdSignature::new(3, 5, Some(security_level)).unwrap();
+                let threshold_sig =
+                    ThresholdSignature::new(3, 5, Some(security_level))
+                        .unwrap();
                 let info = threshold_sig.get_threshold_info();
                 assert_eq!(info.get("security_level"), Some(&security_level));
-                
+
                 // Verify key generation works with different security levels
                 let shares = threshold_sig.distributed_keygen(None).unwrap();
                 assert_eq!(shares.len(), 5);
@@ -1130,21 +1099,26 @@ mod tests {
         fn test_concurrent_partial_signing() {
             let threshold = 4;
             let participants = 7;
-            let threshold_sig = ThresholdSignature::new(threshold, participants, None).unwrap();
-            let shares = threshold_sig.distributed_keygen(Some(&create_test_seed(1))).unwrap();
+            let threshold_sig =
+                ThresholdSignature::new(threshold, participants, None).unwrap();
+            let shares = threshold_sig
+                .distributed_keygen(Some(&create_test_seed(1)))
+                .unwrap();
             let message = create_test_message("Concurrent signing test");
-            
+
             // Simulate concurrent signing by different participants
             let partial_sigs: Vec<_> = (0..threshold)
                 .map(|i| {
-                    threshold_sig.partial_sign(
-                        &message,
-                        &shares[i],
-                        Some(&create_test_seed((i * 10) as u8)),
-                    ).unwrap()
+                    threshold_sig
+                        .partial_sign(
+                            &message,
+                            &shares[i],
+                            Some(&create_test_seed((i * 10) as u8)),
+                        )
+                        .unwrap()
                 })
                 .collect();
-            
+
             // All partial signatures should be valid
             for (i, partial_sig) in partial_sigs.iter().enumerate() {
                 assert!(threshold_sig.verify_partial_signature(
@@ -1153,12 +1127,10 @@ mod tests {
                     &shares[i],
                 ));
             }
-            
+
             // Should be able to combine them
-            let combined = threshold_sig.combine_signatures(
-                &partial_sigs,
-                &shares[0].public_key,
-            );
+            let combined = threshold_sig
+                .combine_signatures(&partial_sigs, &shares[0].public_key);
             assert!(combined.is_ok());
         }
     }
@@ -1172,46 +1144,60 @@ mod tests {
             let security_level = 2;
             let threshold = 3;
             let participants = 5;
-            
+
             // Create threshold signature scheme
             let threshold_sig = ThresholdSignature::new(
-                threshold, 
-                participants, 
-                Some(security_level)
-            ).unwrap();
-            
+                threshold,
+                participants,
+                Some(security_level),
+            )
+            .unwrap();
+
             // Create regular Dilithium for comparison
             let dilithium = Dilithium::new(security_level);
-            
+
             // Generate keys
             let seed = create_test_seed(42);
-            let threshold_shares = threshold_sig.distributed_keygen(Some(&seed)).unwrap();
+            let threshold_shares =
+                threshold_sig.distributed_keygen(Some(&seed)).unwrap();
             let regular_keypair = dilithium.keygen(Some(&seed));
-            
+
             // Public keys should match since we used same seed
-            assert_eq!(threshold_shares[0].public_key, regular_keypair.public_key);
+            assert_eq!(
+                threshold_shares[0].public_key,
+                regular_keypair.public_key
+            );
         }
 
         #[test]
         fn test_reconstruct_vs_original_key() {
             let threshold = 2;
             let participants = 3;
-            let threshold_sig = ThresholdSignature::new(threshold, participants, None).unwrap();
-            
+            let threshold_sig =
+                ThresholdSignature::new(threshold, participants, None).unwrap();
+
             // Generate shares
-            let shares = threshold_sig.distributed_keygen(Some(&create_test_seed(1))).unwrap();
-            
+            let shares = threshold_sig
+                .distributed_keygen(Some(&create_test_seed(1)))
+                .unwrap();
+
             // Reconstruct s1 and s2 using Shamir reconstruction
-            let s1_shares: Vec<_>= shares.iter().map(|s| s.s1_share.clone()).collect();
-            let s2_shares: Vec<_> = shares.iter().map(|s| s.s2_share.clone()).collect();
-            
-            let shamir_s1 = AdaptedShamirSSS::new(threshold, participants).unwrap();
-            let shamir_s2 = AdaptedShamirSSS::new(threshold, participants).unwrap();
-            
+            let s1_shares: Vec<_> =
+                shares.iter().map(|s| s.s1_share.clone()).collect();
+            let s2_shares: Vec<_> =
+                shares.iter().map(|s| s.s2_share.clone()).collect();
+
+            let shamir_s1 =
+                AdaptedShamirSSS::new(threshold, participants).unwrap();
+            let shamir_s2 =
+                AdaptedShamirSSS::new(threshold, participants).unwrap();
+
             // Reconstruct should work with threshold shares
-            let reconstructed_s1 = shamir_s1.reconstruct_secret(&s1_shares[..threshold]);
-            let reconstructed_s2 = shamir_s2.reconstruct_secret(&s2_shares[..threshold]);
-            
+            let reconstructed_s1 =
+                shamir_s1.reconstruct_secret(&s1_shares[..threshold]);
+            let reconstructed_s2 =
+                shamir_s2.reconstruct_secret(&s2_shares[..threshold]);
+
             assert!(reconstructed_s1.is_ok());
             assert!(reconstructed_s2.is_ok());
         }

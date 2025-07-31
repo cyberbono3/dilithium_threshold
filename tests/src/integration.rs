@@ -28,7 +28,7 @@ mod integration_tests {
         let key_shares = ts
             .distributed_keygen(None)
             .expect("Distributed keygen failed");
-       // println!("key_shares: {:?}", key_shares);
+        // println!("key_shares: {:?}", key_shares);
         println!("key_shares_len: {:?}", key_shares.len());
         assert_eq!(key_shares.len(), participants);
 

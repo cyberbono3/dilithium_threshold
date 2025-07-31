@@ -302,7 +302,7 @@ mod prop_tests {
             let mut coeffs = vec![0; N + 1];
             coeffs[0] = 5;
             coeffs[N] = 3; // This represents 3*X^N = -3
-            
+
             let poly = Polynomial::new(coeffs);
             assert_eq!(poly.coeffs[0], 2); // 5 - 3 = 2
             assert_eq!(poly.coeffs[1], 0);
@@ -315,7 +315,7 @@ mod prop_tests {
             let mut coeffs = vec![0; 2 * N + 1];
             coeffs[0] = 10;
             coeffs[2 * N] = 7; // This represents 7*X^(2N) = 7
-            
+
             let poly = Polynomial::new(coeffs);
             assert_eq!(poly.coeffs[0], 17); // 10 + 7 = 17
         }
@@ -327,7 +327,7 @@ mod prop_tests {
             let mut coeffs = vec![0; 3 * N + 1];
             coeffs[0] = 20;
             coeffs[3 * N] = 8; // This represents 8*X^(3N) = -8
-            
+
             let poly = Polynomial::new(coeffs);
             assert_eq!(poly.coeffs[0], 12); // 20 - 8 = 12
         }
@@ -338,11 +338,11 @@ mod prop_tests {
             let mut coeffs = vec![0; 2 * N + 5];
             coeffs[0] = 100;
             coeffs[1] = 50;
-            coeffs[N] = 30;     // -30 at position 0
+            coeffs[N] = 30; // -30 at position 0
             coeffs[N + 1] = 40; // -40 at position 1
             coeffs[2 * N] = 20; // +20 at position 0
             coeffs[2 * N + 1] = 10; // +10 at position 1
-            
+
             let poly = Polynomial::new(coeffs);
             assert_eq!(poly.coeffs[0], 90); // 100 - 30 + 20 = 90
             assert_eq!(poly.coeffs[1], 20); // 50 - 40 + 10 = 20
@@ -353,7 +353,7 @@ mod prop_tests {
             let mut coeffs = vec![0; N + 2];
             coeffs[0] = -50;
             coeffs[N] = -30; // Represents -30*X^N = 30
-            
+
             let poly = Polynomial::new(coeffs);
             // -50 - (-30) = -50 + 30 = -20
             // Then mod_reduce ensures it's in [0, Q)
@@ -365,7 +365,7 @@ mod prop_tests {
             let mut coeffs = vec![0; N + 1];
             coeffs[0] = Q + 100;
             coeffs[N] = Q + 50; // Will be subtracted
-            
+
             let poly = Polynomial::new(coeffs);
             // (Q + 100) - (Q + 50) = 50
             assert_eq!(poly.coeffs[0], 50);
@@ -377,23 +377,23 @@ mod prop_tests {
             // Set up various coefficients that will map to the same positions
             for i in 0..10 {
                 coeffs[i] = i as i32 * 10;
-                coeffs[N + i] = i as i32 * 5;      // Odd power - subtract
-                coeffs[2 * N + i] = i as i32 * 3;  // Even power - add
-                coeffs[3 * N + i] = i as i32 * 2;  // Odd power - subtract
+                coeffs[N + i] = i as i32 * 5; // Odd power - subtract
+                coeffs[2 * N + i] = i as i32 * 3; // Even power - add
+                coeffs[3 * N + i] = i as i32 * 2; // Odd power - subtract
             }
-            
+
             let poly = Polynomial::new(coeffs);
-            
+
             // Verify first few coefficients
             // Position 0: 0 - 0 + 0 - 0 = 0
             assert_eq!(poly.coeffs[0], 0);
-            
+
             // Position 1: 10 - 5 + 3 - 2 = 6
             assert_eq!(poly.coeffs[1], 6);
-            
+
             // Position 2: 20 - 10 + 6 - 4 = 12
             assert_eq!(poly.coeffs[2], 12);
-            
+
             // Position 3: 30 - 15 + 9 - 6 = 18
             assert_eq!(poly.coeffs[3], 18);
         }
@@ -402,7 +402,7 @@ mod prop_tests {
         {
             let coeffs: Vec<i32> = (0..N as i32).collect();
             let poly = Polynomial::new(coeffs.clone());
-            
+
             for i in 0..N {
                 assert_eq!(poly.coeffs[i], i as i32);
             }
@@ -412,7 +412,7 @@ mod prop_tests {
         {
             let mut coeffs = vec![1; 5 * N];
             let poly = Polynomial::new(coeffs);
-            
+
             // Each position should have accumulated:
             // 1 (original) - 1 (from N) + 1 (from 2N) - 1 (from 3N) + 1 (from 4N) = 1
             for i in 0..N {
@@ -425,15 +425,15 @@ mod prop_tests {
             let mut coeffs = vec![0; 2 * N + 3];
             coeffs[N - 1] = 1000;
             coeffs[2 * N - 1] = 2000; // Position 2N-1 has quotient 1 (odd), so SUBTRACTS
-            coeffs[N] = -500;         // Odd power, subtracts from position 0
+            coeffs[N] = -500; // Odd power, subtracts from position 0
             coeffs[0] = 100;
-            
+
             let poly = Polynomial::new(coeffs);
-            
+
             // Position N-1: 1000 - 2000 = -1000
             // -1000 mod Q = Q - 1000 = 8379417
             assert_eq!(poly.coeffs[N - 1], Q - 1000);
-            
+
             // For position 0: 100 - (-500) = 100 + 500 = 600
             assert_eq!(poly.coeffs[0], 600);
         }
@@ -443,37 +443,39 @@ mod prop_tests {
     fn test_polynomial_new_modular_arithmetic() {
         // Test that all coefficients are properly reduced to [0, Q)
         let mut coeffs = vec![0; 2 * N];
-        
+
         // Set various coefficients that need reduction
         coeffs[0] = Q + 1;
         coeffs[1] = 2 * Q + 5;
         coeffs[2] = -10;
         coeffs[3] = -Q - 20;
         coeffs[N] = Q; // Will be subtracted from position 0
-        
+
         let poly = Polynomial::new(coeffs);
-        
+
         // Verify all coefficients are in valid range [0, Q)
         for &coeff in &poly.coeffs {
-            assert!(coeff >= 0 && coeff < Q, 
-                    "Coefficient {} is out of range [0, {})", coeff, Q);
+            assert!(
+                coeff >= 0 && coeff < Q,
+                "Coefficient {} is out of range [0, {})",
+                coeff,
+                Q
+            );
         }
-        
+
         // Check specific values after reduction
         // Position 0: (Q + 1) - Q = 1
         assert_eq!(poly.coeffs[0], 1);
-        
+
         // Position 1: (2 * Q + 5) mod Q = 5
         assert_eq!(poly.coeffs[1], 5);
-        
+
         // Position 2: -10 mod Q = Q - 10
         assert_eq!(poly.coeffs[2], Q - 10);
-        
+
         // Position 3: (-Q - 20) mod Q = Q - 20
         assert_eq!(poly.coeffs[3], Q - 20);
     }
-
-    
 
     // Implement Arbitrary for Polynomial to generate random test cases
     impl Arbitrary for Polynomial {

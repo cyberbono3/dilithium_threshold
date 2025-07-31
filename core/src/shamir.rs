@@ -1,5 +1,3 @@
-use rand::prelude::*;
-
 use math::{
     poly::{Polynomial, N, Q},
     poly_vector::PolynomialVector,
@@ -7,6 +5,7 @@ use math::{
 
 use crate::config::validate_threshold_config;
 use crate::error::{Result, ThresholdError};
+use crate::utils::lagrange_interpolation;
 
 /// Adapted Shamir's Secret Sharing
 #[derive(Clone, Debug, PartialEq)]
@@ -85,19 +84,9 @@ impl AdaptedShamirSSS {
                 self.participant_number
             ];
 
-        // Process each polynomial in the vector
-        for poly_idx in 0..vector_length {
-            let polynomial = secret_vector.get(poly_idx).ok_or(
-                ThresholdError::InvalidPolynomialIndex {
-                    index: poly_idx,
-                    length: vector_length,
-                },
-            )?;
-
+        for (poly_idx, poly) in secret_vector.as_slice().iter().enumerate() {
             // Process each coefficient
-            for (coeff_idx, &secret_coeff) in
-                polynomial.coeffs().iter().enumerate()
-            {
+            for (coeff_idx, &secret_coeff) in poly.coeffs().iter().enumerate() {
                 let shamir_poly = self.create_shamir_polynomial(secret_coeff);
 
                 // Evaluate for each participant
@@ -149,13 +138,13 @@ impl AdaptedShamirSSS {
     ) -> Result<PolynomialVector> {
         let mut reconstructed_polys = Vec::with_capacity(poly_indices.len());
 
-        for &poly_idx in poly_indices {
+        for poly_idx in poly_indices {
             let mut coeffs = vec![0i32; N];
 
-            for coeff_idx in 0..N {
+            for (i, c) in coeffs.iter_mut().enumerate().take(N) {
                 let points =
-                    self.collect_points(active_shares, poly_idx, coeff_idx)?;
-                coeffs[coeff_idx] = self.lagrange_interpolation(&points, 0)?;
+                    self.collect_points(active_shares, *poly_idx, i)?;
+                *c = lagrange_interpolation(&points, 0)?;
             }
 
             reconstructed_polys.push(Polynomial::from(coeffs));
@@ -221,11 +210,9 @@ impl AdaptedShamirSSS {
                 share_polys[share.poly_idx][share.coeff_idx] = share.value;
             }
 
-            // Convert to polynomials
-            let polys: Vec<Polynomial> =
-                share_polys.into_iter().map(Polynomial::new).collect();
-
-            let share_vector = PolynomialVector::new(polys);
+            let share_vector = PolynomialVector::new(
+                share_polys.into_iter().map(Polynomial::new).collect(),
+            );
             shares.push(ShamirShare::new(pid, share_vector)?);
         }
 
@@ -252,43 +239,45 @@ impl AdaptedShamirSSS {
         result as i32
     }
 
-    /// Perform Lagrange interpolation to find polynomial value at x
-    fn lagrange_interpolation(
-        &self,
-        points: &[(i32, i32)],
-        x: i32,
-    ) -> Result<i32> {
-        let mut result = 0i64;
-        let n = points.len();
+    // /// Perform Lagrange interpolation to find polynomial value at x
+    // fn lagrange_interpolation(
+    //     &self,
+    //     points: &[(i32, i32)],
+    //     x: i32,
+    // ) -> Result<i32> {
+    //     let mut result = 0i64;
+    //     let n = points.len();
 
-        for i in 0..n {
-            let (xi, yi) = points[i];
-            let mut numerator = 1i64;
-            let mut denominator = 1i64;
+    //     for i in 0..n {
+    //         let (xi, yi) = points[i];
+    //         let mut numerator = 1i64;
+    //         let mut denominator = 1i64;
 
-            for j in 0..n {
-                if i != j {
-                    let xj = points[j].0;
-                    numerator =
-                        (numerator * (x - xj) as i64).rem_euclid(Q as i64);
-                    denominator =
-                        (denominator * (xi - xj) as i64).rem_euclid(Q as i64);
-                }
-            }
+    //         for j in 0..n {
+    //             if i != j {
+    //                 let xj = points[j].0;
+    //                 numerator =
+    //                     (numerator * (x - xj) as i64).rem_euclid(Q as i64);
+    //                 denominator =
+    //                     (denominator * (xi - xj) as i64).rem_euclid(Q as i64);
+    //             }
+    //         }
 
-            let denominator_inv = self.mod_inverse(denominator as i32)?;
+    //         let denominator_inv = mod_inverse(denominator as i32)?;
+    //         //let denominator_inv = mod_pow(denominator as i32, Q - 2);
 
-            // Compute contribution using modular multiplication to avoid overflow
-            // contribution = (yi * numerator * denominator_inv) mod Q
-            let contribution =
-                self.mod_mul_three(yi, numerator as i32, denominator_inv);
-            result = (result + contribution as i64).rem_euclid(Q as i64);
-        }
+    //         // Compute contribution using modular multiplication to avoid overflow
+    //         // contribution = (yi * numerator * denominator_inv) mod Q
+    //         let contribution =
+    //             self.mod_mul_three(yi, numerator as i32, denominator_inv);
+    //         result = (result + contribution as i64).rem_euclid(Q as i64);
+    //     }
 
-        Ok(result as i32)
-    }
+    //     Ok(result as i32)
+    // }
 
     /// Multiply three numbers modulo Q without overflow
+    /// // TODO move to utils  and remove from here
     fn mod_mul_three(&self, a: i32, b: i32, c: i32) -> i32 {
         // First multiply a * b mod Q
         let ab = self.mod_mul(a, b);
@@ -297,6 +286,7 @@ impl AdaptedShamirSSS {
     }
 
     /// Multiply two numbers modulo Q without overflow
+    /// TODO move to utils
     fn mod_mul(&self, a: i32, b: i32) -> i32 {
         // Convert to i64 to prevent overflow during multiplication
         let a = a as i64;
@@ -310,23 +300,6 @@ impl AdaptedShamirSSS {
         // TODO add Montgomery multiplication
         // For Q = 8380417, direct multiplication fits in i64
         ((a * b) % q) as i32
-    }
-
-    /// Compute modular inverse using Fermat's little theorem
-    fn mod_inverse(&self, a: i32) -> Result<i32> {
-        if a == 0 {
-            return Err(ThresholdError::ModularInverseError);
-        }
-
-        // Using Fermat's little theorem: a^(p-2) ≡ a^(-1) (mod p)
-        let result = self.mod_pow(a, Q - 2);
-
-        // Verify the result
-        if (result as i64 * a as i64).rem_euclid(Q as i64) != 1 {
-            return Err(ThresholdError::ModularInverseError);
-        }
-
-        Ok(result)
     }
 
     /// Compute (base^exp) mod Q using fast exponentiation

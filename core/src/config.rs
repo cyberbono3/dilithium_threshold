@@ -65,22 +65,22 @@ pub fn validate_threshold_config(
     if threshold < 2 {
         return false;
     }
-    
+
     // Threshold cannot exceed number of participants
     if threshold > participants {
         return false;
     }
-    
+
     // Reasonable upper limit on participants
     // Using 255 as a practical limit for the number of participants
-    if participants >=  N{
+    if participants >= N {
         return false;
     }
-    
+
     // Participants must be at least 2 (otherwise threshold >= 2 would be impossible)
     if participants < 2 {
         return false;
     }
-    
+
     true
 }
