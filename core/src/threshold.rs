@@ -9,7 +9,7 @@ use crate::{
     config::{validate_threshold_config, DEFAULT_SECURITY_LEVEL},
     error::{Result, ThresholdError},
     shamir::{AdaptedShamirSSS, ShamirShare},
-    utils::{get_randomness, hash_message, lagrange_interpolation},
+    utils::{get_randomness, hash_message, lagrange_interpolation, get_hash_reader},
 };
 
 use math::{
@@ -325,9 +325,7 @@ impl ThresholdSignature {
     /// Sample coefficients from gamma1 distribution
     fn sample_gamma1(&self, seed: &[u8]) -> Vec<i32> {
         // Create SHAKE256 hasher and generate output
-        let mut hasher = Shake256::default();
-        hasher.update(seed);
-        let mut reader = hasher.finalize_xof();
+        let mut reader = get_hash_reader(seed);
 
         // Read N * 4 bytes
         let mut hash_output = vec![0u8; N * 4];
@@ -363,9 +361,7 @@ impl ThresholdSignature {
         let mut coeffs = vec![0i32; N];
 
         // Sample tau positions for ±1 coefficients
-        let mut hasher = Shake256::default();
-        hasher.update(&seed);
-        let mut reader = hasher.finalize_xof();
+        let mut reader = get_hash_reader(&seed);
         let mut hash_output = vec![0u8; self.dilithium.config.tau * 2];
         reader.read(&mut hash_output);
 

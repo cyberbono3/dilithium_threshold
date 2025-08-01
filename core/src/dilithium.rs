@@ -5,7 +5,7 @@ use sha3::{
 };
 
 use crate::error::Result;
-use crate::utils::{get_randomness, hash_message};
+use crate::utils::{get_randomness, hash_message, get_hash_reader};
 use crate::{config::DilithiumConfig, error::ThresholdError};
 
 use math::{
@@ -238,9 +238,7 @@ impl Dilithium {
 
     /// Expand seed into rho, rho_prime, and K.
     fn expand_seed(seed: &[u8]) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
-        let mut hasher = Shake256::default();
-        hasher.update(seed);
-        let mut reader = hasher.finalize_xof();
+        let mut reader = get_hash_reader(seed);
 
         let mut expanded = vec![0u8; 96];
         reader.read(&mut expanded);
@@ -277,9 +275,7 @@ impl Dilithium {
     /// TODO test it
     /// TODO update it
     fn sample_uniform(&self, seed: &[u8]) -> Vec<i32> {
-        let mut hasher = Shake256::default();
-        hasher.update(seed);
-        let mut reader = hasher.finalize_xof();
+        let mut reader = get_hash_reader(seed);
 
         let mut bytes = vec![0u8; N * 4];
         reader.read(&mut bytes);
@@ -321,9 +317,7 @@ impl Dilithium {
     /// Sample polynomial with coefficients in [-eta, eta].
     /// TODO add proper testing
     fn sample_eta(&self, seed: &[u8]) -> Vec<i32> {
-        let mut hasher = Shake256::default();
-        hasher.update(seed);
-        let mut reader = hasher.finalize_xof();
+        let mut reader = get_hash_reader(seed);
 
         let mut bytes = vec![0u8; N];
         reader.read(&mut bytes);
@@ -354,9 +348,7 @@ impl Dilithium {
 
     /// Sample polynomial with coefficients in [-gamma1, gamma1].
     fn sample_gamma1(&self, seed: &[u8]) -> Vec<i32> {
-        let mut hasher = Shake256::default();
-        hasher.update(seed);
-        let mut reader = hasher.finalize_xof();
+        let mut reader = get_hash_reader(seed);
 
         let mut bytes = vec![0u8; N * 4];
         reader.read(&mut bytes);
