@@ -451,12 +451,7 @@ impl ThresholdSignature {
         let gamma1 = self.dilithium.config.gamma1;
         let beta = self.dilithium.config.beta;
 
-        let res = partial_sig.z_partial.norm_infinity() < gamma1 - beta;
-        if !res {
-            println!("check_partial_bounds returned false");
-        }
-
-        res
+        partial_sig.z_partial.norm_infinity() < gamma1 - beta
     }
 
     /// Get information about the threshold configuration.
@@ -492,8 +487,8 @@ mod tests {
         fn test_key_share_creation() {
             let poly1 = Polynomial::from(vec![1, 2, 3]);
             let poly2 = Polynomial::from(vec![4, 5, 6]);
-            let s1_share_vec = PolynomialVector::new(vec![poly1.clone()]);
-            let s2_share_vec = PolynomialVector::new(vec![poly2.clone()]);
+            let s1_share_vec = PolynomialVector::new(vec![poly1]);
+            let s2_share_vec = PolynomialVector::new(vec![poly2]);
 
             let s1_share = ShamirShare::new(1, s1_share_vec).unwrap();
             let s2_share = ShamirShare::new(1, s2_share_vec).unwrap();
@@ -553,9 +548,9 @@ mod tests {
 
             let partial_sig = PartialSignature::new(
                 3,
-                z_partial.clone(),
-                commitment.clone(),
-                challenge.clone(),
+                z_partial,
+                commitment,
+                challenge,
             );
 
             assert_eq!(partial_sig.participant_id, 3);
@@ -684,8 +679,8 @@ mod tests {
                 .unwrap();
 
             assert_eq!(partial_sig.participant_id, 1);
-            assert!(partial_sig.z_partial.len() > 0);
-            assert!(partial_sig.commitment.len() > 0);
+            assert!(!partial_sig.z_partial.is_empty());
+            assert!(!partial_sig.commitment.is_empty());
         }
 
         #[test]
