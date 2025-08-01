@@ -20,7 +20,9 @@ pub fn get_randomness(randomness: Option<&[u8]>) -> Vec<u8> {
     }
 }
 
-pub fn get_hash_reader(message: &[u8]) -> XofReaderCoreWrapper<Shake256ReaderCore>{
+pub fn get_hash_reader(
+    message: &[u8],
+) -> XofReaderCoreWrapper<Shake256ReaderCore> {
     let mut hasher = Shake256::default();
     hasher.update(message);
     hasher.finalize_xof()

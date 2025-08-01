@@ -9,7 +9,9 @@ use crate::{
     config::{validate_threshold_config, DEFAULT_SECURITY_LEVEL},
     error::{Result, ThresholdError},
     shamir::{AdaptedShamirSSS, ShamirShare},
-    utils::{get_randomness, hash_message, lagrange_interpolation, get_hash_reader},
+    utils::{
+        get_hash_reader, get_randomness, hash_message, lagrange_interpolation,
+    },
 };
 
 use math::{
@@ -214,7 +216,6 @@ impl ThresholdSignature {
         ))
     }
 
-
     /// Verify that partial signatures are valid for combination.
     ///
     /// Checks that:
@@ -351,20 +352,18 @@ impl ThresholdSignature {
     }
 
     /// Convert to polynomial with tau non-zero coefficients
-    // TODO remove w_1
     fn generate_partial_challenge(&self, mu: &[u8]) -> Polynomial {
         // Create seed
         let mut seed = mu.to_vec();
         seed.extend_from_slice(b"challenge");
-
-        // Initialize coefficients array
-        let mut coeffs = vec![0i32; N];
 
         // Sample tau positions for ±1 coefficients
         let mut reader = get_hash_reader(&seed);
         let mut hash_output = vec![0u8; self.dilithium.config.tau * 2];
         reader.read(&mut hash_output);
 
+        // Initialize coefficients array
+        let mut coeffs = vec![0i32; N];
         for i in 0..self.dilithium.config.tau {
             let pos = (hash_output[i * 2] as usize) % N;
             let sign = if hash_output[i * 2 + 1] % 2 == 0 {
@@ -377,29 +376,6 @@ impl ThresholdSignature {
 
         Polynomial::new(coeffs)
     }
-
-    /// Sample challenge polynomial
-    // fn sample_challenge(&self, seed: &[u8]) -> Polynomial {
-    //     let mut rng = StdRng::from_seed({
-    //         let mut hasher = Sha256::new();
-    //         Digest::update(&mut hasher, seed);
-    //         let hash = hasher.finalize();
-    //         let mut seed_bytes = [0u8; 32];
-    //         seed_bytes.copy_from_slice(&hash);
-    //         seed_bytes
-    //     });
-
-    //     let mut coeffs = vec![0i32; N];
-    //     let mut indices: Vec<usize> = (0..N).collect();
-    //     indices.shuffle(&mut rng);
-
-    //     // Set tau coefficients to ±1
-    //     for i in 0..self.dilithium.config.tau {
-    //         coeffs[indices[i]] = if rng.random_bool(0.5) { 1 } else { -1 };
-    //     }
-
-    //     Polynomial::from(coeffs)
-    // }
 
     /// Reconstruct z vector from partial signatures using Lagrange interpolation.
     /// TODO update it
@@ -430,14 +406,19 @@ impl ThresholdSignature {
 
                 for ps in partial_signatures {
                     let x = ps.participant_id as i32;
-                    let y = ps
-                        .z_partial
-                        .get(poly_idx)
-                        .ok_or(ThresholdError::InvalidIndex {
+                    let poly = ps.z_partial.get(poly_idx).ok_or(
+                        ThresholdError::InvalidIndex {
                             index: poly_idx,
                             length: vector_length,
-                        })?
-                        .coeffs()[coeff_idx];
+                        },
+                    )?;
+                    // .coeffs()[coeff_idx];
+                    let y = poly.coeffs().get(coeff_idx).copied().ok_or(
+                        ThresholdError::InvalidIndex {
+                            index: coeff_idx,
+                            length: poly.coeffs().len(),
+                        },
+                    )?;
                     points.push((x, y));
                 }
 
@@ -453,18 +434,14 @@ impl ThresholdSignature {
     }
 
     /// Reconstruct hint vector (simplified implementation).
-    /// TODO make onliner
     fn reconstruct_hint(
         &self,
         _partial_signatures: &[PartialSignature],
         _public_key: &DilithiumPublicKey,
     ) -> Result<PolynomialVector> {
-        // Simplified hint reconstruction
-        // In practice, this would involve more complex coordination
-        let mut hint_polys = Vec::with_capacity(self.dilithium.config.k);
-        for _ in 0..self.dilithium.config.k {
-            hint_polys.push(Polynomial::zero());
-        }
+        let hint_polys = (0..self.dilithium.config.k).map(|_| 
+            Polynomial::zero()
+        ).collect();
 
         Ok(PolynomialVector::new(hint_polys))
     }

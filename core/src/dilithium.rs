@@ -5,7 +5,7 @@ use sha3::{
 };
 
 use crate::error::Result;
-use crate::utils::{get_randomness, hash_message, get_hash_reader};
+use crate::utils::{get_hash_reader, get_randomness, hash_message};
 use crate::{config::DilithiumConfig, error::ThresholdError};
 
 use math::{
