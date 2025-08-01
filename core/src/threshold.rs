@@ -1,4 +1,3 @@
-use rand::prelude::*;
 use sha2::{Digest, Sha256};
 use sha3::{
     digest::{ExtendableOutput, Update, XofReader},
@@ -196,20 +195,12 @@ impl ThresholdSignature {
         // Sample mask vector y (participant's portion)
         let y_partial = self.sample_partial_y(&participant_randomness);
 
-        // Compute partial commitment w_partial = A * y_partial
-        // Note: This is simplified - in practice, we need coordination
-        // between participants to compute the full commitment
-        // let w_partial = Self::compute_partial_commitment(
-        //     &key_share.public_key.m,
-        //     &y_partial,
-        // );
-
+        // Compute partial commitment w_partial = m * y_partial
         let w_partial = &key_share.public_key.m * &y_partial;
 
         // For now, use a simplified challenge generation
         // In practice, this requires coordination between participants
-        // TODO remove w_partial argument
-        let challenge = self.generate_partial_challenge(&mu, &w_partial);
+        let challenge = self.generate_partial_challenge(&mu);
 
         // Compute partial response z_partial = y_partial + c * s1_share
         let c_s1 = key_share.s1_share.share_vector.clone() * challenge;
@@ -221,6 +212,18 @@ impl ThresholdSignature {
             w_partial,
             challenge,
         ))
+    }
+
+    fn verify_partial_signatures(partial_signatures: &[PartialSignature]) -> Result<()> {
+           let challenge = &partial_signatures[0].challenge;
+        if !partial_signatures
+            .iter()
+            .any(|ps| &ps.challenge != challenge)
+        {
+            return Err(ThresholdError::PartialSignatureChallengeMismatch);
+        }
+
+        Ok(())
     }
 
     /// Combine partial signatures into a complete threshold signature.
@@ -265,20 +268,15 @@ impl ThresholdSignature {
         &self,
         message: &[u8],
         partial_sig: &PartialSignature,
-        key_share: &ThresholdKeyShare,
     ) -> bool {
-        println!("verify partial signature");
         // Hash message
         let mu = hash_message(message);
 
-        // for testing purposes
-
         // Verify challenge consistency
         let expected_challenge =
-            self.generate_partial_challenge(&mu, &partial_sig.commitment);
+            self.generate_partial_challenge(&mu);
 
         if partial_sig.challenge != expected_challenge {
-            println!("Partial and expected challenges do not match");
             return false;
         }
 
@@ -296,9 +294,6 @@ impl ThresholdSignature {
         Digest::update(&mut hasher, base_randomness);
         Digest::update(&mut hasher, participant_id.to_le_bytes());
         Digest::update(&mut hasher, b"participant_randomness");
-        // hasher.update(base_randomness);
-        // hasher.update(&participant_id.to_le_bytes());
-        // hasher.update(b"participant_randomness");
         hasher.finalize().to_vec()
     }
 
@@ -315,25 +310,6 @@ impl ThresholdSignature {
         PolynomialVector::new(polys)
     }
 
-    /// Sample coefficients from gamma1 distribution
-    // fn sample_gamma1(&self, seed: &[u8]) -> Vec<i32> {
-    //     let gamma1 = self.dilithium.config.gamma1;
-    //     let mut rng = StdRng::from_seed({
-    //         let mut hasher = Sha256::new();
-    //         Digest::update(&mut hasher, seed);
-    //         let hash = hasher.finalize();
-    //         let mut seed_bytes = [0u8; 32];
-    //         seed_bytes.copy_from_slice(&hash);
-    //         seed_bytes
-    //     });
-
-    //     let coeffs: Vec<i32> = (0..N).map(|i| rng.random_range(-gamma1..=gamma1)).collect();
-    //     // let mut coeffs = vec![0i32; N];
-    //     // for i in 0..N {
-    //     //     coeffs[i] = rng.random_range(-gamma1..=gamma1);
-    //     // }
-    //     coeffs
-    // }
     // TODO optimize it
     /// Sample coefficients from gamma1 distribution
     fn sample_gamma1(&self, seed: &[u8]) -> Vec<i32> {
@@ -365,47 +341,11 @@ impl ThresholdSignature {
         coeffs
     }
 
-    /// Compute partial commitment w_partial.
-    // fn compute_partial_commitment(
-    //     m: &Vec<Vec<Polynomial>>,
-    //     y_partial: &PolynomialVector,
-    // ) -> PolynomialVector {
-    //     // Simplified partial commitment computation
-    //     m * y_partial
-    // }
-
-    /// Generate challenge polynomial (simplified version).
-    /// TODO update it
-    // fn generate_partial_challenge(
-    //     &self,
-    //     mu: &[u8],
-    //     w_partial: &PolynomialVector,
-    // ) -> Polynomial {
-    //     // Simplified challenge generation
-    //     let mut hasher = Shake256::default();
-    //     hasher.update(mu);
-
-    //     // Hash w_partial
-    //     for i in 0..w_partial.len() {
-    //         if let Some(poly) = w_partial.get(i) {
-    //             for coeff in poly.coeffs() {
-    //                 hasher.update(&coeff.to_le_bytes());
-    //             }
-    //         }
-    //     }
-
-    //     let mut reader = hasher.finalize_xof();
-    //     let mut challenge_bytes = vec![0u8; 32];
-    //     reader.read(&mut challenge_bytes);
-
-    //     // Convert to polynomial with tau non-zero coefficients
-    //     self.sample_challenge(&challenge_bytes)
-    // }
+    /// Convert to polynomial with tau non-zero coefficients
     // TODO remove w_1
     fn generate_partial_challenge(
         &self,
         mu: &[u8],
-        _w1: &PolynomialVector,
     ) -> Polynomial {
         // Create seed
         let mut seed = mu.to_vec();
@@ -489,7 +429,7 @@ impl ThresholdSignature {
                     let y = ps
                         .z_partial
                         .get(poly_idx)
-                        .ok_or(ThresholdError::InvalidPolynomialIndex {
+                        .ok_or(ThresholdError::InvalidIndex {
                             index: poly_idx,
                             length: vector_length,
                         })?
@@ -523,26 +463,6 @@ impl ThresholdSignature {
         }
 
         Ok(PolynomialVector::new(hint_polys))
-    }
-
-    /// Multiply three numbers modulo Q without overflow
-    fn mod_mul_three(&self, a: i32, b: i32, c: i32) -> i32 {
-        // First multiply a * b mod Q
-        let ab = self.mod_mul(a, b);
-        // Then multiply result by c mod Q
-        self.mod_mul(ab, c)
-    }
-
-    /// Multiply two numbers modulo Q without overflow
-    fn mod_mul(&self, a: i32, b: i32) -> i32 {
-        let a = a as i64;
-        let b = b as i64;
-        let q = Q as i64;
-
-        let a = a.rem_euclid(q);
-        let b = b.rem_euclid(q);
-
-        ((a * b) % q) as i32
     }
 
     /// Check if partial signature satisfies bound requirements.
@@ -823,11 +743,8 @@ mod tests {
                 .unwrap();
 
             // Verify the partial signature
-            let is_valid = threshold_sig.verify_partial_signature(
-                &message,
-                &partial_sig,
-                &shares[0],
-            );
+            let is_valid =
+                threshold_sig.verify_partial_signature(&message, &partial_sig);
 
             assert!(is_valid);
         }
@@ -846,11 +763,8 @@ mod tests {
                 .unwrap();
 
             // Verify with wrong message should fail
-            let is_valid = threshold_sig.verify_partial_signature(
-                &wrong_message,
-                &partial_sig,
-                &shares[0],
-            );
+            let is_valid = threshold_sig
+                .verify_partial_signature(&wrong_message, &partial_sig);
 
             assert!(!is_valid);
         }
@@ -1053,9 +967,8 @@ mod tests {
             assert_eq!(coeffs.len(), N);
 
             // Check all coefficients are within bounds
-            let gamma1 = threshold_sig.dilithium.config.gamma1;
             for &coeff in &coeffs {
-                assert!(coeff >= 0 && coeff < Q);
+                assert!((0..Q).contains(&coeff));
                 // Original coefficient before modular reduction would be in [-gamma1, gamma1]
             }
 
@@ -1121,11 +1034,8 @@ mod tests {
 
             // All partial signatures should be valid
             for (i, partial_sig) in partial_sigs.iter().enumerate() {
-                assert!(threshold_sig.verify_partial_signature(
-                    &message,
-                    partial_sig,
-                    &shares[i],
-                ));
+                assert!(threshold_sig
+                    .verify_partial_signature(&message, partial_sig,));
             }
 
             // Should be able to combine them

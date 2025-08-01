@@ -92,7 +92,7 @@ impl AdaptedShamirSSS {
                 // Evaluate for each participant
                 for pid in 1..=self.participant_number {
                     let share_value =
-                        self.evaluate_polynomial(&shamir_poly, pid as i32);
+                        Self::evaluate_polynomial(&shamir_poly, pid as i32);
                     let share = Share::new(poly_idx, coeff_idx, share_value);
                     participant_shares[pid - 1].push(share);
                 }
@@ -181,12 +181,18 @@ impl AdaptedShamirSSS {
             .iter()
             .map(|share| {
                 let poly = share.share_vector.get(poly_idx).ok_or(
-                    ThresholdError::InvalidPolynomialIndex {
+                    ThresholdError::InvalidIndex {
                         index: poly_idx,
                         length: share.vector_length(),
                     },
                 )?;
-                Ok((share.participant_id as i32, poly.coeffs()[coeff_idx]))
+                let coeff = poly.coeffs().get(coeff_idx).copied().ok_or(
+                    ThresholdError::InvalidIndex {
+                        index: coeff_idx,
+                        length: share.vector_length(),
+                    },
+                )?;
+                Ok((share.participant_id as i32, coeff))
             })
             .collect()
     }
@@ -224,7 +230,7 @@ impl AdaptedShamirSSS {
     }
 
     /// Evaluate polynomial at given point using Horner's method
-    fn evaluate_polynomial(&self, coeffs: &[i32], x: i32) -> i32 {
+    fn evaluate_polynomial(coeffs: &[i32], x: i32) -> i32 {
         let mut result = 0i64;
         let mut x_power = 1i64;
 
@@ -236,47 +242,6 @@ impl AdaptedShamirSSS {
         result as i32
     }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-
-//     #[test]
-//     fn test_shamir_split_and_reconstruct() {
-//         let shamir = AdaptedShamirSSS::new(2, 3).unwrap();
-
-//         // Create test polynomial vector
-//         let poly1 = Polynomial::new(vec![100, 200, 300]);
-//         let poly2 = Polynomial::new(vec![400, 500, 600]);
-//         let secret = PolynomialVector::new(vec![poly1, poly2]);
-
-//         // Split the secret
-//         let shares = shamir.split_secret(&secret).unwrap();
-//         assert_eq!(shares.len(), 3);
-
-//         // Reconstruct using first 2 shares
-//         let reconstructed = shamir.reconstruct_secret(&shares[..2]).unwrap();
-//         assert_eq!(secret, reconstructed);
-//     }
-
-//     #[test]
-//     fn test_invalid_threshold() {
-//         assert!(AdaptedShamirSSS::new(5, 3).is_err());
-//         assert!(AdaptedShamirSSS::new(0, 3).is_err());
-//     }
-
-//     #[test]
-//     fn test_insufficient_shares() {
-//         let shamir = AdaptedShamirSSS::new(3, 5).unwrap();
-//         let poly = Polynomial::new(vec![100]);
-//         let secret = PolynomialVector::new(vec![poly]);
-
-//         let shares = shamir.split_secret(&secret).unwrap();
-
-//         // Try to reconstruct with only 2 shares (need 3)
-//         assert!(shamir.reconstruct_secret(&shares[..2]).is_err());
-//     }
-// }
 
 #[cfg(test)]
 mod tests {
@@ -340,14 +305,38 @@ mod tests {
         #[test]
         fn test_invalid_threshold_config() {
             // Threshold too small
-            assert!(AdaptedShamirSSS::new(1, 5).is_err());
-            assert!(AdaptedShamirSSS::new(0, 5).is_err());
+            assert!(matches!(
+                AdaptedShamirSSS::new(1, 5),
+                Err(ThresholdError::InvalidThreshold {
+                    threshold: 1,
+                    participant_number: 5
+                })
+            ));
+            assert!(matches!(
+                AdaptedShamirSSS::new(0, 5),
+                Err(ThresholdError::InvalidThreshold {
+                    threshold: 0,
+                    participant_number: 5
+                })
+            ));
 
             // Threshold larger than participants
-            assert!(AdaptedShamirSSS::new(6, 5).is_err());
+            assert!(matches!(
+                AdaptedShamirSSS::new(6, 5),
+                Err(ThresholdError::InvalidThreshold {
+                    threshold: 6,
+                    participant_number: 5
+                })
+            ));
 
             // Too many participants (assuming max is 255 based on typical limits)
-            assert!(AdaptedShamirSSS::new(3, 300).is_err());
+            assert!(matches!(
+                AdaptedShamirSSS::new(3, 300),
+                Err(ThresholdError::InvalidThreshold {
+                    threshold: 3,
+                    participant_number: 300
+                })
+            ));
         }
 
         #[test]
@@ -646,5 +635,184 @@ mod tests {
                 shamir.reconstruct_secret(selected_shares).unwrap();
             assert_eq!(reconstructed, secret);
         }
+    }
+
+    #[test]
+    fn test_create_shamir_polynomial() {
+        // Test with threshold 2 (minimal case)
+        let shamir = AdaptedShamirSSS::new(2, 3).unwrap();
+        let secret = 42;
+        let poly = shamir.create_shamir_polynomial(secret);
+
+        // Check polynomial has correct length (equal to threshold)
+        assert_eq!(poly.len(), 2);
+        // Check first coefficient is the secret
+        assert_eq!(poly[0], secret);
+        // Check second coefficient is in valid range [0, Q)
+        assert!(poly[1] >= 0 && poly[1] < Q);
+
+        // Test with threshold 5
+        let shamir = AdaptedShamirSSS::new(5, 7).unwrap();
+        let secret = 123;
+        let poly = shamir.create_shamir_polynomial(secret);
+
+        // Check polynomial has correct length
+        assert_eq!(poly.len(), 5);
+        // Check first coefficient is the secret
+        assert_eq!(poly[0], secret);
+        // Check all random coefficients are in valid range
+        for i in 1..5 {
+            assert!(poly[i] >= 0 && poly[i] < Q);
+        }
+
+        // Test with zero secret
+        let secret = 0;
+        let poly = shamir.create_shamir_polynomial(secret);
+        assert_eq!(poly[0], 0);
+        assert_eq!(poly.len(), 5);
+
+        // Test with maximum secret value
+        let secret = Q - 1;
+        let poly = shamir.create_shamir_polynomial(secret);
+        assert_eq!(poly[0], secret);
+        assert_eq!(poly.len(), 5);
+
+        // Test randomness - create multiple polynomials with same secret
+        let secret = 777;
+        let poly1 = shamir.create_shamir_polynomial(secret);
+        let poly2 = shamir.create_shamir_polynomial(secret);
+        let poly3 = shamir.create_shamir_polynomial(secret);
+
+        // All should have same secret
+        assert_eq!(poly1[0], secret);
+        assert_eq!(poly2[0], secret);
+        assert_eq!(poly3[0], secret);
+
+        // But random coefficients should differ (with high probability)
+        // Check at least one differs between poly1 and poly2
+        let coeffs_differ = (1..5).any(|i| poly1[i] != poly2[i])
+            || (1..5).any(|i| poly1[i] != poly3[i]);
+        assert!(
+            coeffs_differ,
+            "Random coefficients should differ between polynomials"
+        );
+
+        // Test with large threshold
+        let shamir = AdaptedShamirSSS::new(10, 15).unwrap();
+        let secret = 999;
+        let poly = shamir.create_shamir_polynomial(secret);
+
+        assert_eq!(poly.len(), 10);
+        assert_eq!(poly[0], secret);
+        for i in 1..10 {
+            assert!(poly[i] >= 0 && poly[i] < Q);
+        }
+
+        // Test negative secret
+        let secret = -42;
+        let poly = shamir.create_shamir_polynomial(secret);
+        assert_eq!(poly[0], secret);
+
+        // Statistical test for randomness distribution
+        // Create many polynomials and check coefficient distribution
+        let shamir = AdaptedShamirSSS::new(3, 5).unwrap();
+        let mut coeff_sum = 0i64;
+        let iterations = 100;
+
+        for _ in 0..iterations {
+            let poly = shamir.create_shamir_polynomial(100);
+            coeff_sum += poly[1] as i64 + poly[2] as i64;
+        }
+
+        // Average should be roughly Q/2 for uniform distribution
+        let avg = coeff_sum / (iterations * 2);
+        let expected_avg = Q as i64 / 2;
+        // Allow 20% deviation
+        assert!(
+            (avg - expected_avg).abs() < (expected_avg / 5),
+            "Random coefficient average {} deviates too much from expected {}",
+            avg,
+            expected_avg
+        );
+    }
+
+    #[test]
+    fn test_evaluate_polynomial() {
+        // Test constant polynomial: f(x) = 42
+        let coeffs = vec![42];
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 0), 42);
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1), 42);
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 10), 42);
+
+        // Test linear polynomial: f(x) = 3 + 2x
+        let coeffs = vec![3, 2];
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 0), 3);
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1), 5);
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 2), 7);
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 5), 13);
+
+        // Test quadratic polynomial: f(x) = 1 + 2x + 3x^2
+        let coeffs = vec![1, 2, 3];
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 0), 1);
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1), 6); // 1 + 2 + 3
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 2), 17); // 1 + 4 + 12
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 3), 34); // 1 + 6 + 27
+
+        // Test with negative coefficients: f(x) = 10 - 5x + 2x^2
+        let coeffs = vec![10, -5, 2];
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 0), 10);
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1), 7); // 10 - 5 + 2
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 2), 8); // 10 - 10 + 8
+
+        // Test with zero coefficients: f(x) = 5 + 0x + 3x^2
+        let coeffs = vec![5, 0, 3];
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 0), 5);
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1), 8); // 5 + 0 + 3
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 2), 17); // 5 + 0 + 12
+
+        // Test empty polynomial
+        let coeffs = vec![];
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 5), 0);
+
+        // Test modular arithmetic with large coefficients
+        let large_coeff = Q - 1;
+        let coeffs = vec![large_coeff, 2];
+        let result = AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1);
+        assert_eq!(result, (large_coeff + 2) % Q);
+
+        // Test with large x values
+        let coeffs = vec![1, 1, 1]; // f(x) = 1 + x + x^2
+        let large_x = 1000;
+        let expected = (1 + large_x + large_x * large_x) % Q;
+        assert_eq!(
+            AdaptedShamirSSS::evaluate_polynomial(&coeffs, large_x),
+            expected as i32
+        );
+
+        // Verify Horner's method: f(x) = 5 + 3x + 2x^2 + 4x^3
+        let coeffs = vec![5, 3, 2, 4];
+        let x = 7;
+        let manual_result = (5 + 7 * (3 + 7 * (2 + 7 * 4))) % Q;
+        assert_eq!(
+            AdaptedShamirSSS::evaluate_polynomial(&coeffs, x),
+            manual_result as i32
+        );
+
+        // Test all-zero polynomial
+        let coeffs = vec![0, 0, 0, 0];
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 0), 0);
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 100), 0);
+
+        // Test single high-degree term: f(x) = 7x^3
+        let coeffs = vec![0, 0, 0, 7];
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 0), 0);
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1), 7);
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 2), 56); // 7 * 8
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 3), 189); // 7 * 27
+
+        // Test Shamir property: evaluation at x=0 returns the secret
+        let secret = 42;
+        let coeffs = vec![secret, 17, 23, 31];
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 0), secret);
     }
 }

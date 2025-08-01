@@ -16,7 +16,7 @@ pub enum ThresholdError {
     SignatureGenerationFailed,
     PartialSignatureChallengeMismatch,
     InvalidSignatureBounds,
-    InvalidPolynomialIndex {
+    InvalidIndex {
         index: usize,
         length: usize,
     },
@@ -57,7 +57,7 @@ impl fmt::Display for ThresholdError {
             ThresholdError::InvalidSignatureBounds => {
                 write!(f, "Invalid signature bounds")
             }
-            ThresholdError::InvalidPolynomialIndex { index, length } => {
+            ThresholdError::InvalidIndex { index, length } => {
                 write!(f, "Invalid polynomial index: {} >= {}", index, length)
             }
         }
