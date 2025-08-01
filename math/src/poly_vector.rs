@@ -1,6 +1,6 @@
 use std::ops::{Add, Mul, Sub};
 
-use super::poly::Polynomial;
+use super::polynomial::Polynomial;
 
 /// Represents a vector of polynomials in Rq.
 ///

@@ -8,6 +8,116 @@ use super::ntt::{intt, montgomery_reduce, ntt};
 pub const Q: i32 = 8380417; // Dilithium's prime modulus
 pub const N: usize = 256; // Polynomial degree bound
 
+/// Macro for convenient polynomial creation
+/// 
+/// Creates a polynomial with the given coefficients. Coefficients are automatically
+/// reduced modulo Q and padded with zeros up to degree N-1.
+/// 
+/// # Examples
+/// 
+/// Basic usage:
+/// ```
+/// use math::polynomial::{Polynomial, N, Q};
+/// use math::poly;
+/// 
+/// // Create polynomial from coefficients
+/// let p1 = poly![1, 2, 3];
+/// assert_eq!(p1.coeffs()[0], 1);
+/// assert_eq!(p1.coeffs()[1], 2);
+/// assert_eq!(p1.coeffs()[2], 3);
+/// assert_eq!(p1.coeffs()[3], 0); // Rest are zeros
+/// ```
+/// 
+/// Creating zero polynomial:
+/// ```
+/// use math::prelude::*;
+/// 
+/// let p_zero = poly![];
+/// assert!(p_zero.is_zero());
+/// assert_eq!(p_zero, Polynomial::zero());
+/// ```
+/// 
+/// Creating polynomial with repeated values:
+/// ```
+/// use math::prelude::*;
+/// 
+/// // First 5 coefficients are 7, rest are 0
+/// let p = poly![7; 5];
+/// for i in 0..5 {
+///     assert_eq!(p.coeffs()[i], 7);
+/// }
+/// assert_eq!(p.coeffs()[5], 0);
+/// ```
+/// 
+/// Automatic modular reduction:
+/// ```
+/// use math::prelude::*;
+/// 
+/// // Negative values are reduced mod Q
+/// let p1 = poly![-1, -2, -3];
+/// assert_eq!(p1.coeffs()[0], Q - 1);
+/// assert_eq!(p1.coeffs()[1], Q - 2);
+/// assert_eq!(p1.coeffs()[2], Q - 3);
+/// 
+/// // Values > Q are reduced
+/// let p2 = poly![Q + 1, Q + 2];
+/// assert_eq!(p2.coeffs()[0], 1);
+/// assert_eq!(p2.coeffs()[1], 2);
+/// ```
+/// 
+/// Using expressions:
+/// ```
+/// use math::prelude::*;
+/// 
+/// let x = 10;
+/// let p = poly![x, x*2, x*3];
+/// assert_eq!(p.coeffs()[0], 10);
+/// assert_eq!(p.coeffs()[1], 20);
+/// assert_eq!(p.coeffs()[2], 30);
+/// ```
+/// 
+/// From arrays and vectors:
+/// ```
+/// use math::prelude::*;
+/// 
+/// let arr = [1, 2, 3, 4];
+/// let p1 = poly![&arr[..]];  // Convert array to slice
+/// assert_eq!(p1.coeffs()[0], 1);
+/// assert_eq!(p1.coeffs()[3], 4);
+/// 
+/// let vec = vec![10, 20, 30];
+/// let p2 = poly![vec];
+/// assert_eq!(p2.coeffs()[0], 10);
+/// assert_eq!(p2.coeffs()[2], 30);
+/// ```
+#[macro_export]
+macro_rules! poly {
+    // Empty case - zero polynomial
+    () => {
+        $crate::polynomial::Polynomial::zero()
+    };
+    
+    // Single expression that evaluates to an array or slice
+    ($arr:expr) => {
+        $crate::polynomial::Polynomial::from($arr)
+    };
+    
+    // Repeated value case: poly![value; count]
+    ($val:expr; $count:expr) => {{
+        let mut coeffs = vec![0i32; $crate::polynomial::N];
+        let count = ::std::cmp::min($count, $crate::polynomial::N);
+        for i in 0..count {
+            coeffs[i] = $val;
+        }
+        $crate::polynomial::Polynomial::from(coeffs)
+    }};
+    
+    // List of coefficients
+    ($($coeff:expr),+ $(,)?) => {
+        $crate::polynomial::Polynomial::from(vec![$($coeff),+])
+    };
+}
+
 /// Represents a polynomial in Rq = Zq[X]/(X^256 + 1).
 ///
 /// Coefficients are stored as an array of integers modulo Q.
@@ -154,16 +264,31 @@ impl Polynomial {
     }
 }
 
-// Conversion implementations
-impl From<[i32; N]> for Polynomial {
-    fn from(coeffs: [i32; N]) -> Self {
-        let mut result = coeffs;
-        for coeff in &mut result {
-            *coeff = Self::mod_reduce(*coeff as i64);
-        }
-        Self { coeffs: result }
+// Generic implementation for arrays of any size
+// This allows poly![arr] to work with arrays like [i32; 4]
+impl<const M: usize> From<[i32; M]> for Polynomial {
+    fn from(coeffs: [i32; M]) -> Self {
+        Self::from(&coeffs[..])
     }
 }
+
+// Implementation for array references
+impl<const M: usize> From<&[i32; M]> for Polynomial {
+    fn from(coeffs: &[i32; M]) -> Self {
+        Self::from(&coeffs[..])
+    }
+}
+
+// Conversion implementations
+// impl From<[i32; N]> for Polynomial {
+//     fn from(coeffs: [i32; N]) -> Self {
+//         let mut result = coeffs;
+//         for coeff in &mut result {
+//             *coeff = Self::mod_reduce(*coeff as i64);
+//         }
+//         Self { coeffs: result }
+//     }
+// }
 
 impl From<&[i32]> for Polynomial {
     fn from(coeffs: &[i32]) -> Self {
@@ -675,3 +800,4 @@ mod prop_tests {
         TestResult::from_bool(ntt_result == op_result)
     }
 }
+

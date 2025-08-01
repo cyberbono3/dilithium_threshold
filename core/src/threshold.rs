@@ -15,7 +15,7 @@ use crate::{
 };
 
 use math::{
-    poly::{Polynomial, N, Q},
+    polynomial::{Polynomial, N, Q},
     poly_vector::PolynomialVector,
 };
 

@@ -9,7 +9,7 @@ use crate::utils::{get_hash_reader, get_randomness, hash_message};
 use crate::{config::DilithiumConfig, error::ThresholdError};
 
 use math::{
-    poly::{Polynomial, N, Q},
+    polynomial::{Polynomial, N, Q},
     poly_vector::PolynomialVector,
 };
 

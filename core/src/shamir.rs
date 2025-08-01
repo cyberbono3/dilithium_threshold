@@ -1,5 +1,5 @@
 use math::{
-    poly::{Polynomial, N, Q},
+    polynomial::{Polynomial, N, Q},
     poly_vector::PolynomialVector,
 };
 
@@ -247,7 +247,7 @@ impl AdaptedShamirSSS {
 mod tests {
     use super::*;
     use math::{
-        poly::{Polynomial, N, Q},
+        polynomial::{Polynomial, N, Q},
         poly_vector::PolynomialVector,
     };
 
