@@ -214,11 +214,33 @@ impl ThresholdSignature {
         ))
     }
 
-    fn verify_partial_signatures(partial_signatures: &[PartialSignature]) -> Result<()> {
-           let challenge = &partial_signatures[0].challenge;
+
+    /// Verify that partial signatures are valid for combination.
+    ///
+    /// Checks that:
+    /// 1. There are at least `threshold` partial signatures
+    /// 2. All partial signatures use the same challenge
+    fn verify_partial_signatures(
+        partial_signatures: &[PartialSignature],
+        threshold: usize,
+    ) -> Result<()> {
+        // Check if we have enough partial signatures
+        if partial_signatures.len() < threshold {
+            return Err(ThresholdError::InsufficientShares {
+                required: threshold,
+                provided: partial_signatures.len(),
+            });
+        }
+
+        // At this point, we know we have at least threshold signatures
+        // Since threshold must be >= 2 (per validation rules), we know
+        // partial_signatures is not empty
+
+        // Verify all partial signatures use the same challenge
+        let challenge = &partial_signatures[0].challenge;
         if !partial_signatures
             .iter()
-            .any(|ps| &ps.challenge != challenge)
+            .all(|ps| &ps.challenge == challenge)
         {
             return Err(ThresholdError::PartialSignatureChallengeMismatch);
         }
@@ -235,21 +257,8 @@ impl ThresholdSignature {
         partial_signatures: &[PartialSignature],
         public_key: &DilithiumPublicKey,
     ) -> Result<DilithiumSignature> {
-        if partial_signatures.len() < self.threshold {
-            return Err(ThresholdError::InsufficientShares {
-                required: self.threshold,
-                provided: partial_signatures.len(),
-            });
-        }
-
-        // Verify all partial signatures use the same challenge
-        let challenge = &partial_signatures[0].challenge;
-        if !partial_signatures
-            .iter()
-            .all(|ps| &ps.challenge == challenge)
-        {
-            return Err(ThresholdError::PartialSignatureChallengeMismatch);
-        }
+        // Verify partial signatures
+        Self::verify_partial_signatures(partial_signatures, self.threshold)?;
 
         // Use first threshold partial signatures
         let active_partials = &partial_signatures[..self.threshold];
@@ -260,7 +269,10 @@ impl ThresholdSignature {
         // Reconstruct hint h (simplified for this implementation)
         let h = self.reconstruct_hint(active_partials, public_key)?;
 
-        Ok(DilithiumSignature::new(z, h, *challenge))
+        // Get challenge from the verified partial signatures
+        let challenge = partial_signatures[0].challenge;
+
+        Ok(DilithiumSignature::new(z, h, challenge))
     }
 
     /// Verify a partial signature.
@@ -273,8 +285,7 @@ impl ThresholdSignature {
         let mu = hash_message(message);
 
         // Verify challenge consistency
-        let expected_challenge =
-            self.generate_partial_challenge(&mu);
+        let expected_challenge = self.generate_partial_challenge(&mu);
 
         if partial_sig.challenge != expected_challenge {
             return false;
@@ -343,10 +354,7 @@ impl ThresholdSignature {
 
     /// Convert to polynomial with tau non-zero coefficients
     // TODO remove w_1
-    fn generate_partial_challenge(
-        &self,
-        mu: &[u8],
-    ) -> Polynomial {
+    fn generate_partial_challenge(&self, mu: &[u8]) -> Polynomial {
         // Create seed
         let mut seed = mu.to_vec();
         seed.extend_from_slice(b"challenge");
