@@ -282,7 +282,7 @@ impl Dilithium {
         reader.read(&mut bytes);
 
         let mut coeffs = vec![0i32; N];
-        for i in 0..N {
+        for (i,c) in coeffs.iter_mut().enumerate().take(N) {
             let idx = i * 4;
             let val = u32::from_le_bytes([
                 bytes[idx],
@@ -290,7 +290,7 @@ impl Dilithium {
                 bytes[idx + 2],
                 bytes[idx + 3],
             ]);
-            coeffs[i] = (val % Q as u32) as i32;
+            *c = (val % Q as u32) as i32;
         }
 
         coeffs
@@ -324,10 +324,10 @@ impl Dilithium {
         reader.read(&mut bytes);
 
         let mut coeffs = vec![0i32; N];
-        for i in 0..N {
+        for (i, c) in coeffs.iter_mut().enumerate().take(N) {
             let val =
                 (bytes[i] as i32) % (2 * self.config.eta + 1) - self.config.eta;
-            coeffs[i] = val.rem_euclid(Q);
+            *c = val.rem_euclid(Q);
         }
 
         coeffs

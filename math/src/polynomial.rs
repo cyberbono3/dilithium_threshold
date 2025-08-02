@@ -332,9 +332,9 @@ impl Add for Polynomial {
 
     fn add(self, other: Self) -> Self {
         let mut coeffs = [0i32; N];
-        for i in 0..N {
-            coeffs[i] = Self::mod_reduce(
-                self.coeffs[i] as i64 + other.coeffs[i] as i64,
+        for (i, c) in coeffs.iter_mut().enumerate().take(N) {
+            *c = Self::mod_reduce(
+                *c as i64 + other.coeffs[i] as i64,
             );
         }
         Self { coeffs }
@@ -356,9 +356,9 @@ impl Sub for Polynomial {
 
     fn sub(self, other: Self) -> Self {
         let mut coeffs = [0i32; N];
-        for i in 0..N {
-            coeffs[i] = Self::mod_reduce(
-                self.coeffs[i] as i64 - other.coeffs[i] as i64,
+        for (i, c) in coeffs.iter_mut().enumerate().take(N){
+            *c = Self::mod_reduce(
+                *c as i64 - other.coeffs[i] as i64,
             );
         }
         Self { coeffs }
@@ -370,8 +370,8 @@ impl Mul<i32> for Polynomial {
 
     fn mul(self, scalar: i32) -> Self {
         let mut coeffs = [0i32; N];
-        for i in 0..N {
-            coeffs[i] = Self::mod_reduce(self.coeffs[i] as i64 * scalar as i64);
+          for (i, c) in coeffs.iter_mut().enumerate().take(N){
+            *c = Self::mod_reduce(*c as i64 * scalar as i64);
         }
         Self { coeffs }
     }
@@ -398,8 +398,8 @@ impl Neg for Polynomial {
 
     fn neg(self) -> Self {
         let mut coeffs = [0i32; N];
-        for i in 0..N {
-            coeffs[i] = Self::mod_reduce(-(self.coeffs[i] as i64));
+        for (i, c) in coeffs.iter_mut().enumerate().take(N){
+            *c = Self::mod_reduce(-(*c as i64));
         }
         Self { coeffs }
     }
@@ -539,9 +539,9 @@ mod prop_tests {
             let coeffs: Vec<i32> = (0..N as i32).collect();
             let poly = poly![coeffs.clone()];
 
-            for i in 0..N {
-                assert_eq!(poly.coeffs[i], i as i32);
-            }
+
+            assert!(poly.coeffs().iter().zip(0..N).all(|(c, i)| *c == i as i32));
+           
         }
 
         // Test 9: Very large coefficient vector
@@ -551,9 +551,7 @@ mod prop_tests {
 
             // Each position should have accumulated:
             // 1 (original) - 1 (from N) + 1 (from 2N) - 1 (from 3N) + 1 (from 4N) = 1
-            for i in 0..N {
-                assert_eq!(poly.coeffs[i], 1);
-            }
+            assert!(poly.coeffs().iter().all(|c| *c == 1));
         }
 
         // Test 10: Mixed positive and negative with wraparound
@@ -638,9 +636,9 @@ mod prop_tests {
                 2 => {
                     // Dense polynomial with small coefficients
                     let mut coeffs = [0i32; N];
-                    for i in 0..N {
+                    for c in coeffs.iter_mut().take(N) {
                         if bool::arbitrary(g) {
-                            coeffs[i] = (i32::arbitrary(g) % 1000).abs();
+                           *c = (i32::arbitrary(g) % 1000).abs();
                         }
                     }
                     poly![coeffs]
@@ -648,8 +646,8 @@ mod prop_tests {
                 _ => {
                     // Fully random polynomial
                     let mut coeffs = [0i32; N];
-                    for i in 0..N {
-                        coeffs[i] = (i32::arbitrary(g) % Q).abs();
+                    for (i, c) in coeffs.iter_mut().enumerate().take(N){
+                        *c = (i32::arbitrary(g) % Q).abs();
                     }
                     poly![coeffs]
                 }
