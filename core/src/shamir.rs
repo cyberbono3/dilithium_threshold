@@ -502,7 +502,7 @@ mod tests {
                 AdaptedShamirSSS::new(threshold, participants).unwrap();
 
             // Create zero polynomial
-            let zero_poly = Polynomial::new(vec![0; N]);
+            let zero_poly = poly![0; N];
             let zero_vector = PolynomialVector::new(vec![zero_poly]);
 
             let shares = shamir.split_secret(&zero_vector).unwrap();

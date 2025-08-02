@@ -537,7 +537,7 @@ mod prop_tests {
         // Test 8: Edge case with exactly N coefficients (no reduction needed)
         {
             let coeffs: Vec<i32> = (0..N as i32).collect();
-            let poly = Polynomial::new(coeffs.clone());
+            let poly = poly![coeffs.clone()];
 
             for i in 0..N {
                 assert_eq!(poly.coeffs[i], i as i32);
