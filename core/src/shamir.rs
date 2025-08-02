@@ -1,11 +1,14 @@
 use math::{
-    polynomial::{Polynomial, N, Q},
     poly_vector::PolynomialVector,
+    polynomial::{Polynomial, N, Q},
+    poly,
 };
 
-use crate::config::validate_threshold_config;
-use crate::error::{Result, ThresholdError};
-use crate::utils::lagrange_interpolation;
+use crate::{
+    config::validate_threshold_config,
+    error::{Result, ThresholdError},
+    utils::lagrange_interpolation,
+};
 
 /// Adapted Shamir's Secret Sharing
 #[derive(Clone, Debug, PartialEq)]
@@ -145,7 +148,7 @@ impl AdaptedShamirSSS {
                 *c = lagrange_interpolation(&points, 0)?;
             }
 
-            reconstructed_polys.push(Polynomial::from(coeffs));
+            reconstructed_polys.push(poly![coeffs]);
         }
 
         Ok(PolynomialVector::new(reconstructed_polys))
@@ -247,8 +250,9 @@ impl AdaptedShamirSSS {
 mod tests {
     use super::*;
     use math::{
-        polynomial::{Polynomial, N, Q},
         poly_vector::PolynomialVector,
+        polynomial::{Polynomial, N, Q},
+        poly,
     };
 
     mod shamir_share_tests {
@@ -256,8 +260,8 @@ mod tests {
 
         #[test]
         fn test_share_creation() {
-            let poly1 = Polynomial::from(vec![1, 2, 3, 4, 5]);
-            let poly2 = Polynomial::from(vec![6, 7, 8, 9, 10]);
+            let poly1 = poly![1, 2, 3, 4, 5];
+            let poly2 = poly![6, 7, 8, 9, 10];
             let share_vector = PolynomialVector::new(vec![poly1, poly2]);
             let share = ShamirShare::new(1, share_vector.clone()).unwrap();
 
@@ -268,7 +272,7 @@ mod tests {
 
         #[test]
         fn test_invalid_participant_id() {
-            let poly1 = Polynomial::from(vec![1, 2, 3, 4, 5]);
+            let poly1 = poly![1, 2, 3, 4, 5];
             let share_vector = PolynomialVector::new(vec![poly1]);
 
             // Test that participant ID 0 is rejected
@@ -277,7 +281,7 @@ mod tests {
 
         #[test]
         fn test_share_debug_representation() {
-            let poly1 = Polynomial::from(vec![1, 2, 3]);
+            let poly1 = poly![1, 2, 3];
             let share_vector = PolynomialVector::new(vec![poly1]);
             let share = ShamirShare::new(1, share_vector).unwrap();
 
@@ -347,8 +351,8 @@ mod tests {
                 AdaptedShamirSSS::new(threshold, participants).unwrap();
 
             // Create test secret vector
-            let secret_poly1 = Polynomial::from(vec![1, 2, 3, 4, 5]);
-            let secret_poly2 = Polynomial::from(vec![10, 20, 30, 40, 50]);
+            let secret_poly1 = poly![1, 2, 3, 4, 5];
+            let secret_poly2 = poly![10, 20, 30, 40, 50];
             let secret_vector =
                 PolynomialVector::new(vec![secret_poly1, secret_poly2]);
 
@@ -372,8 +376,8 @@ mod tests {
                 AdaptedShamirSSS::new(threshold, participants).unwrap();
 
             // Create test secret vector
-            let secret_poly1 = Polynomial::from(vec![1, 2, 3, 4, 5]);
-            let secret_poly2 = Polynomial::from(vec![10, 20, 30, 40, 50]);
+            let secret_poly1 = poly![1, 2, 3, 4, 5];
+            let secret_poly2 = poly![10, 20, 30, 40, 50];
             let secret_vector =
                 PolynomialVector::new(vec![secret_poly1, secret_poly2]);
 
@@ -395,7 +399,7 @@ mod tests {
             let shamir =
                 AdaptedShamirSSS::new(threshold, participants).unwrap();
 
-            let secret_poly = Polynomial::from(vec![42, 17, 99]);
+            let secret_poly = poly![42, 17, 99];
             let secret_vector = PolynomialVector::new(vec![secret_poly]);
 
             let shares = shamir.split_secret(&secret_vector).unwrap();
@@ -417,7 +421,7 @@ mod tests {
             let shamir =
                 AdaptedShamirSSS::new(threshold, participants).unwrap();
 
-            let secret_poly = Polynomial::from(vec![100, 200]);
+            let secret_poly = poly![100, 200];
             let secret_vector = PolynomialVector::new(vec![secret_poly]);
 
             let shares = shamir.split_secret(&secret_vector).unwrap();
@@ -440,8 +444,8 @@ mod tests {
                 AdaptedShamirSSS::new(threshold, participants).unwrap();
 
             // Create test secret vector
-            let secret_poly1 = Polynomial::from(vec![1, 2, 3, 4, 5]);
-            let secret_poly2 = Polynomial::from(vec![10, 20, 30, 40, 50]);
+            let secret_poly1 = poly![1, 2, 3, 4, 5];
+            let secret_poly2 = poly![10, 20, 30, 40, 50];
             let secret_vector = PolynomialVector::new(vec![
                 secret_poly1.clone(),
                 secret_poly2.clone(),
@@ -472,7 +476,7 @@ mod tests {
                 AdaptedShamirSSS::new(threshold, participants).unwrap();
 
             // Test with single polynomial
-            let single_poly = Polynomial::from(vec![42, 17]);
+            let single_poly = poly![42, 17];
             let single_vector = PolynomialVector::new(vec![single_poly]);
             let shares = shamir.split_secret(&single_vector).unwrap();
             let reconstructed =
@@ -480,9 +484,9 @@ mod tests {
             assert_eq!(reconstructed, single_vector);
 
             // Test with longer vector
-            let poly1 = Polynomial::from(vec![1, 2, 3]);
-            let poly2 = Polynomial::from(vec![10, 20, 30]);
-            let poly3 = Polynomial::from(vec![100, 200, 300]);
+            let poly1 = poly![1, 2, 3];
+            let poly2 = poly![10, 20, 30];
+            let poly3 = poly![100, 200, 300];
             let long_vector = PolynomialVector::new(vec![poly1, poly2, poly3]);
             let shares2 = shamir.split_secret(&long_vector).unwrap();
             let reconstructed2 =
@@ -529,7 +533,7 @@ mod tests {
                 for c in coeffs.iter_mut() {
                     *c = rng().random_range(0..1000);
                 }
-                random_polys.push(Polynomial::from(coeffs));
+                random_polys.push(poly![coeffs]);
             }
 
             let random_vector = PolynomialVector::new(random_polys);
@@ -546,7 +550,7 @@ mod tests {
         fn test_edge_case_thresholds() {
             // Minimum threshold (2 out of 2)
             let shamir_min = AdaptedShamirSSS::new(2, 2).unwrap();
-            let secret_poly = Polynomial::from(vec![100, 200]);
+            let secret_poly = poly![100, 200];
             let secret_vector = PolynomialVector::new(vec![secret_poly]);
 
             let shares = shamir_min.split_secret(&secret_vector).unwrap();
@@ -574,7 +578,7 @@ mod tests {
                 AdaptedShamirSSS::new(threshold, participants).unwrap();
 
             // Use specific values that test modular arithmetic
-            let poly = Polynomial::from(vec![Q - 1, 1, Q - 2]); // Values near modulus
+            let poly = poly![Q - 1, 1, Q - 2]; // Values near modulus
             let secret_vector = PolynomialVector::new(vec![poly]);
 
             let shares = shamir.split_secret(&secret_vector).unwrap();
@@ -591,7 +595,7 @@ mod tests {
             let shamir =
                 AdaptedShamirSSS::new(threshold, participants).unwrap();
 
-            let poly = Polynomial::from(vec![42, 17, 99, 13]);
+            let poly = poly![42, 17, 99, 13];
             let secret_vector = PolynomialVector::new(vec![poly]);
 
             let shares = shamir.split_secret(&secret_vector).unwrap();
@@ -620,9 +624,9 @@ mod tests {
         let shamir = AdaptedShamirSSS::new(threshold, participants).unwrap();
 
         // Create a complex secret
-        let poly1 = Polynomial::from(vec![123, 456, 789, 101, 202]);
-        let poly2 = Polynomial::from(vec![303, 404, 505, 606, 707]);
-        let poly3 = Polynomial::from(vec![808, 909, 111, 222, 333]);
+        let poly1 = poly![123, 456, 789, 101, 202];
+        let poly2 = poly![303, 404, 505, 606, 707];
+        let poly3 =  poly![808, 909, 111, 222, 333];
         let secret = PolynomialVector::new(vec![poly1, poly2, poly3]);
 
         // Split the secret

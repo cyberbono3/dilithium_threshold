@@ -9,8 +9,9 @@ use crate::utils::{get_hash_reader, get_randomness, hash_message};
 use crate::{config::DilithiumConfig, error::ThresholdError};
 
 use math::{
-    polynomial::{Polynomial, N, Q},
+    poly,
     poly_vector::PolynomialVector,
+    polynomial::{Polynomial, N, Q},
 };
 
 /// Represents a Dilithium key pair (public and private keys).
@@ -263,7 +264,7 @@ impl Dilithium {
                 seed.push(j as u8);
 
                 let poly_coeffs = self.sample_uniform(&seed);
-                row.push(Polynomial::from(poly_coeffs));
+                row.push(poly![poly_coeffs]);
             }
             a.push(row);
         }
@@ -308,7 +309,7 @@ impl Dilithium {
                     let mut seed = rho_prime.to_vec();
                     seed.extend_from_slice(s_type.as_bytes());
                     seed.push(i as u8);
-                    Polynomial::from(self.sample_eta(&seed))
+                    poly![self.sample_eta(&seed)]
                 })
                 .collect(),
         )
@@ -339,7 +340,7 @@ impl Dilithium {
                 let mut seed = randomness.to_vec();
                 seed.extend_from_slice(&kappa.to_le_bytes());
                 seed.push(i as u8);
-                Polynomial::from(self.sample_gamma1(&seed))
+                poly!(self.sample_gamma1(&seed))
             })
             .collect();
 
@@ -383,7 +384,7 @@ impl Dilithium {
                         (coeff + self.config.gamma2) / (2 * self.config.gamma2)
                     })
                     .collect::<Vec<i32>>();
-                Polynomial::from(high_coeffs)
+                poly!(high_coeffs)
             })
             .collect();
 
@@ -423,7 +424,7 @@ impl Dilithium {
             coeffs[pos] = sign;
         }
 
-        Polynomial::from(coeffs)
+        poly![coeffs]
     }
 
     fn check_z_bounds(&self, z: &PolynomialVector) -> bool {
@@ -450,7 +451,7 @@ impl Dilithium {
         _v2: &PolynomialVector,
     ) -> PolynomialVector {
         let result_polys = (0..self.config.k)
-            .map(|_| Polynomial::from(vec![0i32; N]))
+            .map(|_| poly![0; N])
             .collect();
 
         PolynomialVector::new(result_polys)

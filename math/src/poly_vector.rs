@@ -1,6 +1,9 @@
 use std::ops::{Add, Mul, Sub};
 
-use super::polynomial::Polynomial;
+use super::{
+    polynomial::Polynomial,
+    poly
+};
 
 /// Represents a vector of polynomials in Rq.
 ///
@@ -66,7 +69,7 @@ impl PolynomialVector {
     /// Create zero vector of given length.
     pub fn zero(length: usize) -> Self {
         Self {
-            polys: vec![Polynomial::zero(); length],
+            polys: vec![poly![]; length],
         }
     }
 
@@ -219,7 +222,7 @@ pub fn matrix_vector_multiply(
         .iter()
         .map(|row| {
             row.iter().zip(v.as_slice()).fold(
-                Polynomial::zero(),
+                poly![],
                 |mut acc, (a_ij, v_j)| {
                     acc += *a_ij * v_j;
                     acc
