@@ -410,7 +410,7 @@ pub fn matrix_vector_multiply(
         })
         .collect();
 
-    PolynomialVector::new(result)
+    poly_vec!(result)
 }
 
 impl Mul<i32> for PolynomialVector {

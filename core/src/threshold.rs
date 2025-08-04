@@ -15,9 +15,8 @@ use crate::{
 };
 
 use math::{
-    poly,
+    prelude::*,
     poly_vector::PolynomialVector,
-    polynomial::{Polynomial, N, Q},
 };
 
 use crate::dilithium::{Dilithium, DilithiumPublicKey, DilithiumSignature};
@@ -314,12 +313,13 @@ impl ThresholdSignature {
     fn sample_partial_y(&self, randomness: &[u8]) -> PolynomialVector {
         let polys = (0..self.dilithium.config.l)
             .map(|i| {
-                let coeffs = self.sample_gamma1(&[randomness, &[i as u8]].concat());
+                let coeffs =
+                    self.sample_gamma1(&[randomness, &[i as u8]].concat());
                 poly![coeffs]
             })
             .collect();
 
-        PolynomialVector::new(polys)
+        poly_vec!(polys)
     }
 
     // TODO optimize it
@@ -430,7 +430,7 @@ impl ThresholdSignature {
             reconstructed_polys.push(poly![coeffs]);
         }
 
-        Ok(PolynomialVector::new(reconstructed_polys))
+        Ok(poly_vec!(reconstructed_polys))
     }
 
     /// Reconstruct hint vector (simplified implementation).
@@ -442,7 +442,7 @@ impl ThresholdSignature {
         let hint_polys =
             (0..self.dilithium.config.k).map(|_| poly![]).collect();
 
-        Ok(PolynomialVector::new(hint_polys))
+        Ok(poly_vec!(hint_polys))
     }
 
     /// Check if partial signature satisfies bound requirements.
@@ -486,8 +486,8 @@ mod tests {
         fn test_key_share_creation() {
             let poly1 = poly![1, 2, 3];
             let poly2 = poly![4, 5, 6];
-            let s1_share_vec = PolynomialVector::new(vec![poly1]);
-            let s2_share_vec = PolynomialVector::new(vec![poly2]);
+            let s1_share_vec = poly_vec!(vec![poly1]);
+            let s2_share_vec = poly_vec!(vec![poly2]);
 
             let s1_share = ShamirShare::new(1, s1_share_vec).unwrap();
             let s2_share = ShamirShare::new(1, s2_share_vec).unwrap();
@@ -511,8 +511,8 @@ mod tests {
         fn test_key_share_display() {
             let poly1 = poly![vec![1]];
             let poly2 = poly![vec![2]];
-            let s1_share_vec = PolynomialVector::new(vec![poly1]);
-            let s2_share_vec = PolynomialVector::new(vec![poly2]);
+            let s1_share_vec = poly_vec!(vec![poly1]);
+            let s2_share_vec = poly_vec!(vec![poly2]);
 
             let s1_share = ShamirShare::new(5, s1_share_vec).unwrap();
             let s2_share = ShamirShare::new(5, s2_share_vec).unwrap();
@@ -538,10 +538,10 @@ mod tests {
         #[test]
         fn test_partial_signature_creation() {
             let z_poly = poly![100, 200, 300];
-            let z_partial = PolynomialVector::new(vec![z_poly]);
+            let z_partial = poly_vec!(vec![z_poly]);
 
             let comm_poly = poly![10, 20, 30];
-            let commitment = PolynomialVector::new(vec![comm_poly]);
+            let commitment = poly_vec!(vec![comm_poly]);
 
             let challenge = poly![1, -1, 0, 1];
 
@@ -556,8 +556,8 @@ mod tests {
 
         #[test]
         fn test_partial_signature_display() {
-            let z_partial = PolynomialVector::new(vec![poly![]]);
-            let commitment = PolynomialVector::new(vec![poly![]]);
+            let z_partial = poly_vec!(vec![poly![]]);
+            let commitment = poly_vec!(vec![poly![]]);
             let challenge = poly![];
 
             let partial_sig =

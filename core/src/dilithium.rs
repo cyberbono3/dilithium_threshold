@@ -9,9 +9,7 @@ use crate::utils::{get_hash_reader, get_randomness, hash_message};
 use crate::{config::DilithiumConfig, error::ThresholdError};
 
 use math::{
-    poly,
-    poly_vector::PolynomialVector,
-    polynomial::{Polynomial, N, Q},
+    prelude::*, poly_vector::PolynomialVector, polynomial::{Polynomial, N, Q}
 };
 
 /// Represents a Dilithium key pair (public and private keys).
@@ -303,16 +301,16 @@ impl Dilithium {
         s_type: &str,
         length: usize,
     ) -> PolynomialVector {
-        PolynomialVector::new(
-            (0..length)
+         let polys = (0..length)
                 .map(|i| {
                     let mut seed = rho_prime.to_vec();
                     seed.extend_from_slice(s_type.as_bytes());
                     seed.push(i as u8);
                     poly![self.sample_eta(&seed)]
                 })
-                .collect(),
-        )
+                .collect();
+        poly_vec!(polys)
+      
     }
 
     /// Sample polynomial with coefficients in [-eta, eta].
@@ -344,7 +342,7 @@ impl Dilithium {
             })
             .collect();
 
-        PolynomialVector::new(polys)
+        poly_vec!(polys)
     }
 
     /// Sample polynomial with coefficients in [-gamma1, gamma1].
@@ -388,7 +386,7 @@ impl Dilithium {
             })
             .collect();
 
-        PolynomialVector::new(result_polys)
+        poly_vec!(result_polys)
     }
 
     /// Generate challenge polynomial from message hash and w1.
@@ -454,7 +452,7 @@ impl Dilithium {
             .map(|_| poly![0; N])
             .collect();
 
-        PolynomialVector::new(result_polys)
+        poly_vec!(result_polys)
     }
 
     /// Check if hint h satisfies bound requirements.
