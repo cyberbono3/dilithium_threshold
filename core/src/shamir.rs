@@ -244,14 +244,10 @@ impl AdaptedShamirSSS {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use math::{
-        poly,
-        poly_vector::PolynomialVector,
-        polynomial::{Polynomial, N, Q},
-    };
 
     mod shamir_share_tests {
         use super::*;
@@ -292,30 +288,31 @@ mod tests {
     mod adapted_shamir_sss_tests {
         use super::*;
 
+        fn setup_adapted_shamir(threshold: usize, participants: usize) -> Result<AdaptedShamirSSS> {
+            AdaptedShamirSSS::new(threshold, participants)
+        }
+
         #[test]
         fn test_shamir_initialization() {
-            let threshold = 3;
-            let participants = 5;
-            let shamir =
-                AdaptedShamirSSS::new(threshold, participants).unwrap();
+            let adapted_shamir_res = setup_adapted_shamir(3, 5);
 
             // We can't directly access fields in Rust due to privacy,
             // but we can test that creation succeeds
-            assert!(AdaptedShamirSSS::new(threshold, participants).is_ok());
+            assert!(adapted_shamir_res.is_ok());
         }
 
         #[test]
         fn test_invalid_threshold_config() {
             // Threshold too small
             assert!(matches!(
-                AdaptedShamirSSS::new(1, 5),
+                setup_adapted_shamir(1, 5),
                 Err(ThresholdError::InvalidThreshold {
                     threshold: 1,
                     participant_number: 5
                 })
             ));
             assert!(matches!(
-                AdaptedShamirSSS::new(0, 5),
+                setup_adapted_shamir(0, 5),
                 Err(ThresholdError::InvalidThreshold {
                     threshold: 0,
                     participant_number: 5
@@ -324,7 +321,7 @@ mod tests {
 
             // Threshold larger than participants
             assert!(matches!(
-                AdaptedShamirSSS::new(6, 5),
+                setup_adapted_shamir(6, 5),
                 Err(ThresholdError::InvalidThreshold {
                     threshold: 6,
                     participant_number: 5
@@ -333,7 +330,7 @@ mod tests {
 
             // Too many participants (assuming max is 255 based on typical limits)
             assert!(matches!(
-                AdaptedShamirSSS::new(3, 300),
+                setup_adapted_shamir(3, 300),
                 Err(ThresholdError::InvalidThreshold {
                     threshold: 3,
                     participant_number: 300
@@ -343,10 +340,8 @@ mod tests {
 
         #[test]
         fn test_secret_splitting() {
-            let threshold = 3;
             let participants = 5;
-            let shamir =
-                AdaptedShamirSSS::new(threshold, participants).unwrap();
+            let shamir = setup_adapted_shamir(3, participants).unwrap();
 
             // Create test secret vector
             let secret_poly1 = poly![1, 2, 3, 4, 5];
@@ -368,9 +363,7 @@ mod tests {
         #[test]
         fn test_secret_reconstruction() {
             let threshold = 3;
-            let participants = 5;
-            let shamir =
-                AdaptedShamirSSS::new(threshold, participants).unwrap();
+            let shamir = setup_adapted_shamir(threshold, 5).unwrap();
 
             // Create test secret vector
             let secret_poly1 = poly![1, 2, 3, 4, 5];
@@ -391,9 +384,7 @@ mod tests {
         #[test]
         fn test_reconstruction_with_more_shares() {
             let threshold = 3;
-            let participants = 5;
-            let shamir =
-                AdaptedShamirSSS::new(threshold, participants).unwrap();
+            let shamir = setup_adapted_shamir(threshold, 5).unwrap();
 
             let secret_poly = poly![42, 17, 99];
             let secret_vector = poly_vec!(vec![secret_poly]);
@@ -413,9 +404,7 @@ mod tests {
         #[test]
         fn test_insufficient_shares() {
             let threshold = 3;
-            let participants = 5;
-            let shamir =
-                AdaptedShamirSSS::new(threshold, participants).unwrap();
+            let shamir = setup_adapted_shamir(threshold, 5).unwrap();
 
             let secret_poly = poly![100, 200];
             let secret_vector = poly_vec!(vec![secret_poly]);
@@ -435,15 +424,13 @@ mod tests {
         #[test]
         fn test_partial_reconstruction() {
             let threshold = 3;
-            let participants = 5;
-            let shamir =
-                AdaptedShamirSSS::new(threshold, participants).unwrap();
+            let shamir = setup_adapted_shamir(threshold, 5).unwrap();
 
             // Create test secret vector
             let secret_poly1 = poly![1, 2, 3, 4, 5];
             let secret_poly2 = poly![10, 20, 30, 40, 50];
             let secret_vector =
-                poly_vec!(secret_poly1.clone(), secret_poly2.clone());
+                poly_vec!(secret_poly1, secret_poly2);
 
             let shares = shamir.split_secret(&secret_vector).unwrap();
 
@@ -465,9 +452,7 @@ mod tests {
         #[test]
         fn test_different_vector_lengths() {
             let threshold = 3;
-            let participants = 5;
-            let shamir =
-                AdaptedShamirSSS::new(threshold, participants).unwrap();
+            let shamir = setup_adapted_shamir(threshold, 5).unwrap();
 
             // Test with single polynomial
             let single_poly = poly![42, 17];
@@ -491,9 +476,7 @@ mod tests {
         #[test]
         fn test_zero_polynomial_handling() {
             let threshold = 2;
-            let participants = 3;
-            let shamir =
-                AdaptedShamirSSS::new(threshold, participants).unwrap();
+           let shamir = setup_adapted_shamir(threshold, 3).unwrap();
 
             // Create zero polynomial
             let zero_poly = poly![0; N];
@@ -515,12 +498,10 @@ mod tests {
             use rand::{prelude::*, rng};
 
             let threshold = 3;
-            let participants = 5;
-            let shamir =
-                AdaptedShamirSSS::new(threshold, participants).unwrap();
+            let shamir = setup_adapted_shamir(threshold, 5).unwrap();
 
             // Generate random polynomial vector
-            let mut random_polys = Vec::new();
+            let mut random_polys = Vec::with_capacity(3);
 
             for _ in 0..3 {
                 let mut coeffs = vec![0i32; 10]; // Use only first 10 coefficients
@@ -567,9 +548,7 @@ mod tests {
             // through the reconstruction process which relies on correct modular arithmetic
 
             let threshold = 2;
-            let participants = 3;
-            let shamir =
-                AdaptedShamirSSS::new(threshold, participants).unwrap();
+            let shamir = setup_adapted_shamir(threshold, 3).unwrap();
 
             // Use specific values that test modular arithmetic
             let poly = poly![Q - 1, 1, Q - 2]; // Values near modulus
@@ -659,8 +638,8 @@ mod tests {
         // Check first coefficient is the secret
         assert_eq!(poly[0], secret);
         // Check all random coefficients are in valid range
-        for i in 1..5 {
-            assert!(poly[i] >= 0 && poly[i] < Q);
+        for c in poly.iter().take(5).skip(1) {
+            assert!((0..Q).contains(c));
         }
 
         // Test with zero secret
@@ -702,8 +681,8 @@ mod tests {
 
         assert_eq!(poly.len(), 10);
         assert_eq!(poly[0], secret);
-        for i in 1..10 {
-            assert!(poly[i] >= 0 && poly[i] < Q);
+        for c in poly.iter().take(10).skip(1) {
+            assert!((0..Q).contains(c));
         }
 
         // Test negative secret
@@ -793,7 +772,7 @@ mod tests {
         let manual_result = (5 + 7 * (3 + 7 * (2 + 7 * 4))) % Q;
         assert_eq!(
             AdaptedShamirSSS::evaluate_polynomial(&coeffs, x),
-            manual_result as i32
+            manual_result
         );
 
         // Test all-zero polynomial
