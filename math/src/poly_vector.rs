@@ -1,6 +1,188 @@
 use std::ops::{Add, Mul, Sub};
 
-use super::poly::Polynomial;
+use super::{
+    polynomial::Polynomial,
+    poly
+};
+
+// Macro for convenient polynomial vector creation
+/// 
+/// Creates a `PolynomialVector` with the given polynomials. This macro provides
+/// several convenient ways to construct polynomial vectors for use in Dilithium
+/// and threshold signature operations.
+/// 
+/// # Examples
+/// 
+/// ## Basic Usage
+/// 
+/// Creating a vector from existing polynomials:
+/// ```
+/// use math::{poly, poly_vec, polynomial::Polynomial, poly_vector::PolynomialVector};
+/// 
+/// let p1 = poly![1, 2, 3];
+/// let p2 = poly![4, 5, 6];
+/// let vec = poly_vec![p1, p2];
+/// 
+/// assert_eq!(vec.len(), 2);
+/// assert_eq!(vec.get(0), Some(&p1));
+/// assert_eq!(vec.get(1), Some(&p2));
+/// ```
+/// 
+/// ## Creating Zero Vector
+/// 
+/// Creating a zero polynomial vector of specified length:
+/// ```
+/// use math::{poly_vec, poly_vector::PolynomialVector};
+/// 
+/// // Create zero vector with 3 polynomials
+/// let zero_vec = poly_vec![0; 3];
+/// assert_eq!(zero_vec.len(), 3);
+/// assert!(zero_vec.get(0).unwrap().is_zero());
+/// assert!(zero_vec.get(1).unwrap().is_zero());
+/// assert!(zero_vec.get(2).unwrap().is_zero());
+/// 
+/// // Empty vector
+/// let empty = poly_vec![];
+/// assert!(empty.is_empty());
+/// ```
+/// 
+/// ## From Polynomial Expressions
+/// 
+/// Creating vectors with polynomial expressions:
+/// ```
+/// use math::{poly, poly_vec, polynomial::{Polynomial, N}};
+/// 
+/// // Using poly! macro inline
+/// let vec1 = poly_vec![
+///     poly![1, 2, 3],
+///     poly![4, 5, 6],
+///     poly![7, 8, 9]
+/// ];
+/// assert_eq!(vec1.len(), 3);
+/// 
+/// // With trailing comma
+/// let vec2 = poly_vec![
+///     poly![10, 20],
+///     poly![30, 40],
+/// ];
+/// assert_eq!(vec2.len(), 2);
+/// 
+/// // Mixed polynomial types
+/// let p1 = poly![1; 5];  // 5 ones
+/// let p2 = poly![];      // zero polynomial
+/// let vec3 = poly_vec![p1, p2, poly![1, 2, 3]];
+/// assert_eq!(vec3.len(), 3);
+/// ```
+/// 
+/// ## Creating Repeated Polynomials
+/// 
+/// Creating a vector with repeated polynomials:
+/// ```
+/// use math::{poly, poly_vec};
+/// 
+/// // Repeat the same polynomial 4 times
+/// let p = poly![42, 17, 99];
+/// let vec = poly_vec![p; 4];
+/// 
+/// assert_eq!(vec.len(), 4);
+/// for i in 0..4 {
+///     assert_eq!(vec.get(i), Some(&p));
+/// }
+/// ```
+/// 
+/// ## From a Vec of Polynomials
+/// 
+/// Creating from an existing vector of polynomials:
+/// ```
+/// use math::{poly, poly_vec, polynomial::Polynomial};
+/// 
+/// let polys = vec![
+///     poly![1, 2],
+///     poly![3, 4],
+///     poly![5, 6]
+/// ];
+/// let vec = poly_vec![polys];
+/// assert_eq!(vec.len(), 3);
+/// ```
+/// 
+/// ## Complex Examples
+/// 
+/// More complex usage patterns:
+/// ```
+/// use math::{poly, poly_vec, polynomial::{Polynomial, Q}};
+/// 
+/// // Using expressions to create polynomials
+/// let a = 5;
+/// let vec1 = poly_vec![
+///     poly![a, a*2, a*3],
+///     poly![a+1, a+2, a+3],
+///     poly![-a, -2*a, -3*a]  // Will be reduced mod Q
+/// ];
+/// assert_eq!(vec1.len(), 3);
+/// 
+/// // Creating from function calls
+/// fn make_poly(start: i32) -> Polynomial {
+///     poly![start, start+1, start+2]
+/// }
+/// 
+/// let vec2 = poly_vec![
+///     make_poly(10),
+///     make_poly(20),
+///     make_poly(30)
+/// ];
+/// assert_eq!(vec2.len(), 3);
+/// assert_eq!(vec2.get(0).unwrap().coeffs()[0], 10);
+/// assert_eq!(vec2.get(1).unwrap().coeffs()[0], 20);
+/// assert_eq!(vec2.get(2).unwrap().coeffs()[0], 30);
+/// 
+/// // Creating uniform vector with closures
+/// let vec3 = poly_vec![(0..5).map(|i| poly![i, i*i, i*i*i]).collect::<Vec<_>>()];
+/// assert_eq!(vec3.len(), 5);
+/// ```
+/// 
+/// ## Usage in Algorithms
+/// 
+/// 
+/// // Creating commitment vectors
+/// let commitments = poly_vec![0; 5];  // 5 zero polynomials
+/// assert_eq!(commitments.len(), 5);
+/// 
+/// // Vector arithmetic
+/// let v1 = poly_vec![poly![1, 2], poly![3, 4]];
+/// let v2 = poly_vec![poly![5, 6], poly![7, 8]];
+/// let sum = v1 + v2;
+/// assert_eq!(sum.get(0).unwrap().coeffs()[0], 6);  // 1 + 5
+/// assert_eq!(sum.get(1).unwrap().coeffs()[0], 10); // 3 + 7
+/// ```
+#[macro_export]
+macro_rules! poly_vec {
+    // Empty case - empty polynomial vector
+    () => {
+        $crate::poly_vector::PolynomialVector::new(vec![])
+    };
+    
+    // Single expression that evaluates to Vec<Polynomial>
+    ($vec:expr) => {
+        $crate::poly_vector::PolynomialVector::new($vec)
+    };
+    
+    // Repeated zero polynomial case: poly_vec![0; count]
+    (0; $count:expr) => {
+        $crate::poly_vector::PolynomialVector::zero($count)
+    };
+    
+    // Repeated polynomial case: poly_vec![poly; count]
+    ($poly:expr; $count:expr) => {{
+        let p = $poly;
+        $crate::poly_vector::PolynomialVector::new(vec![p; $count])
+    }};
+    
+    // List of polynomials
+    ($($poly:expr),+ $(,)?) => {
+        $crate::poly_vector::PolynomialVector::new(vec![$($poly),+])
+    };
+}
+
 
 /// Represents a vector of polynomials in Rq.
 ///
@@ -66,7 +248,7 @@ impl PolynomialVector {
     /// Create zero vector of given length.
     pub fn zero(length: usize) -> Self {
         Self {
-            polys: vec![Polynomial::zero(); length],
+            polys: vec![poly![]; length],
         }
     }
 
@@ -219,7 +401,7 @@ pub fn matrix_vector_multiply(
         .iter()
         .map(|row| {
             row.iter().zip(v.as_slice()).fold(
-                Polynomial::zero(),
+                poly![],
                 |mut acc, (a_ij, v_j)| {
                     acc += *a_ij * v_j;
                     acc
@@ -228,7 +410,7 @@ pub fn matrix_vector_multiply(
         })
         .collect();
 
-    PolynomialVector::new(result)
+    poly_vec!(result)
 }
 
 impl Mul<i32> for PolynomialVector {

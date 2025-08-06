@@ -8,10 +8,7 @@ use crate::error::Result;
 use crate::utils::{get_hash_reader, get_randomness, hash_message};
 use crate::{config::DilithiumConfig, error::ThresholdError};
 
-use math::{
-    poly::{Polynomial, N, Q},
-    poly_vector::PolynomialVector,
-};
+use math::prelude::*;
 
 /// Represents a Dilithium key pair (public and private keys).
 #[derive(Clone, Debug)]
@@ -263,7 +260,7 @@ impl Dilithium {
                 seed.push(j as u8);
 
                 let poly_coeffs = self.sample_uniform(&seed);
-                row.push(Polynomial::from(poly_coeffs));
+                row.push(poly![poly_coeffs]);
             }
             a.push(row);
         }
@@ -281,7 +278,7 @@ impl Dilithium {
         reader.read(&mut bytes);
 
         let mut coeffs = vec![0i32; N];
-        for i in 0..N {
+        for (i,c) in coeffs.iter_mut().enumerate().take(N) {
             let idx = i * 4;
             let val = u32::from_le_bytes([
                 bytes[idx],
@@ -289,7 +286,7 @@ impl Dilithium {
                 bytes[idx + 2],
                 bytes[idx + 3],
             ]);
-            coeffs[i] = (val % Q as u32) as i32;
+            *c = (val % Q as u32) as i32;
         }
 
         coeffs
@@ -302,16 +299,16 @@ impl Dilithium {
         s_type: &str,
         length: usize,
     ) -> PolynomialVector {
-        PolynomialVector::new(
-            (0..length)
+         let polys = (0..length)
                 .map(|i| {
                     let mut seed = rho_prime.to_vec();
                     seed.extend_from_slice(s_type.as_bytes());
                     seed.push(i as u8);
-                    Polynomial::from(self.sample_eta(&seed))
+                    poly![self.sample_eta(&seed)]
                 })
-                .collect(),
-        )
+                .collect();
+        poly_vec!(polys)
+      
     }
 
     /// Sample polynomial with coefficients in [-eta, eta].
@@ -323,10 +320,10 @@ impl Dilithium {
         reader.read(&mut bytes);
 
         let mut coeffs = vec![0i32; N];
-        for i in 0..N {
+        for (i, c) in coeffs.iter_mut().enumerate().take(N) {
             let val =
                 (bytes[i] as i32) % (2 * self.config.eta + 1) - self.config.eta;
-            coeffs[i] = val.rem_euclid(Q);
+            *c = val.rem_euclid(Q);
         }
 
         coeffs
@@ -339,11 +336,11 @@ impl Dilithium {
                 let mut seed = randomness.to_vec();
                 seed.extend_from_slice(&kappa.to_le_bytes());
                 seed.push(i as u8);
-                Polynomial::from(self.sample_gamma1(&seed))
+                poly!(self.sample_gamma1(&seed))
             })
             .collect();
 
-        PolynomialVector::new(polys)
+        poly_vec!(polys)
     }
 
     /// Sample polynomial with coefficients in [-gamma1, gamma1].
@@ -383,11 +380,11 @@ impl Dilithium {
                         (coeff + self.config.gamma2) / (2 * self.config.gamma2)
                     })
                     .collect::<Vec<i32>>();
-                Polynomial::from(high_coeffs)
+                poly!(high_coeffs)
             })
             .collect();
 
-        PolynomialVector::new(result_polys)
+        poly_vec!(result_polys)
     }
 
     /// Generate challenge polynomial from message hash and w1.
@@ -423,7 +420,7 @@ impl Dilithium {
             coeffs[pos] = sign;
         }
 
-        Polynomial::from(coeffs)
+        poly![coeffs]
     }
 
     fn check_z_bounds(&self, z: &PolynomialVector) -> bool {
@@ -450,10 +447,10 @@ impl Dilithium {
         _v2: &PolynomialVector,
     ) -> PolynomialVector {
         let result_polys = (0..self.config.k)
-            .map(|_| Polynomial::from(vec![0i32; N]))
+            .map(|_| poly![0; N])
             .collect();
 
-        PolynomialVector::new(result_polys)
+        poly_vec!(result_polys)
     }
 
     /// Check if hint h satisfies bound requirements.

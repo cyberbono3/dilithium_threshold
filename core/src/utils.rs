@@ -6,7 +6,7 @@ use sha3::{
 };
 
 use crate::error::{Result, ThresholdError};
-use math::poly::Q;
+use math::polynomial::Q;
 
 pub fn get_randomness(randomness: Option<&[u8]>) -> Vec<u8> {
     match randomness {

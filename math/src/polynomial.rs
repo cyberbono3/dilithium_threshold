@@ -8,6 +8,127 @@ use super::ntt::{intt, montgomery_reduce, ntt};
 pub const Q: i32 = 8380417; // Dilithium's prime modulus
 pub const N: usize = 256; // Polynomial degree bound
 
+/// Macro for convenient polynomial creation
+///
+/// Creates a polynomial with the given coefficients. Coefficients are automatically
+/// reduced modulo Q and padded with zeros up to degree N-1.
+///
+/// # Examples
+///
+/// Basic usage:
+/// ```
+/// use math::polynomial::{Polynomial, N, Q};
+/// use math::poly;
+///
+/// // Create polynomial from coefficients
+/// let p1 = poly![1, 2, 3];
+/// assert_eq!(p1.coeffs()[0], 1);
+/// assert_eq!(p1.coeffs()[1], 2);
+/// assert_eq!(p1.coeffs()[2], 3);
+/// assert_eq!(p1.coeffs()[3], 0); // Rest are zeros
+/// ```
+///
+/// Creating zero polynomial:
+/// ```
+/// use math::prelude::*;
+///
+/// let p_zero = poly![];
+/// assert!(p_zero.is_zero());
+/// assert_eq!(p_zero, poly![]);
+/// ```
+///
+/// Creating polynomial with repeated values:
+/// ```
+/// use math::prelude::*;
+///
+/// // First 5 coefficients are 7, rest are 0
+/// let p = poly![7; 5];
+/// for i in 0..5 {
+///     assert_eq!(p.coeffs()[i], 7);
+/// }
+/// assert_eq!(p.coeffs()[5], 0);
+/// ```
+///
+/// Automatic modular reduction:
+/// ```
+/// use math::prelude::*;
+///
+/// // Negative values are reduced mod Q
+/// let p1 = poly![-1, -2, -3];
+/// assert_eq!(p1.coeffs()[0], Q - 1);
+/// assert_eq!(p1.coeffs()[1], Q - 2);
+/// assert_eq!(p1.coeffs()[2], Q - 3);
+///
+/// // Values > Q are reduced
+/// let p2 = poly![Q + 1, Q + 2];
+/// assert_eq!(p2.coeffs()[0], 1);
+/// assert_eq!(p2.coeffs()[1], 2);
+/// ```
+///
+/// Using expressions:
+/// ```
+/// use math::prelude::*;
+///
+/// let x = 10;
+/// let p = poly![x, x*2, x*3];
+/// assert_eq!(p.coeffs()[0], 10);
+/// assert_eq!(p.coeffs()[1], 20);
+/// assert_eq!(p.coeffs()[2], 30);
+/// ```
+///
+/// From arrays and vectors:
+/// ```
+/// use math::prelude::*;
+///
+/// let arr = [1, 2, 3, 4];
+/// let p1 = poly![&arr[..]];  // Convert array to slice
+/// assert_eq!(p1.coeffs()[0], 1);
+/// assert_eq!(p1.coeffs()[3], 4);
+///
+/// let vec = vec![10, 20, 30];
+/// let p2 = poly![vec];
+/// assert_eq!(p2.coeffs()[0], 10);
+/// assert_eq!(p2.coeffs()[2], 30);
+/// ```
+/// From repated values
+/// ```
+/// use math::prelude::*;
+/// 
+/// 
+/// let p1 = poly![5; 3];
+/// assert_eq!(p1.coeffs()[0], 5);
+/// assert_eq!(p1.coeffs()[1], 5);
+/// assert_eq!(p1.coeffs()[2], 5);
+/// assert_eq!(p1.coeffs()[3], 0);
+/// 
+#[macro_export]
+macro_rules! poly {
+    // Empty case - zero polynomial
+    () => {
+        $crate::polynomial::Polynomial::zero()
+    };
+
+    // Single expression that evaluates to an array or slice
+    ($arr:expr) => {
+        $crate::polynomial::Polynomial::from($arr)
+    };
+
+    // Repeated value case: poly![value; count]
+    ($val:expr; $count:expr) => {{
+        let mut coeffs = vec![0i32; $crate::polynomial::N];
+        let count = ::std::cmp::min($count, $crate::polynomial::N);
+        for i in 0..count {
+            coeffs[i] = $val;
+        }
+        $crate::polynomial::Polynomial::from(coeffs)
+    }};
+
+    // List of coefficients
+    ($($coeff:expr),+ $(,)?) => {
+        $crate::polynomial::Polynomial::from(vec![$($coeff),+])
+    };
+}
+
 /// Represents a polynomial in Rq = Zq[X]/(X^256 + 1).
 ///
 /// Coefficients are stored as an array of integers modulo Q.
@@ -154,16 +275,31 @@ impl Polynomial {
     }
 }
 
-// Conversion implementations
-impl From<[i32; N]> for Polynomial {
-    fn from(coeffs: [i32; N]) -> Self {
-        let mut result = coeffs;
-        for coeff in &mut result {
-            *coeff = Self::mod_reduce(*coeff as i64);
-        }
-        Self { coeffs: result }
+// Generic implementation for arrays of any size
+// This allows poly![arr] to work with arrays like [i32; 4]
+impl<const M: usize> From<[i32; M]> for Polynomial {
+    fn from(coeffs: [i32; M]) -> Self {
+        Self::from(&coeffs[..])
     }
 }
+
+// Implementation for array references
+impl<const M: usize> From<&[i32; M]> for Polynomial {
+    fn from(coeffs: &[i32; M]) -> Self {
+        Self::from(&coeffs[..])
+    }
+}
+
+// Conversion implementations
+// impl From<[i32; N]> for Polynomial {
+//     fn from(coeffs: [i32; N]) -> Self {
+//         let mut result = coeffs;
+//         for coeff in &mut result {
+//             *coeff = Self::mod_reduce(*coeff as i64);
+//         }
+//         Self { coeffs: result }
+//     }
+// }
 
 impl From<&[i32]> for Polynomial {
     fn from(coeffs: &[i32]) -> Self {
@@ -196,9 +332,9 @@ impl Add for Polynomial {
 
     fn add(self, other: Self) -> Self {
         let mut coeffs = [0i32; N];
-        for i in 0..N {
-            coeffs[i] = Self::mod_reduce(
-                self.coeffs[i] as i64 + other.coeffs[i] as i64,
+        for (i, c) in coeffs.iter_mut().enumerate().take(N) {
+            *c = Self::mod_reduce(
+                *c as i64 + other.coeffs[i] as i64,
             );
         }
         Self { coeffs }
@@ -220,9 +356,9 @@ impl Sub for Polynomial {
 
     fn sub(self, other: Self) -> Self {
         let mut coeffs = [0i32; N];
-        for i in 0..N {
-            coeffs[i] = Self::mod_reduce(
-                self.coeffs[i] as i64 - other.coeffs[i] as i64,
+        for (i, c) in coeffs.iter_mut().enumerate().take(N){
+            *c = Self::mod_reduce(
+                *c as i64 - other.coeffs[i] as i64,
             );
         }
         Self { coeffs }
@@ -234,8 +370,8 @@ impl Mul<i32> for Polynomial {
 
     fn mul(self, scalar: i32) -> Self {
         let mut coeffs = [0i32; N];
-        for i in 0..N {
-            coeffs[i] = Self::mod_reduce(self.coeffs[i] as i64 * scalar as i64);
+          for (i, c) in coeffs.iter_mut().enumerate().take(N){
+            *c = Self::mod_reduce(*c as i64 * scalar as i64);
         }
         Self { coeffs }
     }
@@ -262,8 +398,8 @@ impl Neg for Polynomial {
 
     fn neg(self) -> Self {
         let mut coeffs = [0i32; N];
-        for i in 0..N {
-            coeffs[i] = Self::mod_reduce(-(self.coeffs[i] as i64));
+        for (i, c) in coeffs.iter_mut().enumerate().take(N){
+            *c = Self::mod_reduce(-(*c as i64));
         }
         Self { coeffs }
     }
@@ -283,8 +419,8 @@ mod prop_tests {
 
     #[test]
     fn test_add_assign_basic() {
-        let mut p1 = Polynomial::from(vec![1, 2, 3]);
-        let p2 = Polynomial::from(vec![4, 5, 6]);
+        let mut p1 = poly![1, 2, 3];
+        let p2 = poly![4, 5, 6];
 
         p1 += p2;
 
@@ -303,7 +439,7 @@ mod prop_tests {
             coeffs[0] = 5;
             coeffs[N] = 3; // This represents 3*X^N = -3
 
-            let poly = Polynomial::new(coeffs);
+            let poly = poly![coeffs];
             assert_eq!(poly.coeffs[0], 2); // 5 - 3 = 2
             assert_eq!(poly.coeffs[1], 0);
         }
@@ -316,7 +452,7 @@ mod prop_tests {
             coeffs[0] = 10;
             coeffs[2 * N] = 7; // This represents 7*X^(2N) = 7
 
-            let poly = Polynomial::new(coeffs);
+            let poly = poly![coeffs];
             assert_eq!(poly.coeffs[0], 17); // 10 + 7 = 17
         }
 
@@ -328,7 +464,7 @@ mod prop_tests {
             coeffs[0] = 20;
             coeffs[3 * N] = 8; // This represents 8*X^(3N) = -8
 
-            let poly = Polynomial::new(coeffs);
+            let poly = poly![coeffs];
             assert_eq!(poly.coeffs[0], 12); // 20 - 8 = 12
         }
 
@@ -343,7 +479,7 @@ mod prop_tests {
             coeffs[2 * N] = 20; // +20 at position 0
             coeffs[2 * N + 1] = 10; // +10 at position 1
 
-            let poly = Polynomial::new(coeffs);
+            let poly = poly![coeffs];
             assert_eq!(poly.coeffs[0], 90); // 100 - 30 + 20 = 90
             assert_eq!(poly.coeffs[1], 20); // 50 - 40 + 10 = 20
         }
@@ -354,7 +490,7 @@ mod prop_tests {
             coeffs[0] = -50;
             coeffs[N] = -30; // Represents -30*X^N = 30
 
-            let poly = Polynomial::new(coeffs);
+            let poly = poly![coeffs];
             // -50 - (-30) = -50 + 30 = -20
             // Then mod_reduce ensures it's in [0, Q)
             assert_eq!(poly.coeffs[0], Q - 20);
@@ -366,7 +502,7 @@ mod prop_tests {
             coeffs[0] = Q + 100;
             coeffs[N] = Q + 50; // Will be subtracted
 
-            let poly = Polynomial::new(coeffs);
+            let poly = poly![coeffs];
             // (Q + 100) - (Q + 50) = 50
             assert_eq!(poly.coeffs[0], 50);
         }
@@ -382,7 +518,7 @@ mod prop_tests {
                 coeffs[3 * N + i] = i as i32 * 2; // Odd power - subtract
             }
 
-            let poly = Polynomial::new(coeffs);
+            let poly = poly![coeffs];
 
             // Verify first few coefficients
             // Position 0: 0 - 0 + 0 - 0 = 0
@@ -401,23 +537,21 @@ mod prop_tests {
         // Test 8: Edge case with exactly N coefficients (no reduction needed)
         {
             let coeffs: Vec<i32> = (0..N as i32).collect();
-            let poly = Polynomial::new(coeffs.clone());
+            let poly = poly![coeffs.clone()];
 
-            for i in 0..N {
-                assert_eq!(poly.coeffs[i], i as i32);
-            }
+
+            assert!(poly.coeffs().iter().zip(0..N).all(|(c, i)| *c == i as i32));
+           
         }
 
         // Test 9: Very large coefficient vector
         {
-            let mut coeffs = vec![1; 5 * N];
-            let poly = Polynomial::new(coeffs);
+            let coeffs = vec![1; 5 * N];
+            let poly = poly![coeffs];
 
             // Each position should have accumulated:
             // 1 (original) - 1 (from N) + 1 (from 2N) - 1 (from 3N) + 1 (from 4N) = 1
-            for i in 0..N {
-                assert_eq!(poly.coeffs[i], 1);
-            }
+            assert!(poly.coeffs().iter().all(|c| *c == 1));
         }
 
         // Test 10: Mixed positive and negative with wraparound
@@ -428,7 +562,7 @@ mod prop_tests {
             coeffs[N] = -500; // Odd power, subtracts from position 0
             coeffs[0] = 100;
 
-            let poly = Polynomial::new(coeffs);
+            let poly = poly![coeffs];
 
             // Position N-1: 1000 - 2000 = -1000
             // -1000 mod Q = Q - 1000 = 8379417
@@ -451,12 +585,13 @@ mod prop_tests {
         coeffs[3] = -Q - 20;
         coeffs[N] = Q; // Will be subtracted from position 0
 
-        let poly = Polynomial::new(coeffs);
+        let poly = poly![coeffs];
 
         // Verify all coefficients are in valid range [0, Q)
-        for &coeff in &poly.coeffs {
+        for coeff in &poly.coeffs {
             assert!(
-                coeff >= 0 && coeff < Q,
+                (0..Q).contains(coeff),
+                // coeff >= 0 && coeff < Q,
                 "Coefficient {} is out of range [0, {})",
                 coeff,
                 Q
@@ -486,7 +621,7 @@ mod prop_tests {
             match strategy {
                 0 => {
                     // Zero polynomial
-                    Polynomial::zero()
+                    poly![]
                 }
                 1 => {
                     // Sparse polynomial (few non-zero coefficients)
@@ -496,25 +631,25 @@ mod prop_tests {
                         let idx = usize::arbitrary(g) % N;
                         coeffs[idx] = (i32::arbitrary(g) % Q).abs();
                     }
-                    Polynomial::from(coeffs)
+                    poly![coeffs]
                 }
                 2 => {
                     // Dense polynomial with small coefficients
                     let mut coeffs = [0i32; N];
-                    for i in 0..N {
+                    for c in coeffs.iter_mut().take(N) {
                         if bool::arbitrary(g) {
-                            coeffs[i] = (i32::arbitrary(g) % 1000).abs();
+                           *c = (i32::arbitrary(g) % 1000).abs();
                         }
                     }
-                    Polynomial::from(coeffs)
+                    poly![coeffs]
                 }
                 _ => {
                     // Fully random polynomial
                     let mut coeffs = [0i32; N];
-                    for i in 0..N {
-                        coeffs[i] = (i32::arbitrary(g) % Q).abs();
+                    for (i, c) in coeffs.iter_mut().enumerate().take(N){
+                        *c = (i32::arbitrary(g) % Q).abs();
                     }
-                    Polynomial::from(coeffs)
+                    poly![coeffs]
                 }
             }
         }
@@ -530,12 +665,12 @@ mod prop_tests {
                         // Set coefficient to zero
                         {
                             new_coeffs[i] = 0;
-                            Polynomial::from(new_coeffs)
+                            poly![new_coeffs]
                         },
                         // Halve the coefficient
                         {
                             new_coeffs[i] = coeffs[i] / 2;
-                            Polynomial::from(new_coeffs)
+                            poly![new_coeffs]
                         },
                     ]
                 })
@@ -548,7 +683,7 @@ mod prop_tests {
     // Property: Zero is the additive identity
     #[quickcheck]
     fn prop_addition_identity(p: Polynomial) -> bool {
-        let zero = Polynomial::zero();
+        let zero = poly![];
         let sum1 = p + zero;
         let sum2 = zero + p;
         sum1 == p && sum2 == p
@@ -632,7 +767,7 @@ mod prop_tests {
     // Property: Zero polynomial has zero norm
     #[quickcheck]
     fn prop_zero_norm() -> bool {
-        let zero = Polynomial::zero();
+        let zero = poly![];
         zero.norm_infinity() == 0 && zero.norm_l2() == 0.0
     }
 
@@ -651,9 +786,9 @@ mod prop_tests {
             return TestResult::discard();
         }
 
-        let p1 = Polynomial::from(coeffs.as_slice());
-        let p2 = Polynomial::from(&coeffs);
-        let p3 = Polynomial::from(coeffs.clone());
+        let p1 = poly![coeffs.as_slice()];
+        let p2 = poly![&coeffs];
+        let p3 = poly![coeffs.clone()];
 
         TestResult::from_bool(p1 == p2 && p2 == p3)
     }

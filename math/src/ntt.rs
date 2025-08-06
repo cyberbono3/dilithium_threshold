@@ -1,4 +1,4 @@
-use super::poly::{N, Q};
+use super::polynomial::{N, Q};
 
 // Roots of unity in order needed by forward ntt
 const ZETAS: [i64; N] = [
