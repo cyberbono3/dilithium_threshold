@@ -8,9 +8,7 @@ use crate::error::Result;
 use crate::utils::{get_hash_reader, get_randomness, hash_message};
 use crate::{config::DilithiumConfig, error::ThresholdError};
 
-use math::{
-    prelude::*, poly_vector::PolynomialVector, polynomial::{Polynomial, N, Q}
-};
+use math::prelude::*;
 
 /// Represents a Dilithium key pair (public and private keys).
 #[derive(Clone, Debug)]
