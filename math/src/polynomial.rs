@@ -5,7 +5,7 @@ use rand::Rng;
 use super::ntt::{intt, montgomery_reduce, ntt};
 
 /// Constants for the Dilithium algorithm
-pub const Q: i32 = 8380417; // Dilithium's prime modulus
+pub const Q: i32 = 8380417; // Dilithium prime modulus
 pub const N: usize = 256; // Polynomial degree bound
 
 /// Macro for convenient polynomial creation
@@ -93,14 +93,14 @@ pub const N: usize = 256; // Polynomial degree bound
 /// From repated values
 /// ```
 /// use math::prelude::*;
-/// 
-/// 
+///
+///
 /// let p1 = poly![5; 3];
 /// assert_eq!(p1.coeffs()[0], 5);
 /// assert_eq!(p1.coeffs()[1], 5);
 /// assert_eq!(p1.coeffs()[2], 5);
 /// assert_eq!(p1.coeffs()[3], 0);
-/// 
+///
 #[macro_export]
 macro_rules! poly {
     // Empty case - zero polynomial
@@ -333,9 +333,7 @@ impl Add for Polynomial {
     fn add(self, other: Self) -> Self {
         let mut coeffs = [0i32; N];
         for (i, c) in coeffs.iter_mut().enumerate().take(N) {
-            *c = Self::mod_reduce(
-                *c as i64 + other.coeffs[i] as i64,
-            );
+            *c = Self::mod_reduce(*c as i64 + other.coeffs[i] as i64);
         }
         Self { coeffs }
     }
@@ -356,10 +354,8 @@ impl Sub for Polynomial {
 
     fn sub(self, other: Self) -> Self {
         let mut coeffs = [0i32; N];
-        for (i, c) in coeffs.iter_mut().enumerate().take(N){
-            *c = Self::mod_reduce(
-                *c as i64 - other.coeffs[i] as i64,
-            );
+        for (i, c) in coeffs.iter_mut().enumerate().take(N) {
+            *c = Self::mod_reduce(*c as i64 - other.coeffs[i] as i64);
         }
         Self { coeffs }
     }
@@ -370,7 +366,7 @@ impl Mul<i32> for Polynomial {
 
     fn mul(self, scalar: i32) -> Self {
         let mut coeffs = [0i32; N];
-          for (i, c) in coeffs.iter_mut().enumerate().take(N){
+        for (i, c) in coeffs.iter_mut().enumerate().take(N) {
             *c = Self::mod_reduce(*c as i64 * scalar as i64);
         }
         Self { coeffs }
@@ -398,7 +394,7 @@ impl Neg for Polynomial {
 
     fn neg(self) -> Self {
         let mut coeffs = [0i32; N];
-        for (i, c) in coeffs.iter_mut().enumerate().take(N){
+        for (i, c) in coeffs.iter_mut().enumerate().take(N) {
             *c = Self::mod_reduce(-(*c as i64));
         }
         Self { coeffs }
@@ -539,9 +535,11 @@ mod prop_tests {
             let coeffs: Vec<i32> = (0..N as i32).collect();
             let poly = poly![coeffs.clone()];
 
-
-            assert!(poly.coeffs().iter().zip(0..N).all(|(c, i)| *c == i as i32));
-           
+            assert!(poly
+                .coeffs()
+                .iter()
+                .zip(0..N)
+                .all(|(c, i)| *c == i as i32));
         }
 
         // Test 9: Very large coefficient vector
@@ -638,7 +636,7 @@ mod prop_tests {
                     let mut coeffs = [0i32; N];
                     for c in coeffs.iter_mut().take(N) {
                         if bool::arbitrary(g) {
-                           *c = (i32::arbitrary(g) % 1000).abs();
+                            *c = (i32::arbitrary(g) % 1000).abs();
                         }
                     }
                     poly![coeffs]
@@ -646,7 +644,7 @@ mod prop_tests {
                 _ => {
                     // Fully random polynomial
                     let mut coeffs = [0i32; N];
-                    for (i, c) in coeffs.iter_mut().enumerate().take(N){
+                    for (i, c) in coeffs.iter_mut().enumerate().take(N) {
                         *c = (i32::arbitrary(g) % Q).abs();
                     }
                     poly![coeffs]

@@ -278,7 +278,7 @@ impl Dilithium {
         reader.read(&mut bytes);
 
         let mut coeffs = vec![0i32; N];
-        for (i,c) in coeffs.iter_mut().enumerate().take(N) {
+        for (i, c) in coeffs.iter_mut().enumerate().take(N) {
             let idx = i * 4;
             let val = u32::from_le_bytes([
                 bytes[idx],
@@ -299,16 +299,15 @@ impl Dilithium {
         s_type: &str,
         length: usize,
     ) -> PolynomialVector {
-         let polys = (0..length)
-                .map(|i| {
-                    let mut seed = rho_prime.to_vec();
-                    seed.extend_from_slice(s_type.as_bytes());
-                    seed.push(i as u8);
-                    poly![self.sample_eta(&seed)]
-                })
-                .collect();
+        let polys = (0..length)
+            .map(|i| {
+                let mut seed = rho_prime.to_vec();
+                seed.extend_from_slice(s_type.as_bytes());
+                seed.push(i as u8);
+                poly![self.sample_eta(&seed)]
+            })
+            .collect();
         poly_vec!(polys)
-      
     }
 
     /// Sample polynomial with coefficients in [-eta, eta].
@@ -446,9 +445,7 @@ impl Dilithium {
         _v1: &PolynomialVector,
         _v2: &PolynomialVector,
     ) -> PolynomialVector {
-        let result_polys = (0..self.config.k)
-            .map(|_| poly![0; N])
-            .collect();
+        let result_polys = (0..self.config.k).map(|_| poly![0; N]).collect();
 
         poly_vec!(result_polys)
     }

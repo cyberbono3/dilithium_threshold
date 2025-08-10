@@ -88,8 +88,8 @@ pub fn intt(a: &mut [i32]) {
         len <<= 1;
     }
 
-    for j in 0..N {
-        a[j] = montgomery_reduce(F * a[j] as i64);
+    for elem in a.iter_mut().take(N) {
+        *elem = montgomery_reduce(*elem as i64 * F);
     }
 }
 

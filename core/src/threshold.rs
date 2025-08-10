@@ -1,7 +1,5 @@
 use sha2::{Digest, Sha256};
-use sha3::{
-    digest::{XofReader},
-};
+use sha3::digest::XofReader;
 use std::collections::HashMap;
 
 use crate::{
@@ -14,7 +12,6 @@ use crate::{
 };
 
 use math::prelude::*;
-    
 
 use crate::dilithium::{Dilithium, DilithiumPublicKey, DilithiumSignature};
 

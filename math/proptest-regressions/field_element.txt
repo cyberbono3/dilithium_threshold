@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 4d30a4b6f427650ff3736884a4a1ede9a275ded4ba879d208e92603a2f6653b4 # shrinks to input = _MontyredOutputAlwaysInRangeArgs { a: 43195699033327177 }

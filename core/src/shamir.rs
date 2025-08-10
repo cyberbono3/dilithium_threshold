@@ -211,10 +211,7 @@ impl AdaptedShamirSSS {
             for share in &participant_shares[pid - 1] {
                 share_polys[share.poly_idx][share.coeff_idx] = share.value;
             }
-            let polys = share_polys
-                .into_iter()
-                .map(Polynomial::new)
-                .collect();
+            let polys = share_polys.into_iter().map(Polynomial::new).collect();
 
             let share_vector = poly_vec!(polys);
             shares.push(ShamirShare::new(pid, share_vector)?);
@@ -243,7 +240,6 @@ impl AdaptedShamirSSS {
         result as i32
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -288,7 +284,10 @@ mod tests {
     mod adapted_shamir_sss_tests {
         use super::*;
 
-        fn setup_adapted_shamir(threshold: usize, participants: usize) -> Result<AdaptedShamirSSS> {
+        fn setup_adapted_shamir(
+            threshold: usize,
+            participants: usize,
+        ) -> Result<AdaptedShamirSSS> {
             AdaptedShamirSSS::new(threshold, participants)
         }
 
@@ -429,8 +428,7 @@ mod tests {
             // Create test secret vector
             let secret_poly1 = poly![1, 2, 3, 4, 5];
             let secret_poly2 = poly![10, 20, 30, 40, 50];
-            let secret_vector =
-                poly_vec!(secret_poly1, secret_poly2);
+            let secret_vector = poly_vec!(secret_poly1, secret_poly2);
 
             let shares = shamir.split_secret(&secret_vector).unwrap();
 
@@ -476,7 +474,7 @@ mod tests {
         #[test]
         fn test_zero_polynomial_handling() {
             let threshold = 2;
-           let shamir = setup_adapted_shamir(threshold, 3).unwrap();
+            let shamir = setup_adapted_shamir(threshold, 3).unwrap();
 
             // Create zero polynomial
             let zero_poly = poly![0; N];
