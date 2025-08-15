@@ -4,8 +4,8 @@ use sha3::digest::XofReader;
 use std::collections::HashMap;
 
 use crate::{
-    params::{validate_threshold_config, DEFAULT_SECURITY_LEVEL},
     error::{Result, ThresholdError},
+    params::{validate_threshold_config, DEFAULT_SECURITY_LEVEL},
     shamir::{AdaptedShamirSSS, ShamirShare},
     utils::{get_hash_reader, get_randomness, hash_message},
 };

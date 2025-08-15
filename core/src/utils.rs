@@ -5,7 +5,6 @@ use sha3::{
     Shake256, Shake256ReaderCore,
 };
 
-
 pub fn get_randomness(randomness: Option<&[u8]>) -> Vec<u8> {
     match randomness {
         Some(r) => r.to_vec(),
@@ -32,7 +31,6 @@ pub fn hash_message(message: &[u8]) -> Vec<u8> {
     reader.read(&mut output);
     output
 }
-
 
 #[cfg(test)]
 mod tests {

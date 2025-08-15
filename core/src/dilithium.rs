@@ -6,7 +6,7 @@ use sha3::{
 
 use crate::error::Result;
 use crate::utils::{get_hash_reader, get_randomness, hash_message};
-use crate::{params::DilithiumConfig, error::ThresholdError};
+use crate::{error::ThresholdError, params::DilithiumConfig};
 use math::traits::FiniteField;
 
 use math::prelude::*;
