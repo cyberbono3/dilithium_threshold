@@ -1,267 +1,481 @@
-use super::polynomial::{N, Q};
+use std::ops::MulAssign;
 
-// Roots of unity in order needed by forward ntt
-const ZETAS: [i64; N] = [
-    0, 25847, -2608894, -518909, 237124, -777960, -876248, 466468, 1826347,
-    2353451, -359251, -2091905, 3119733, -2884855, 3111497, 2680103, 2725464,
-    1024112, -1079900, 3585928, -549488, -1119584, 2619752, -2108549, -2118186,
-    -3859737, -1399561, -3277672, 1757237, -19422, 4010497, 280005, 2706023,
-    95776, 3077325, 3530437, -1661693, -3592148, -2537516, 3915439, -3861115,
-    -3043716, 3574422, -2867647, 3539968, -300467, 2348700, -539299, -1699267,
-    -1643818, 3505694, -3821735, 3507263, -2140649, -1600420, 3699596, 811944,
-    531354, 954230, 3881043, 3900724, -2556880, 2071892, -2797779, -3930395,
-    -1528703, -3677745, -3041255, -1452451, 3475950, 2176455, -1585221,
-    -1257611, 1939314, -4083598, -1000202, -3190144, -3157330, -3632928,
-    126922, 3412210, -983419, 2147896, 2715295, -2967645, -3693493, -411027,
-    -2477047, -671102, -1228525, -22981, -1308169, -381987, 1349076, 1852771,
-    -1430430, -3343383, 264944, 508951, 3097992, 44288, -1100098, 904516,
-    3958618, -3724342, -8578, 1653064, -3249728, 2389356, -210977, 759969,
-    -1316856, 189548, -3553272, 3159746, -1851402, -2409325, -177440, 1315589,
-    1341330, 1285669, -1584928, -812732, -1439742, -3019102, -3881060,
-    -3628969, 3839961, 2091667, 3407706, 2316500, 3817976, -3342478, 2244091,
-    -2446433, -3562462, 266997, 2434439, -1235728, 3513181, -3520352, -3759364,
-    -1197226, -3193378, 900702, 1859098, 909542, 819034, 495491, -1613174,
-    -43260, -522500, -655327, -3122442, 2031748, 3207046, -3556995, -525098,
-    -768622, -3595838, 342297, 286988, -2437823, 4108315, 3437287, -3342277,
-    1735879, 203044, 2842341, 2691481, -2590150, 1265009, 4055324, 1247620,
-    2486353, 1595974, -3767016, 1250494, 2635921, -3548272, -2994039, 1869119,
-    1903435, -1050970, -1333058, 1237275, -3318210, -1430225, -451100, 1312455,
-    3306115, -1962642, -1279661, 1917081, -2546312, -1374803, 1500165, 777191,
-    2235880, 3406031, -542412, -2831860, -1671176, -1846953, -2584293,
-    -3724270, 594136, -3776993, -2013608, 2432395, 2454455, -164721, 1957272,
-    3369112, 185531, -1207385, -3183426, 162844, 1616392, 3014001, 810149,
-    1652634, -3694233, -1799107, -3038916, 3523897, 3866901, 269760, 2213111,
-    -975884, 1717735, 472078, -426683, 1723600, -1803090, 1910376, -1667432,
-    -1104333, -260646, -3833893, -2939036, -2235985, -420899, -2286327, 183443,
-    -976891, 1612842, -3545687, -554416, 3919660, -48306, -1362209, 3937738,
-    1400424, -846154, 1976782,
-];
+use num_traits::ConstOne;
+use num_traits::ConstZero;
 
-// 32 bit  airthmetic
-const QINV: i32 = 58728449;
+use super::field_element::FieldElement;
+use super::traits::FiniteField;
+use super::traits::Inverse;
+use super::traits::ModPowU32;
+use super::traits::PrimitiveRootOfUnity;
 
-pub fn montgomery_reduce(a: i64) -> i32 {
-    let mut t = (a as i32).wrapping_mul(QINV) as i64;
-    t = (a - t * Q as i64) >> 32;
-    t as i32
+/// ## Perform NTT on slices of prime-field elements
+///
+/// NTTs are Number Theoretic Transforms, which are Discrete Fourier Transforms
+/// (DFTs) over finite fields. It aims at being used to compute polynomial multiplication over finite fields.
+/// NTT reduces the complexity of such multiplication.
+pub fn ntt<FF>(x: &mut [FF])
+where
+    FF: FiniteField + MulAssign<FieldElement>,
+{
+    let slice_len = u32::try_from(x.len())
+        .expect("slice should be no longer than u32::MAX");
+
+    assert!(slice_len == 0 || slice_len.is_power_of_two());
+    let log2_slice_len = slice_len.checked_ilog2().unwrap_or(0);
+
+    // `slice_len` is 0 or a power of two smaller than u32::MAX
+    //  => `unwrap()` never panics
+    let omega = FieldElement::primitive_root_of_unity(slice_len).unwrap();
+    ntt_unchecked(x, omega, log2_slice_len);
 }
 
-/// Forward NTT, in-place.
-pub fn ntt(a: &mut [i32]) {
-    let mut t;
-    let mut k = 0usize;
-    let mut len = 128;
+/// ## Perform INTT on slices of prime-field elements
+///
+/// INTT is the inverse [NTT][self::ntt], so abstractly,
+/// *intt(values) = ntt(values) / n*.
+///
+/// This transform is performed in-place.
+///
+/// # Example
+///
+/// ```
+/// use math::prelude::*;
+/// let original_values = fe_vec![0, 1, 1, 2, 3, 5, 8, 13];
+/// let mut transformed_values = original_values.clone();
+/// ntt(&mut transformed_values);
+/// intt(&mut transformed_values);
+/// assert_eq!(original_values, transformed_values);
+/// ```
+///
+/// # Panics
+///
+/// Panics if the length of the input slice is
+/// - not a power of two
+/// - larger than [`u32::MAX`]
+pub fn intt<FF>(x: &mut [FF])
+where
+    FF: FiniteField + MulAssign<FieldElement>,
+{
+    let slice_len = u32::try_from(x.len())
+        .expect("slice should be no longer than u32::MAX");
 
-    while len > 0 {
-        for start in (0..N).step_by(2 * len) {
-            k += 1;
-            let zeta = ZETAS[k];
-            let end = start + len;
-            for j in start..end {
-                t = montgomery_reduce(zeta * a[j + len] as i64);
-                a[j + len] = a[j] - t;
-                a[j] += t;
-            }
-        }
-        len >>= 1;
+    assert!(slice_len == 0 || slice_len.is_power_of_two());
+    let log2_slice_len = slice_len.checked_ilog2().unwrap_or(0);
+
+    // `slice_len` is 0 or a power of two smaller than u32::MAX
+    //  => `unwrap()` never panics
+    let omega = FieldElement::primitive_root_of_unity(slice_len).unwrap();
+    ntt_unchecked(x, omega.inverse(), log2_slice_len);
+
+    let n_inv_or_zero = FieldElement::from(x.len()).inverse_or_zero();
+    for elem in x.iter_mut() {
+        *elem *= n_inv_or_zero
     }
 }
 
-/// Inverse NTT in-place
-/// Perform INTT on slices of i32 elements
-pub fn intt(a: &mut [i32]) {
-    let mut k = 256usize;
-    let mut len = 1;
-    const F: i64 = 41978; // mont^2/256
+/// Like [NTT][self::ntt], but with greater control over the root of unity that
+/// is to be used.
+///
+/// Does _not_ check whether
+/// - the passed-in root of unity is indeed a primitive root of unity of the
+///   appropriate order, or whether
+/// - the passed-in log₂ of the slice length matches.
+///
+/// Use [NTT][self:ntt] if you want a nicer interface.
+#[expect(clippy::many_single_char_names)]
+#[inline]
+fn ntt_unchecked<FF>(x: &mut [FF], omega: FieldElement, log2_slice_len: u32)
+where
+    FF: FiniteField + MulAssign<FieldElement>,
+{
+    let slice_len = x.len() as u32;
 
-    while len < N {
-        for start in (0..N).step_by(2 * len) {
-            k -= 1;
-            let zeta = -ZETAS[k];
-            let end = start + len;
-            for j in start..end {
-                let (u, v) = (a[j], a[j + len]);
-                a[j] = u.wrapping_add(v);
-                a[j + len] = montgomery_reduce(zeta * (u - v) as i64);
+    for k in 0..slice_len {
+        let rk = bitreverse(k, log2_slice_len);
+        if k < rk {
+            x.swap(rk as usize, k as usize);
+        }
+    }
+
+    let mut m = 1;
+    for _ in 0..log2_slice_len {
+        let w_m = omega.mod_pow_u32(slice_len / (2 * m));
+        let mut k = 0;
+        while k < slice_len {
+            let mut w = FieldElement::ONE;
+            for j in 0..m {
+                let u = x[(k + j) as usize];
+                let mut v = x[(k + j + m) as usize];
+                v *= w;
+                x[(k + j) as usize] = u + v;
+                x[(k + j + m) as usize] = u - v;
+                w *= w_m;
+            }
+
+            k += 2 * m;
+        }
+
+        m *= 2;
+    }
+}
+
+#[inline]
+pub fn bitreverse_usize(mut n: usize, l: usize) -> usize {
+    let mut r = 0;
+    for _ in 0..l {
+        r = (r << 1) | (n & 1);
+        n >>= 1;
+    }
+    r
+}
+
+pub fn bitreverse_order<FF>(array: &mut [FF]) {
+    let mut logn = 0;
+    while (1 << logn) < array.len() {
+        logn += 1;
+    }
+
+    for k in 0..array.len() {
+        let rk = bitreverse_usize(k, logn);
+        if k < rk {
+            array.swap(rk, k);
+        }
+    }
+}
+
+/// Compute the [NTT][self::ntt], but leave the array in
+/// [bitreversed order][self::bitreverse_order].
+///
+/// This method can be expected to outperform regular NTT when
+///  - it is followed up by [INTT][self::intt] (e.g. for fast multiplication)
+///  - the `powers_of_omega_bitreversed` can be precomputed (which is not the
+///    case here).
+///
+/// In that case, be sure to use the matching [`intt_noswap`] and don't forget
+/// to unscale by `n`, e.g. using [`unscale`].
+pub fn ntt_noswap<FF>(x: &mut [FF])
+where
+    FF: FiniteField + MulAssign<FieldElement>,
+{
+    let n: usize = x.len();
+    debug_assert!(n.is_power_of_two());
+
+    let root_order = n.try_into().unwrap();
+    let omega = FieldElement::primitive_root_of_unity(root_order).unwrap();
+
+    let mut logn: usize = 0;
+    while (1 << logn) < x.len() {
+        logn += 1;
+    }
+
+    let mut powers_of_omega_bitreversed = vec![FieldElement::ZERO; n];
+    let mut omegai = FieldElement::ONE;
+    for i in 0..n / 2 {
+        powers_of_omega_bitreversed[bitreverse_usize(i, logn - 1)] = omegai;
+        omegai *= omega;
+    }
+
+    let mut m: usize = 1;
+    let mut t: usize = n;
+    while m < n {
+        t >>= 1;
+
+        for (i, zeta) in powers_of_omega_bitreversed.iter().enumerate().take(m)
+        {
+            let s = i * t * 2;
+            for j in s..(s + t) {
+                let u = x[j];
+                let mut v = x[j + t];
+                v *= *zeta;
+                x[j] = u + v;
+                x[j + t] = u - v;
             }
         }
-        len <<= 1;
+
+        m *= 2;
+    }
+}
+
+/// Compute the [inverse NTT][self::intt], assuming that the array is presented
+/// in [bitreversed order][self::bitreverse_order]. Also, don't unscale by `n`
+/// afterward.
+///
+/// See also [`ntt_noswap`].
+pub fn intt_noswap<FF>(x: &mut [FF])
+where
+    FF: FiniteField + MulAssign<FieldElement>,
+{
+    let n = x.len();
+    debug_assert!(n.is_power_of_two());
+
+    let root_order = n.try_into().unwrap();
+    let omega = FieldElement::primitive_root_of_unity(root_order).unwrap();
+    let omega_inverse = omega.inverse();
+
+    let mut logn: usize = 0;
+    while (1 << logn) < x.len() {
+        logn += 1;
     }
 
-    for elem in a.iter_mut().take(N) {
-        *elem = montgomery_reduce(*elem as i64 * F);
+    let mut m = 1;
+    for _ in 0..logn {
+        let w_m = omega_inverse.mod_pow_u32((n / (2 * m)).try_into().unwrap());
+        let mut k = 0;
+        while k < n {
+            let mut w = FieldElement::ONE;
+            for j in 0..m {
+                let u = x[k + j];
+                let mut v = x[k + j + m];
+                v *= w;
+                x[k + j] = u + v;
+                x[k + j + m] = u - v;
+                w *= w_m;
+            }
+
+            k += 2 * m;
+        }
+
+        m *= 2;
     }
+}
+
+/// Unscale the array by multiplying every element by the
+/// inverse of the array's length. Useful for following up intt.
+pub fn unscale(array: &mut [FieldElement]) {
+    let ninv = FieldElement::new(array.len() as u32).inverse();
+    for a in array.iter_mut() {
+        *a *= ninv;
+    }
+}
+
+#[inline]
+fn bitreverse(mut n: u32, l: u32) -> u32 {
+    let mut r = 0;
+    for _ in 0..l {
+        r = (r << 1) | (n & 1);
+        n >>= 1;
+    }
+    r
 }
 
 #[cfg(test)]
-mod tests {
+mod fast_ntt_attempt_tests {
+    use itertools::Itertools;
+    use proptest::collection::vec;
+    use proptest::prelude::*;
+    use proptest_arbitrary_interop::arb;
+    use test_strategy::proptest;
+
     use super::*;
+    use crate::field_element::other::random_elements;
+    use crate::prelude::*;
+    use crate::traits::PrimitiveRootOfUnity;
 
     #[test]
-    fn test_montgomery_reduce() {
-        // Test Montgomery reduction properties
-        let a = 12345i64;
-        let b = 67890i64;
+    fn chu_ntt_b_field_prop_test() {
+        for log_2_n in 1..10 {
+            let n = 1 << log_2_n;
+            for _ in 0..10 {
+                let mut values = random_elements(n);
+                let original_values = values.clone();
+                ntt::<FieldElement>(&mut values);
+                assert_ne!(original_values, values);
+                intt::<FieldElement>(&mut values);
+                assert_eq!(original_values, values);
 
-        // Test that montgomery_reduce is deterministic
-        let r1 = montgomery_reduce(a);
-        let r2 = montgomery_reduce(a);
-        assert_eq!(r1, r2, "Montgomery reduce should be deterministic");
-
-        // Test bounds: result should be in [-Q, Q]
-        for i in 0..100 {
-            let x = (i * 12345) as i64;
-            let r = montgomery_reduce(x);
-            assert!(r.abs() <= Q, "Montgomery reduce out of bounds: {}", r);
+                values[0] = fe!(FieldElement::MAX);
+                let original_values_with_max_element = values.clone();
+                ntt::<FieldElement>(&mut values);
+                assert_ne!(original_values, values);
+                intt::<FieldElement>(&mut values);
+                assert_eq!(original_values_with_max_element, values);
+            }
         }
     }
 
     #[test]
-    fn test_ntt() {
-        let mut input = [
-            2, -1, 3, 0, -2, 1, -3, 2, 4, -4, 1, -1, 0, 2, -2, 3, -3, 4, -4, 3,
-            -1, 2, -2, 1, 0, -3, 3, -4, 4, -1, 1, -2, 2, 0, -1, 3, -3, 4, -4,
-            2, -2, 1, -1, 0, 3, -3, 4, -4, 1, -1, 2, -2, 3, -3, 0, 4, -4, 1,
-            -1, 2, -2, 3, -3, 0, 4, -4, 3, -3, 2, -2, 1, -1, 0, 4, -4, 3, -3,
-            2, -2, 1, -1, 0, 2, -2, 4, -4, 1, -1, 3, -3, 0, 2, -2, 4, -4, 1,
-            -1, 3, -3, 0, 1, -1, 2, -2, 3, -3, 4, -4, 0, 1, -1, 2, -2, 3, -3,
-            4, -4, 0, 3, -3, 1, -1, 4, -4, 2, -2, 0, 3, -3, 1, -1, 4, -4, 2,
-            -2, 0, 4, -4, 3, -3, 2, -2, 1, -1, 0, 4, -4, 3, -3, 2, -2, 1, -1,
-            0, 2, -2, 4, -4, 1, -1, 3, -3, 0, 2, -2, 4, -4, 1, -1, 3, -3, 0, 1,
-            -1, 2, -2, 3, -3, 4, -4, 0, 1, -1, 2, -2, 3, -3, 4, -4, 0, 3, -3,
-            1, -1, 4, -4, 2, -2, 0, 3, -3, 1, -1, 4, -4, 2, -2, 0, 2, -2, 3,
-            -3, 1, -1, 4, -4, 0, 2, -2, 3, -3, 1, -1, 4, -4, 0, 4, -4, 2, -2,
-            3, -3, 1, -1, 0, 4, -4, 2, -2, 3, -3, 1, -1, 0, 1, -1, 4, -4, 3,
-            -3, 2, -2, 0, 1, -1, 4,
+    fn field_basic_test_of_chu_ntt() {
+        let mut input_output = vec![
+            FieldElement::new(1),
+            FieldElement::new(4),
+            FieldElement::new(0),
+            FieldElement::new(0),
+        ];
+        let original_input = input_output.clone();
+
+        // For the field with prime 8380417, we need to calculate the expected values
+        // The NTT of [1, 4, 0, 0] with n=4 uses omega = primitive_root_of_unity(4) = 4808194
+        //
+        // NTT formula: X[k] = sum(x[j] * omega^(j*k)) for j=0 to n-1
+        //
+        // X[0] = 1*1 + 4*1 + 0*1 + 0*1 = 5
+        // X[1] = 1*1 + 4*omega + 0*omega^2 + 0*omega^3 = 1 + 4*4808194 = 1 + 19232776 mod 8380417 = 2472943
+        // X[2] = 1*1 + 4*omega^2 + 0*omega^4 + 0*omega^6 = 1 + 4*8380416 = 1 + 33521664 mod 8380417 = 8380413
+        // X[3] = 1*1 + 4*omega^3 + 0*omega^6 + 0*omega^9 = 1 + 4*3572223 = 1 + 14288892 mod 8380417 = 5908476
+
+        let expected = vec![
+            FieldElement::new(5),
+            FieldElement::new(2471943),
+            FieldElement::new(8380414),
+            FieldElement::new(5908476),
         ];
 
-        let output = [
-            10782399, 6972977, 4171496, -788460, 245414, 6713026, 3819187,
-            -2009247, -1447026, 4893050, 5359721, 1367415, 8500740, 5150544,
-            1581543, 2230997, -4189791, 3331945, 1561680, 7716474, 8504412,
-            14945592, 8190563, 1616045, 6850260, 8340148, 5497338, 11592894,
-            8754679, 16489863, 9667701, 3077397, -1670945, 6182415, -7180628,
-            972754, -11192480, -4296566, 3635811, -3824281, 7811213, 4837167,
-            984835, 7315337, -943211, 6747199, 13211590, 8541550, 12656228,
-            4277618, -807016, 2361810, 10670478, 10621114, 12597299, 7399533,
-            2233805, 2393855, 5430558, 1424778, -2431566, 2516744, 1220719,
-            8370411, 1486869, 2097715, 3141133, -1240277, 4357728, 2599392,
-            3619928, 10646416, 1168240, -1349082, -6334424, -10105942,
-            -1985028, 220390, 2603083, -4907805, -13385757, -11485023,
-            -2477935, -7791613, -15350625, -12708753, -9448554, -7747924,
-            -12342086, -8795108, -6209159, -4310911, 5698648, 3121236,
-            -6124529, -1280243, 14097194, 13806412, 11882022, 4264268, 1562232,
-            3257490, 5161257, 1709845, 5446318, 115312, 8210026, 3867384,
-            1893028, 624828, 4329674, 7169958, 7055343, 282995, -1008227,
-            -5008895, 8672580, 2008946, 3658001, -4649591, 2732878, 241994,
-            10586093, 9000707, 336593, 1361657, -1262132, 695218, -1652489,
-            -5250497, 3950415, 2759131, 6724161, -1028457, -3819301, 537893,
-            5455438, -167374, 12641755, 8855073, 8377560, 3934266, 4373134,
-            4145244, 2861257, -2331617, -2035715, 5297619, 519102, 3071028,
-            124476, -928814, 8653065, 1299895, 3844515, 1325989, 5004967,
-            6363211, 3965985, 8505149, 5336845, -2753639, 1242505, 6080833,
-            1381546, -3214070, 8775783, 1519813, -851329, -5545001, -5974240,
-            -12469606, -5917972, -4116264, 4241284, -777544, 1278616, -4766750,
-            -10852796, -7818354, 2392382, -1414692, -6299014, -5982184,
-            -954627, -8979509, -5800852, -12163392, -6972394, -11179220,
-            -14056930, -7032492, 2913516, -3118586, -1761325, -5464209,
-            -8791231, -6092535, -15074210, -7168724, -7923673, -12706605,
-            -14971196, -16432506, -6422579, -9493767, -4492908, -6312198,
-            -7554101, -6218059, -4500687, -9556377, -2866033, -4180179,
-            -553788, 1722176, -4018023, -3540815, -1644296, 4515394, 4681814,
-            2427250, 2513703, 6892213, 4067262, 3836100, -2062179, 1048841,
-            -3904268, -4056658, -3852752, -10289210, -1841853, -9247821,
-            3300849, -1479587, -14408199, -7443127, -7127467, -8977979, 709302,
-            4763008, 2259536, 2346442, -2481427, -1592081, -6287336, -3619740,
-            -8014179, -4274469, -5456090, -6146374, -6662096, -8104178,
-            -17432462, -13150064,
-        ];
+        ntt::<FieldElement>(&mut input_output);
+        assert_eq!(expected, input_output);
 
-        super::ntt(&mut input);
-        assert_eq!(input, output);
+        // Verify that INTT(NTT(x)) = x
+        intt::<FieldElement>(&mut input_output);
+        assert_eq!(original_input, input_output);
     }
 
     #[test]
-    fn test_intt() {
-        let mut a = [
-            -410121, -3439227, -1510274, 1543151, -2293562, -1024787, -1768713,
-            3416108, -1829266, -39421, 1553720, 383193, -1303564, 2601404,
-            178534, 3075833, -1669488, 2938151, 419856, 3374895, -3659025,
-            2791925, -2014544, -4116040, 528058, -460960, -498884, -3726436,
-            1576721, 1111713, -2404662, 289307, 3590938, 362196, -2812407,
-            -1463477, 1001050, 2798150, -472041, 1298972, -601719, -3341683,
-            -2239048, -3200450, -1250550, -2932037, -158803, -42310, 1710565,
-            1768181, 3343337, -4124626, -970397, 2715826, 650012, -2014903,
-            4155312, -570039, -1014542, -1136867, -2854295, 3545986, 3534334,
-            1775063, 543277, 1440396, -2274992, -1666074, -2522410, 1374130,
-            2546411, 2357995, 3246445, -1637839, -3940900, -22882, 3617374,
-            3695910, 3135497, 3461903, 321845, 1837065, -4102518, 2025912,
-            4037956, 3262194, -1077158, -104681, 1543795, 2067328, -3128599,
-            3610959, 1154470, -1950084, 3161277, -1484341, 3056494, 145395,
-            -2412862, 3811285, -2651526, 794539, -1077785, -3775793, 1851954,
-            925186, -1420046, -2129292, -2572721, -1709299, 2466220, -1148025,
-            -631434, 1616317, 1979838, 1787596, -2046122, 4145612, 2425669,
-            -1207333, -3920849, 2920839, -1437055, 2250361, -2512504, -2660187,
-            -2934830, 3926550, 1895481, -763893, 1348485, 3392907, -2603573,
-            748841, 3508436, -3904020, 800986, 1434045, 3024446, -2067148,
-            4058529, -1797892, 2428719, -1661266, -1174918, -1085872, -437562,
-            2040521, 3475996, 35877, 3621178, -1269117, -743638, 442376,
-            -278296, -2265303, 1611044, -1440032, 545695, 3186212, 2126009,
-            -93566, 1381483, -4000405, -1074727, 291811, 3040864, -1459167,
-            -3809294, -1446926, -2959019, 1110797, -2346583, 1125183, -1458376,
-            476652, 2246737, -1552594, -321172, -328787, 3727158, 2578512,
-            -637322, 2145686, 124009, 316574, 598758, -2180345, -40300,
-            1777560, -712912, 3969900, -837615, 4186858, -1992625, 1592425,
-            4172055, 1030316, 1732649, 3365500, -2209545, -2216165, 1598405,
-            4122715, 4094540, 363060, 369838, -1841354, 3772391, 1383675,
-            -1268324, -237400, -3972626, 1314275, -128037, -810499, -3799034,
-            -1750396, 766339, 1350337, -519324, -3673999, 873780, -2497778,
-            1159808, 3552922, 900408, 3883840, -4073441, 2974189, 763212,
-            -1033993, -1137934, -3359093, 452287, 2935586, -917124, 608771,
-            3625009, -2851574, -207975, -101949, -3075118, -1522612, -3819111,
-            3826184, 2419692, 1871952, -1722545, -710127, 3035522, -3436794,
-            -2649023, 383072, 2434951, 3052038,
+    fn bfield_max_value_test_of_chu_ntt() {
+        let mut input_output = vec![
+            FieldElement::new(FieldElement::MAX),
+            FieldElement::new(0),
+            FieldElement::new(0),
+            FieldElement::new(0),
         ];
-        let a_output = [
-            775832, -3236070, 3979117, -477690, -3845958, 3442130, 3288278,
-            3510572, -4059961, 398894, -2353757, 2033799, 1142104, -1503727,
-            -1966738, -646014, -1208934, 2807801, 1786267, 77787, -3034606,
-            -2018590, -4138114, -119863, -2143281, -2656209, -1161853,
-            -1355718, -3330698, 535482, 3053760, 1831603, 2290608, 2796725,
-            -2609926, -663097, 1464007, 2958053, -2816324, 2906926, 500159,
-            943996, 524888, -4163949, -834472, 964151, 2161202, 1983774,
-            -3656476, -3020535, 952201, 2170010, 711358, 1519731, -3738927,
-            -3756753, 921738, -3392868, 2699399, 3324418, -1453193, 1620721,
-            449384, -39155, 3109821, 1029974, 142649, 921233, 3727107, 637146,
-            -756794, 34504, -1893151, -603841, 2330154, 1322568, -1191265,
-            -748922, 1386438, 2435097, 355691, 705695, -504939, 1785625,
-            3011361, 2599030, -721431, 3258978, 826952, 3134195, 1786978,
-            -2063102, 3719340, -3791185, 766135, 1412965, 2002641, 344357,
-            -3493197, -3971320, -1589376, 3333787, -886393, -3473781, 2615969,
-            258578, -1357515, 31929, -2417061, 3279057, 623958, 402549,
-            -3223514, 1434146, 2674659, 4184013, 2350081, -2255267, 3242948,
-            -2755729, 3141850, -3642170, -410070, -3603228, 509187, 747235,
-            -2733439, 2951878, 934726, -1464030, -3685617, -177281, -2026915,
-            -2014190, 3892744, -2765709, 178393, 1247779, -328544, -647840,
-            227976, -1303803, -407239, 2659686, 330785, 22660, 3150838, -49448,
-            -3247191, 3366409, 3515827, 2681493, -3955013, 957672, 2270951,
-            -2324620, 848541, 252308, 2362816, -480849, 1886753, 1946701,
-            -3448907, 3931255, -2029213, -3650910, 3939281, 730275, 2214811,
-            1201755, -694587, -2004861, 2583875, 3279717, 3819665, 2574119,
-            -2112908, -2400101, -1349537, 3495414, 1347624, -2225620, -2050682,
-            -2951590, -3996103, -3607935, 3247458, -2175324, -1553702,
-            -2091666, 1571828, -1878102, 2718529, -541427, -662267, -1324341,
-            -370258, -474473, 2224715, 2128310, -345001, 1208578, -1376070,
-            3433670, 3140605, 875985, -1831696, 449356, -220450, 1787974,
-            2388192, -34248, -3456146, 2415580, 1786863, -2849072, -212492,
-            59437, -716203, 1968326, 1107129, 434519, 185631, 3036577,
-            -2325373, 567821, 1988023, 2839088, -1233636, -3135158, 4161465,
-            -3730607, 1882010, -3271303, -2556717, -1387745, -3161242, 1813752,
-            -3561981, 130118, -2005282, -3396498, 1716289, -3253036, -1302754,
-            2500212, -1918240, 1201565, -1106518, 743553, 902331, 804710,
-            -3047027, 3654086, 911638, 3708051,
+        let original_input = input_output.clone();
+        let expected = vec![
+            FieldElement::new(FieldElement::MAX),
+            FieldElement::new(FieldElement::MAX),
+            FieldElement::new(FieldElement::MAX),
+            FieldElement::new(FieldElement::MAX),
         ];
-        super::intt(&mut a);
-        assert_eq!(a, a_output);
+
+        ntt::<FieldElement>(&mut input_output);
+        assert_eq!(expected, input_output);
+
+        // Verify that INTT(NTT(x)) = x
+        intt::<FieldElement>(&mut input_output);
+        assert_eq!(original_input, input_output);
+    }
+
+    #[test]
+    fn ntt_on_empty_input() {
+        let mut input_output = vec![];
+        let original_input = input_output.clone();
+
+        ntt::<FieldElement>(&mut input_output);
+        assert_eq!(0, input_output.len());
+
+        // Verify that INTT(NTT(x)) = x
+        intt::<FieldElement>(&mut input_output);
+        assert_eq!(original_input, input_output);
+    }
+
+    #[proptest]
+    fn ntt_on_input_of_length_one(fe: FieldElement) {
+        let mut test_vector = vec![fe];
+        ntt(&mut test_vector);
+        assert_eq!(vec![fe], test_vector);
+    }
+
+    #[proptest(cases = 10)]
+    fn ntt_then_intt_is_identity_operation(
+        #[strategy((0_usize..18).prop_map(|l| 1 << l))] _vector_length: usize,
+        #[strategy(vec(arb(), #_vector_length))] mut input: Vec<FieldElement>,
+    ) {
+        let original_input = input.clone();
+        ntt::<FieldElement>(&mut input);
+        intt::<FieldElement>(&mut input);
+        assert_eq!(original_input, input);
+    }
+
+    #[test]
+    fn b_field_ntt_with_length_32() {
+        let mut input_output = fe_vec![
+            1, 4, 0, 0, 0, 0, 0, 0, 1, 4, 0, 0, 0, 0, 0, 0, 1, 4, 0, 0, 0, 0,
+            0, 0, 1, 4, 0, 0, 0, 0, 0, 0,
+        ];
+        let original_input = input_output.clone();
+        ntt::<FieldElement>(&mut input_output);
+        // let actual_output = ntt(&mut input_output, &omega, 5);
+        println!("actual_output = {input_output:?}");
+        let expected = fe_vec![
+            20,
+            0,
+            0,
+            0,
+            18446744069146148869_u64,
+            0,
+            0,
+            0,
+            4503599627370500_u64,
+            0,
+            0,
+            0,
+            18446726477228544005_u64,
+            0,
+            0,
+            0,
+            18446744069414584309_u64,
+            0,
+            0,
+            0,
+            268435460,
+            0,
+            0,
+            0,
+            18442240469787213829_u64,
+            0,
+            0,
+            0,
+            17592186040324_u64,
+            0,
+            0,
+            0,
+        ];
+        assert_eq!(expected, input_output);
+
+        // Verify that INTT(NTT(x)) = x
+        intt::<FieldElement>(&mut input_output);
+        assert_eq!(original_input, input_output);
+    }
+
+    #[test]
+    fn test_compare_ntt_to_eval() {
+        for log_size in 1..10 {
+            let size = 1 << log_size;
+            let mut coefficients = random_elements(size);
+            let polynomial = Polynomial::new(coefficients.clone());
+
+            let omega =
+                FieldElement::primitive_root_of_unity(size.try_into().unwrap())
+                    .unwrap();
+            ntt(&mut coefficients);
+
+            let evals = (0..size)
+                .map(|i| omega.mod_pow(i.try_into().unwrap()))
+                .map(|p| polynomial.evaluate_in_same_field(p))
+                .collect_vec();
+
+            assert_eq!(evals, coefficients);
+        }
+    }
+
+    #[test]
+    fn test_ntt_noswap() {
+        for log_size in 1..8 {
+            let size = 1 << log_size;
+            println!("size: {size}");
+            let a: Vec<FieldElement> = random_elements(size);
+            let mut a1 = a.clone();
+            ntt(&mut a1);
+            let mut a2 = a.clone();
+            ntt_noswap(&mut a2);
+            bitreverse_order(&mut a2);
+            assert_eq!(a1, a2);
+
+            intt(&mut a1);
+            bitreverse_order(&mut a2);
+            intt_noswap(&mut a2);
+            for a2e in a2.iter_mut() {
+                *a2e *= FieldElement::new(size.try_into().unwrap()).inverse();
+            }
+            assert_eq!(a1, a2);
+        }
     }
 }

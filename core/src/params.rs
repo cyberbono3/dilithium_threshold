@@ -1,15 +1,15 @@
 pub const DEFAULT_SECURITY_LEVEL: usize = 2;
-use math::polynomial::N;
+use math::prelude::N;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DilithiumConfig {
     pub k: usize,
     pub l: usize,
-    pub eta: i32,
+    pub eta: u32,
     pub tau: usize,
-    pub beta: i32,
-    pub gamma1: i32,
-    pub gamma2: i32,
+    pub beta: u32,
+    pub gamma1: u32,
+    pub gamma2: u32,
     pub d: usize,
 }
 

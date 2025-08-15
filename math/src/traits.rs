@@ -16,6 +16,8 @@ use num_traits::Zero;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
+use crate::field_element::FieldElement;
+
 pub trait CyclicGroupGenerator
 where
     Self: Sized,
@@ -56,10 +58,12 @@ where
     }
 }
 
+
 pub trait FiniteField:
     Copy
     + Debug
     + Display
+    + Default
     + Eq
     + Serialize
     + DeserializeOwned
@@ -73,12 +77,15 @@ pub trait FiniteField:
     + Neg<Output = Self>
     + AddAssign
     + MulAssign
+    + MulAssign<FieldElement>
     + SubAssign
     + CyclicGroupGenerator
     + PrimitiveRootOfUnity
     + Inverse
     + ModPowU32
-    + From<u64>  // Keep From<u64> for compatibility
+    + From<u64> 
+    + From<i32>
+    + From<u32>
     + Send
     + Sync
 {
@@ -118,4 +125,6 @@ pub trait FiniteField:
     fn square(self) -> Self {
         self * self
     }
+    fn to_le_bytes(&self) -> Vec<u8>;
+    fn centered_absolute_value(&self) -> u32;
 }

@@ -1,4 +1,4 @@
-pub mod config;
+pub mod params;
 pub mod dilithium;
 pub mod error;
 pub mod shamir;

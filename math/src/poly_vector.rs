@@ -1,6 +1,8 @@
 use std::ops::{Add, Mul, Sub};
 
-use super::{poly, polynomial::Polynomial};
+use super::{polynomial::Polynomial, traits::FiniteField};
+
+use num_traits::Zero;
 
 // Macro for convenient polynomial vector creation
 ///
@@ -14,7 +16,7 @@ use super::{poly, polynomial::Polynomial};
 ///
 /// Creating a vector from existing polynomials:
 /// ```
-/// use math::{poly, poly_vec, polynomial::Polynomial, poly_vector::PolynomialVector};
+/// use math::prelude::*;
 ///
 /// let p1 = poly![1, 2, 3];
 /// let p2 = poly![4, 5, 6];
@@ -29,7 +31,7 @@ use super::{poly, polynomial::Polynomial};
 ///
 /// Creating a zero polynomial vector of specified length:
 /// ```
-/// use math::{poly_vec, poly_vector::PolynomialVector};
+/// use math::prelude::*;
 ///
 /// // Create zero vector with 3 polynomials
 /// let zero_vec = poly_vec![0; 3];
@@ -47,7 +49,7 @@ use super::{poly, polynomial::Polynomial};
 ///
 /// Creating vectors with polynomial expressions:
 /// ```
-/// use math::{poly, poly_vec, polynomial::{Polynomial, N}};
+/// use math::prelude::*;
 ///
 /// // Using poly! macro inline
 /// let vec1 = poly_vec![
@@ -75,7 +77,7 @@ use super::{poly, polynomial::Polynomial};
 ///
 /// Creating a vector with repeated polynomials:
 /// ```
-/// use math::{poly, poly_vec};
+/// use math::prelude::*;
 ///
 /// // Repeat the same polynomial 4 times
 /// let p = poly![42, 17, 99];
@@ -91,7 +93,7 @@ use super::{poly, polynomial::Polynomial};
 ///
 /// Creating from an existing vector of polynomials:
 /// ```
-/// use math::{poly, poly_vec, polynomial::Polynomial};
+/// use math::prelude::*;
 ///
 /// let polys = vec![
 ///     poly![1, 2],
@@ -106,7 +108,7 @@ use super::{poly, polynomial::Polynomial};
 ///
 /// More complex usage patterns:
 /// ```
-/// use math::{poly, poly_vec, polynomial::{Polynomial, Q}};
+/// use math::prelude::*;
 ///
 /// // Using expressions to create polynomials
 /// let a = 5;
@@ -158,7 +160,7 @@ macro_rules! poly_vec {
         $crate::poly_vector::PolynomialVector::new(vec![])
     };
 
-    // Single expression that evaluates to Vec<Polynomial>
+    //Single expression that evaluates to Vec<Polynomial>
     ($vec:expr) => {
         $crate::poly_vector::PolynomialVector::new($vec)
     };
@@ -181,31 +183,34 @@ macro_rules! poly_vec {
 }
 
 /// Represents a vector of polynomials in Rq.
-///
+
 /// Used for representing keys and intermediate values in Dilithium.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PolynomialVector {
-    polys: Vec<Polynomial>,
+#[derive(Clone, Debug, PartialEq)]
+pub struct PolynomialVector<'coeffs, FF: FiniteField> {
+    polys: Vec<Polynomial<'coeffs, FF>>,
 }
 
-impl PolynomialVector {
+impl<FF: FiniteField> PolynomialVector<'static, FF> {
     /// Initialize polynomial vector.
-    pub fn new(polynomials: Vec<Polynomial>) -> Self {
+    pub fn new(polynomials: Vec<Polynomial<'static, FF>>) -> Self {
         Self { polys: polynomials }
     }
 
     /// Get a slice of the underlying polynomial data
-    pub fn as_slice(&self) -> &[Polynomial] {
+    pub fn as_slice(&self) -> &[Polynomial<'static, FF>] {
         &self.polys
     }
 
     /// Get polynomial at index.
-    pub fn get(&self, index: usize) -> Option<&Polynomial> {
+    pub fn get(&self, index: usize) -> Option<&Polynomial<'static, FF>> {
         self.polys.get(index)
     }
 
     /// Get mutable polynomial at index.
-    pub fn get_mut(&mut self, index: usize) -> Option<&mut Polynomial> {
+    pub fn get_mut(
+        &mut self,
+        index: usize,
+    ) -> Option<&mut Polynomial<'static, FF>> {
         self.polys.get_mut(index)
     }
 
@@ -213,7 +218,7 @@ impl PolynomialVector {
     pub fn set(
         &mut self,
         index: usize,
-        poly: Polynomial,
+        poly: Polynomial<'static, FF>,
     ) -> Result<(), &'static str> {
         if index >= self.polys.len() {
             return Err("Index out of bounds");
@@ -232,37 +237,37 @@ impl PolynomialVector {
         self.polys.is_empty()
     }
 
-    /// Compute infinity norm of vector.
-    pub fn norm_infinity(&self) -> i32 {
+    /// Create zero vector of given length.
+    pub fn zero(length: usize) -> Self {
+        let zero_poly = Polynomial::<FF>::zero();
+        Self {
+            polys: vec![zero_poly; length],
+        }
+    }
+
+    // /// Generate random polynomial vector.
+    // pub fn random(length: usize, bound: i32) -> Self {
+    //     Self {
+    //         polys: (0..length).map(|_| Polynomial::random(bound)).collect(),
+    //     }
+    // }
+
+    pub fn norm_infinity(&self) -> u32 {
         self.polys
             .iter()
             .map(|p| p.norm_infinity())
             .max()
             .unwrap_or(0)
     }
-
-    /// Create zero vector of given length.
-    pub fn zero(length: usize) -> Self {
-        Self {
-            polys: vec![poly![]; length],
-        }
-    }
-
-    /// Generate random polynomial vector.
-    pub fn random(length: usize, bound: i32) -> Self {
-        Self {
-            polys: (0..length).map(|_| Polynomial::random(bound)).collect(),
-        }
-    }
 }
 
-impl Add for PolynomialVector {
+impl<FF: FiniteField> Add for PolynomialVector<'static, FF> {
     type Output = Self;
 
     fn add(self, other: Self) -> Self::Output {
         assert!(self.len() == other.len());
 
-        let polys: Vec<Polynomial> = self
+        let polys: Vec<Polynomial<'static, FF>> = self
             .polys
             .into_iter()
             .zip(other.polys)
@@ -273,7 +278,9 @@ impl Add for PolynomialVector {
     }
 }
 
-impl Add<&PolynomialVector> for PolynomialVector {
+impl<FF: FiniteField> Add<&PolynomialVector<'static, FF>>
+    for PolynomialVector<'static, FF>
+{
     type Output = Self;
 
     fn add(self, other: &Self) -> Self::Output {
@@ -282,7 +289,7 @@ impl Add<&PolynomialVector> for PolynomialVector {
             "Vector lengths  must match for addition"
         );
 
-        let polys: Vec<Polynomial> = self
+        let polys: Vec<Polynomial<'static, FF>> = self
             .polys
             .into_iter()
             .zip(other.polys.clone())
@@ -293,7 +300,7 @@ impl Add<&PolynomialVector> for PolynomialVector {
     }
 }
 
-impl Sub for PolynomialVector {
+impl<FF: FiniteField> Sub for PolynomialVector<'static, FF> {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self::Output {
@@ -302,7 +309,7 @@ impl Sub for PolynomialVector {
             "Vector lengths  must match for subtraction"
         );
 
-        let polys: Vec<Polynomial> = self
+        let polys: Vec<Polynomial<'static, FF>> = self
             .polys
             .into_iter()
             .zip(other.polys)
@@ -313,7 +320,9 @@ impl Sub for PolynomialVector {
     }
 }
 
-impl Sub<&PolynomialVector> for PolynomialVector {
+impl<FF: FiniteField> Sub<&PolynomialVector<'static, FF>>
+    for PolynomialVector<'static, FF>
+{
     type Output = Self;
 
     fn sub(self, other: &Self) -> Self::Output {
@@ -322,7 +331,7 @@ impl Sub<&PolynomialVector> for PolynomialVector {
             "Vector lengths  must match for subtraction"
         );
 
-        let polys: Vec<Polynomial> = self
+        let polys: Vec<Polynomial<'_, FF>> = self
             .polys
             .into_iter()
             .zip(other.polys.clone())
@@ -333,7 +342,7 @@ impl Sub<&PolynomialVector> for PolynomialVector {
     }
 }
 // TODO add proper testing
-impl Mul for PolynomialVector {
+impl<FF: FiniteField> Mul for PolynomialVector<'static, FF> {
     type Output = Self;
 
     fn mul(self, other: Self) -> Self::Output {
@@ -342,7 +351,7 @@ impl Mul for PolynomialVector {
             "Vector lengths must match for element-wise multiplication"
         );
 
-        let polys: Vec<Polynomial> = self
+        let polys: Vec<Polynomial<'static, FF>> = self
             .polys
             .into_iter()
             .zip(other.polys)
@@ -353,26 +362,51 @@ impl Mul for PolynomialVector {
     }
 }
 
-impl Mul<PolynomialVector> for &Vec<Vec<Polynomial>> {
-    type Output = PolynomialVector;
 
-    fn mul(self, vector: PolynomialVector) -> Self::Output {
+impl<FF: FiniteField> Mul<u64> for PolynomialVector<'static, FF> {
+    type Output = PolynomialVector<'static, FF>;
+
+    fn mul(self, scalar: u64) -> Self::Output {
+        let scalar_ff = FF::from(scalar);
+
+        let polys = self
+            .polys
+            .iter()
+            .map(|p| {
+                let scaled_coeffs: Vec<FF> =
+                    p.coefficients().iter().map(|&c| c * scalar_ff).collect();
+                Polynomial::new(scaled_coeffs)
+            })
+            .collect();
+
+        PolynomialVector { polys }
+    }
+}
+
+impl<FF: FiniteField> Mul<PolynomialVector<'static, FF>>
+    for &Vec<Vec<Polynomial<'static, FF>>>
+{
+    type Output = PolynomialVector<'static, FF>;
+
+    fn mul(self, vector: PolynomialVector<'static, FF>) -> Self::Output {
         matrix_vector_multiply(self, &vector)
     }
 }
 
-impl Mul<&PolynomialVector> for &Vec<Vec<Polynomial>> {
-    type Output = PolynomialVector;
+impl<FF: FiniteField> Mul<&PolynomialVector<'static, FF>>
+    for &Vec<Vec<Polynomial<'static, FF>>>
+{
+    type Output = PolynomialVector<'static, FF>;
 
-    fn mul(self, vector: &PolynomialVector) -> Self::Output {
+    fn mul(self, vector: &PolynomialVector<'static, FF>) -> Self::Output {
         matrix_vector_multiply(self, vector)
     }
 }
 
-pub fn matrix_vector_multiply(
-    m: &[Vec<Polynomial>],
-    v: &PolynomialVector,
-) -> PolynomialVector {
+pub fn matrix_vector_multiply<FF: FiniteField>(
+    m: &[Vec<Polynomial<'static, FF>>],
+    v: &PolynomialVector<'static, FF>,
+) -> PolynomialVector<'static, FF> {
     // Check matrix is not empty
     assert!(!m.is_empty(), "Matrix cannot be empty");
 
@@ -397,9 +431,10 @@ pub fn matrix_vector_multiply(
         .iter()
         .map(|row| {
             row.iter().zip(v.as_slice()).fold(
-                poly![],
+                Polynomial::<FF>::zero(),
                 |mut acc, (a_ij, v_j)| {
-                    acc += *a_ij * v_j;
+                    // TODO make &Polynomial be multiplied &POlynomial, remove .clone()
+                    acc += a_ij.clone() * v_j.clone();
                     acc
                 },
             )
@@ -409,32 +444,29 @@ pub fn matrix_vector_multiply(
     poly_vec!(result)
 }
 
-impl Mul<i32> for PolynomialVector {
+
+impl<FF: FiniteField> Mul<Polynomial<'static, FF>>
+    for PolynomialVector<'static, FF>
+{
     type Output = Self;
 
-    fn mul(self, scalar: i32) -> Self {
+    fn mul(self, poly: Polynomial<'static, FF>) -> Self {
         Self {
-            polys: self.polys.into_iter().map(|p| p * scalar).collect(),
+            polys: self.polys.into_iter().map(|p| p * poly.clone()).collect(),
         }
     }
 }
 
-impl Mul<Polynomial> for PolynomialVector {
+impl<FF: FiniteField> Mul<&Polynomial<'static, FF>>
+    for PolynomialVector<'static, FF>
+{
     type Output = Self;
 
-    fn mul(self, poly: Polynomial) -> Self {
+    fn mul(self, poly: &Polynomial<'static, FF>) -> Self {
         Self {
-            polys: self.polys.into_iter().map(|p| p * poly).collect(),
+            polys: self.polys.into_iter().map(|p| p * poly.clone()).collect(),
         }
     }
 }
 
-impl Mul<&Polynomial> for PolynomialVector {
-    type Output = Self;
-
-    fn mul(self, poly: &Polynomial) -> Self {
-        Self {
-            polys: self.polys.into_iter().map(|p| p * poly).collect(),
-        }
-    }
-}
+//TODO add test coeverage 
