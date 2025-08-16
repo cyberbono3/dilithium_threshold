@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fmt::Display;
@@ -27,7 +28,7 @@ use rayon::prelude::*;
 use super::traits::{FiniteField, Inverse, ModPowU32, PrimitiveRootOfUnity};
 use super::zerofier_tree::ZerofierTree;
 use crate::ntt::{intt, ntt};
-use crate::prelude::FieldElement;
+use crate::prelude::{FieldElement, N};
 
 /// Macro for convenient polynomial creation
 ///
@@ -239,16 +240,18 @@ where
     ///
     /// See also [`into_coefficients()`][Self::into_coefficients].
     pub fn coefficients(&self) -> &[FF] {
-        let coefficients = self.coefficients.as_ref();
+       // let coefficients = self.coefficients.as_ref();
 
-        let Some(leading_coeff_idx) =
-            coefficients.iter().rposition(|&c| !c.is_zero())
-        else {
-            // `coefficients` contains no elements or only zeroes
-            return &[];
-        };
+        // let Some(leading_coeff_idx) =
+        //     coefficients.iter().rposition(|&c| !c.is_zero())
+        // else {
+        //     // `coefficients` contains no elements or only zeroes
+        //     return &[];
+        // };
 
-        &coefficients[0..=leading_coeff_idx]
+        // &coefficients[0..=leading_coeff_idx]
+        self.coefficients.as_ref()
+        
     }
 
     /// Like [`coefficients()`][Self::coefficients], but consumes `self`.
@@ -462,7 +465,7 @@ where
         Polynomial::new(coefficients)
     }
 
-   /// Multiply a polynomial with a scalar, _i.e._, compute `scalar · self(x)`.
+    /// Multiply a polynomial with a scalar, _i.e._, compute `scalar · self(x)`.
     ///
     /// Slightly faster but slightly less general than [`Self::scalar_mul`].
     ///
@@ -691,7 +694,6 @@ where
             .unwrap_or(0)
     }
 }
-
 
 impl<FF> Polynomial<'_, FF>
 where
@@ -2432,7 +2434,6 @@ where
     }
 }
 
-
 impl<const N: usize, FF, E> From<[E; N]> for Polynomial<'static, FF>
 where
     FF: FiniteField,
@@ -2472,13 +2473,53 @@ impl<FF> Polynomial<'static, FF>
 where
     FF: FiniteField,
 {
-    /// Create a new polynomial with the given coefficients. The first coefficient
-    /// is the constant term, the last coefficient has the highest degree.
+    /// Create a new polynomial with the given coefficients.
     ///
     /// See also [`Self::new_borrowed`].
-    pub fn new(coefficients: Vec<FF>) -> Self {
-        let coefficients = Cow::Owned(coefficients);
-        Self { coefficients }
+    pub fn new(coeffs: Vec<FF>) -> Self {
+        let reduced_coeffs = match coeffs.len().cmp(&N) {
+            Ordering::Greater => {
+                // Reduce modulo X^N + 1
+                Self::reduce_mod_xn_plus_1(&coeffs)
+            }
+            Ordering::Less => {
+                dbg!("padded");
+                // Pad with zeros
+                let mut padded = vec![FF::ZERO; N];
+                padded[..coeffs.len()].copy_from_slice(&coeffs);
+                padded
+            }
+            Ordering::Equal => {
+                // Use as-is
+                coeffs
+            }
+        };
+        assert_eq!(reduced_coeffs.len(), N);
+        //assert_eq!(Cow::Owned(reduced_coeffs).to_owned().len(), N);
+
+        // let coefficients = Cow::Owned(coefficients);
+        Self {
+            coefficients: Cow::Owned(reduced_coeffs),
+        }
+    }
+
+   
+
+    /// Reduce polynomial modulo X^N + 1
+    fn reduce_mod_xn_plus_1(coeffs: &[FF]) -> Vec<FF> {
+        let mut result = vec![FF::ZERO; N];
+
+        for (i, &coeff) in coeffs.iter().enumerate() {
+            let pos = i % N;
+            if i >= N && (i / N) % 2 == 1 {
+                // X^N = -1, so X^(N+k) = -X^k
+                result[pos] -= coeff;
+            } else {
+                result[pos] += coeff;
+            }
+        }
+
+        result
     }
 
     /// `x^n`
@@ -2508,8 +2549,9 @@ where
     FF: FiniteField,
 {
     /// Like [`Self::new`], but without owning the coefficients.
-    pub fn new_borrowed(coefficients: &'coeffs [FF]) -> Self {
-        let coefficients = Cow::Borrowed(coefficients);
+    pub fn new_borrowed(coeffs: &'coeffs [FF]) -> Self {
+        dbg!("new_borrowed_call");
+        let coefficients = Cow::Borrowed(coeffs);
         Self { coefficients }
     }
 }

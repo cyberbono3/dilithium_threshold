@@ -58,7 +58,6 @@ where
     }
 }
 
-
 pub trait FiniteField:
     Copy
     + Debug
@@ -83,7 +82,7 @@ pub trait FiniteField:
     + PrimitiveRootOfUnity
     + Inverse
     + ModPowU32
-    + From<u64> 
+    + From<u64>
     + From<i32>
     + From<u32>
     + Send

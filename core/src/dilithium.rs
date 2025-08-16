@@ -1,4 +1,4 @@
-use rand::{prelude::*, Rng};
+use rand::prelude::*;
 use sha3::{
     digest::{ExtendableOutput, Update, XofReader},
     Shake256,

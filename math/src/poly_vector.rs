@@ -362,7 +362,6 @@ impl<FF: FiniteField> Mul for PolynomialVector<'static, FF> {
     }
 }
 
-
 impl<FF: FiniteField> Mul<u64> for PolynomialVector<'static, FF> {
     type Output = PolynomialVector<'static, FF>;
 
@@ -444,7 +443,6 @@ pub fn matrix_vector_multiply<FF: FiniteField>(
     poly_vec!(result)
 }
 
-
 impl<FF: FiniteField> Mul<Polynomial<'static, FF>>
     for PolynomialVector<'static, FF>
 {
@@ -469,4 +467,4 @@ impl<FF: FiniteField> Mul<&Polynomial<'static, FF>>
     }
 }
 
-//TODO add test coeverage 
+//TODO add test coeverage

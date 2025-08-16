@@ -1,5 +1,3 @@
-use std::ops::MulAssign;
-
 use math::{prelude::*, traits::FiniteField};
 
 use crate::{
@@ -92,9 +90,10 @@ impl AdaptedShamirSSS {
 
         for (poly_idx, poly) in secret_vector.as_slice().iter().enumerate() {
             // Process each coefficient
-            for (coeff_idx, secret_coeff) in
-                poly.coefficients().iter().enumerate()
-            {
+            // for (coeff_idx, secret_coeff) in
+            //     poly.coefficients().iter().enumerate()
+            for coeff_idx in 0..N {
+                let secret_coeff = poly.coefficients().get(coeff_idx).unwrap();
                 let shamir_poly = self.create_shamir_polynomial(secret_coeff);
 
                 // Evaluate for each participant
@@ -114,6 +113,7 @@ impl AdaptedShamirSSS {
     }
 
     /// Reconstruct the secret from a sufficient number of shares.
+    // TODO fix code duplciation with partial_reconstruct
     pub fn reconstruct_secret<FF: FiniteField>(
         &self,
         shares: &[ShamirShare<'static, FF>],
@@ -124,7 +124,7 @@ impl AdaptedShamirSSS {
         self.validate_shares(active_shares, shares, vector_length)?;
 
         let poly_indices: Vec<usize> = (0..vector_length).collect();
-        Self::reconstruct_polynomials(active_shares, &poly_indices)
+        Self::reconstruct_poly_vector(active_shares, &poly_indices)
     }
 
     #[cfg(test)]
@@ -138,11 +138,11 @@ impl AdaptedShamirSSS {
         let vector_length = active_shares[0].vector_length();
         self.validate_shares(active_shares, shares, vector_length)?;
 
-        Self::reconstruct_polynomials(active_shares, poly_indices)
+        Self::reconstruct_poly_vector(active_shares, poly_indices)
     }
 
     /// Common logic for reconstructing polynomials
-    fn reconstruct_polynomials<FF: FiniteField>(
+    fn reconstruct_poly_vector<FF: FiniteField>(
         active_shares: &[ShamirShare<'static, FF>],
         poly_indices: &[usize],
     ) -> Result<PolynomialVector<'static, FF>> {
@@ -151,7 +151,6 @@ impl AdaptedShamirSSS {
 
         // TODO fix possible code duplication
         for poly_idx in poly_indices {
-    
             let mut xs = Vec::with_capacity(active_shares.len() * N);
             let mut ys = Vec::with_capacity(active_shares.len() * N);
             for i in 0..N {
@@ -165,7 +164,6 @@ impl AdaptedShamirSSS {
             reconstructed_polys.push(poly);
         }
 
-    
         Ok(poly_vec![reconstructed_polys])
     }
 
@@ -195,43 +193,25 @@ impl AdaptedShamirSSS {
         Ok(())
     }
 
-    /// Collect points for Lagrange interpolation
-    // fn collect_points<FF: FiniteField>(
-    //     shares: &[ShamirShare<'static, FF>],
-    //     poly_idx: usize,
-    //     coeff_idx: usize,
-    // ) -> Result<Vec<(FF, FF)>> {
-    //     shares
-    //         .iter()
-    //         .map(|share| {
-    //             let poly = share.share_vector.get(poly_idx).ok_or(
-    //                 ThresholdError::InvalidIndex {
-    //                     index: poly_idx,
-    //                     length: share.vector_length(),
-    //                 },
-    //             )?;
-    //             let coeff = poly.coefficients().get(coeff_idx).copied().ok_or(
-    //                 ThresholdError::InvalidIndex {
-    //                     index: coeff_idx,
-    //                     length: share.vector_length(),
-    //                 },
-    //             )?;
-    //             Ok((FF:from(share.participant_id as u64 , coeff))
-    //         })
-    //         .collect()
-    // }
-    /// Collect points for Lagrange interpolation
     fn yield_points<FF: FiniteField>(
         share: &ShamirShare<'static, FF>,
         poly_idx: usize,
         coeff_idx: usize,
     ) -> Result<(FF, FF)> {
+        dbg!(
+            "yield_points, poly_idx: {}, coeff_idx: {}, length: {}",
+            poly_idx,
+            coeff_idx,
+            share.vector_length()
+        );
         let poly = share.share_vector.get(poly_idx).ok_or(
             ThresholdError::InvalidIndex {
                 index: poly_idx,
                 length: share.vector_length(),
             },
         )?;
+        dbg!("share_vector.called");
+        dbg!("calling coefficients().get");
         let coeff = poly.coefficients().get(coeff_idx).copied().ok_or(
             ThresholdError::InvalidIndex {
                 index: coeff_idx,
@@ -239,6 +219,7 @@ impl AdaptedShamirSSS {
             },
         )?;
 
+        dbg!("return");
         Ok((FF::from(share.participant_id as u64), coeff))
     }
 
@@ -346,6 +327,15 @@ mod tests {
 
         use super::*;
 
+        impl Default for AdaptedShamirSSS {
+            fn default() -> Self {
+                Self {
+                    threshold: 3,
+                    participant_number: 5,
+                }
+            }
+        }
+
         fn setup_adapted_shamir(
             threshold: usize,
             participants: usize,
@@ -399,16 +389,20 @@ mod tests {
             ));
         }
 
+        // TODO fix it
         #[test]
         fn test_secret_splitting() {
             let participants = 5;
             let shamir = setup_adapted_shamir(3, participants).unwrap();
 
             // Create test secret vector
+            let coeffs = vec![FieldElement::from(1), FieldElement::from(2), FieldElement::from(3),FieldElement::from(4), FieldElement::from(5)];
             let secret_poly1: Polynomial<'_, FieldElement> =
-                poly![1, 2, 3, 4, 5];
+                Polynomial::new(coeffs);
+            assert_eq!(secret_poly1.coefficients().len(), N);
             let secret_poly2: Polynomial<'_, FieldElement> =
                 poly![10, 20, 30, 40, 50];
+            assert_eq!(secret_poly2.coefficients().len(), N);
             let secret_vector = poly_vec!(secret_poly1, secret_poly2);
 
             let shares = shamir.split_secret(&secret_vector).unwrap();
@@ -419,16 +413,27 @@ mod tests {
             // Check each share has correct participant ID
             for (i, share) in shares.iter().enumerate() {
                 assert_eq!(share.participant_id, i + 1);
-                assert_eq!(share.vector_length(), 2);
+                assert_eq!(share.vector_length(), secret_vector.len());
             }
         }
 
+        //   def setUp(self):
+        // """Set up test fixtures."""
+        // self.threshold = 3
+        // self.participants = 5
+        // self.shamir = AdaptedShamirSSS(self.threshold, self.participants)
+
+        // # Create test secret vector
+        // self.secret_poly1 = Polynomial([1, 2, 3, 4, 5])
+        // self.secret_poly2 = Polynomial([10, 20, 30, 40, 50])
+        // self.secret_vector = PolynomialVector([self.secret_poly1, self.secret_poly2])
+
         #[test]
         fn test_secret_reconstruction() {
-            let threshold = 3;
-            let shamir = setup_adapted_shamir(threshold, 5).unwrap();
+            let shamir = setup_adapted_shamir(3, 5).unwrap();
 
             // Create test secret vector
+            // TODO declare standadlone function
             let secret_poly1: Polynomial<'_, FieldElement> =
                 poly![1, 2, 3, 4, 5];
             let secret_poly2: Polynomial<'_, FieldElement> =
@@ -439,8 +444,9 @@ mod tests {
             let shares = shamir.split_secret(&secret_vector).unwrap();
 
             // Reconstruct using exactly threshold shares
-            let reconstructed =
-                shamir.reconstruct_secret(&shares[..threshold]).unwrap();
+            let reconstructed = shamir
+                .reconstruct_secret(&shares[..shamir.threshold])
+                .unwrap();
 
             // Check reconstruction is correct
             assert_eq!(reconstructed, secret_vector);
@@ -654,10 +660,12 @@ mod tests {
 
     //     // Split the secret
     //     let shares = shamir.split_secret(&secret).unwrap();
+    //     //dbg!("shares: {:?}", &shares);
 
     //     // Verify we can reconstruct with any threshold shares
     //     for start in 0..=(participants - threshold) {
     //         let selected_shares = &shares[start..start + threshold];
+    //         dbg!("for loop, start", {});
     //         let reconstructed =
     //             shamir.reconstruct_secret(selected_shares).unwrap();
     //         assert_eq!(reconstructed, secret);
