@@ -396,9 +396,9 @@ mod tests {
             let shamir = setup_adapted_shamir(3, participants).unwrap();
 
             // Create test secret vector
-            let coeffs = vec![FieldElement::from(1), FieldElement::from(2), FieldElement::from(3),FieldElement::from(4), FieldElement::from(5)];
+            let coeffs = fe_vec!(1, 2, 3, 4, 5);
             let secret_poly1: Polynomial<'_, FieldElement> =
-                Polynomial::new(coeffs);
+                poly!(coeffs);
             assert_eq!(secret_poly1.coefficients().len(), N);
             let secret_poly2: Polynomial<'_, FieldElement> =
                 poly![10, 20, 30, 40, 50];
@@ -417,17 +417,7 @@ mod tests {
             }
         }
 
-        //   def setUp(self):
-        // """Set up test fixtures."""
-        // self.threshold = 3
-        // self.participants = 5
-        // self.shamir = AdaptedShamirSSS(self.threshold, self.participants)
-
-        // # Create test secret vector
-        // self.secret_poly1 = Polynomial([1, 2, 3, 4, 5])
-        // self.secret_poly2 = Polynomial([10, 20, 30, 40, 50])
-        // self.secret_vector = PolynomialVector([self.secret_poly1, self.secret_poly2])
-
+     
         #[test]
         fn test_secret_reconstruction() {
             let shamir = setup_adapted_shamir(3, 5).unwrap();
