@@ -286,6 +286,15 @@ impl AdaptedShamirSSS {
 mod tests {
     use super::*;
 
+    impl Default for AdaptedShamirSSS {
+        fn default() -> Self {
+            Self {
+                threshold: 3,
+                participant_number: 5,
+            }
+        }
+    }
+
     mod shamir_share_tests {
         use super::*;
 
@@ -326,15 +335,6 @@ mod tests {
         use num_traits::Zero;
 
         use super::*;
-
-        impl Default for AdaptedShamirSSS {
-            fn default() -> Self {
-                Self {
-                    threshold: 3,
-                    participant_number: 5,
-                }
-            }
-        }
 
         fn setup_adapted_shamir(
             threshold: usize,
@@ -397,8 +397,7 @@ mod tests {
 
             // Create test secret vector
             let coeffs = fe_vec!(1, 2, 3, 4, 5);
-            let secret_poly1: Polynomial<'_, FieldElement> =
-                poly!(coeffs);
+            let secret_poly1: Polynomial<'_, FieldElement> = poly!(coeffs);
             assert_eq!(secret_poly1.coefficients().len(), N);
             let secret_poly2: Polynomial<'_, FieldElement> =
                 poly![10, 20, 30, 40, 50];
@@ -417,7 +416,6 @@ mod tests {
             }
         }
 
-     
         #[test]
         fn test_secret_reconstruction() {
             let shamir = setup_adapted_shamir(3, 5).unwrap();

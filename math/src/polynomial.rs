@@ -240,7 +240,7 @@ where
     ///
     /// See also [`into_coefficients()`][Self::into_coefficients].
     pub fn coefficients(&self) -> &[FF] {
-       // let coefficients = self.coefficients.as_ref();
+        // let coefficients = self.coefficients.as_ref();
 
         // let Some(leading_coeff_idx) =
         //     coefficients.iter().rposition(|&c| !c.is_zero())
@@ -251,7 +251,6 @@ where
 
         // &coefficients[0..=leading_coeff_idx]
         self.coefficients.as_ref()
-        
     }
 
     /// Like [`coefficients()`][Self::coefficients], but consumes `self`.
@@ -2502,8 +2501,6 @@ where
             coefficients: Cow::Owned(reduced_coeffs),
         }
     }
-
-   
 
     /// Reduce polynomial modulo X^N + 1
     fn reduce_mod_xn_plus_1(coeffs: &[FF]) -> Vec<FF> {
