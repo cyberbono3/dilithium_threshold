@@ -1607,7 +1607,7 @@ where
         let mut summand_array = vec![zero; domain.len()];
         for (i, &abscis) in values.iter().enumerate() {
             // divide (X - domain[i]) out of zerofier to get unweighted summand
-            let mut leading_coefficient = zerofier[domain.len()];
+            let mut leading_coefficient = zerofier[domain.len()]; // out of bounds error
             let mut supporting_coefficient = zerofier[domain.len() - 1];
             let mut summand_eval = zero;
             for j in (1..domain.len()).rev() {
@@ -2482,7 +2482,7 @@ where
                 Self::reduce_mod_xn_plus_1(&coeffs)
             }
             Ordering::Less => {
-                dbg!("padded");
+                //dbg!("padded");
                 // Pad with zeros
                 let mut padded = vec![FF::ZERO; N];
                 padded[..coeffs.len()].copy_from_slice(&coeffs);
