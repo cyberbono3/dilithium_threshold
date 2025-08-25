@@ -118,7 +118,15 @@ impl AdaptedShamirSSS {
         &self,
         shares: &[ShamirShare<'static, FF>],
     ) -> Result<PolynomialVector<'static, FF>> {
+        if self.threshold > shares.len() {
+            return Err(ThresholdError::InvalidThreshold {
+                threshold: self.threshold,
+                participant_number: shares.len(),
+            });
+        }
+
         let active_shares = &shares[..self.threshold];
+        assert!(!active_shares.is_empty(), "active_shares is empty");
         let vector_length = active_shares[0].vector_length();
 
         self.validate_shares(active_shares, shares, vector_length)?;
@@ -472,8 +480,7 @@ mod tests {
 
         #[test]
         fn test_insufficient_shares() {
-            let threshold = 3;
-            let shamir = setup_adapted_shamir(threshold, 5).unwrap();
+            let shamir = AdaptedShamirSSS::default();
 
             let secret_poly: Polynomial<'_, FieldElement> = poly![100, 200];
             let secret_vector = poly_vec!(vec![secret_poly]);
@@ -481,9 +488,15 @@ mod tests {
             let shares = shamir.split_secret(&secret_vector).unwrap();
 
             // Try with threshold - 1 shares
-            assert!(shamir
-                .reconstruct_secret(&shares[..threshold - 1])
-                .is_err());
+            let result =
+                shamir.reconstruct_secret(&shares[..shamir.threshold - 1]);
+            assert!(matches!(
+                result,
+                Err(ThresholdError::InvalidThreshold {
+                    threshold,
+                    participant_number
+                }) if threshold == shamir.threshold && participant_number == shamir.threshold - 1
+            ));
 
             // Try with empty slice
             let empty_shares: &[ShamirShare<FieldElement>] = &[];
