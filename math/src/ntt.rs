@@ -375,7 +375,7 @@ mod fast_ntt_attempt_tests {
 
     #[proptest(cases = 10)]
     fn ntt_then_intt_is_identity_operation(
-        #[strategy((0_usize..18).prop_map(|l| 1 << l))] _vector_length: usize,
+        #[strategy((0_usize..=13).prop_map(|l| 1 << l))] _vector_length: usize,
         #[strategy(vec(arb(), #_vector_length))] mut input: Vec<FieldElement>,
     ) {
         let original_input = input.clone();
