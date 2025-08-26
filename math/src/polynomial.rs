@@ -1358,7 +1358,10 @@ where
 
         // if we already have the required precision, terminate early
         if switch_point >= num_rounds {
-            return f;
+            //return f;
+            let mut coeffs = f.coefficients.into_owned();
+            coeffs.truncate(precision);
+            return Polynomial::new(coeffs);
         }
 
         // ntt-based multiplication from here on out
@@ -1411,6 +1414,9 @@ where
         }
 
         intt(&mut f_ntt[..current_domain_length]);
+        // fix f_ntt.truncate(precision);
+        // Truncate to requested precision (mod X^{precision}) before constructing the polynomial.
+        f_ntt.truncate(precision);
         Polynomial::new(f_ntt)
     }
 
@@ -3747,6 +3753,53 @@ mod test_polynomials {
     //     prop_assert_eq!(interpolants, batched_interpolants);
     // }
 
+    #[proptest(cases = 1)]
+    fn fast_batch_interpolation_is_equivalent_to_fast_interpolation(
+        // Generate a unique domain directly (no flaky filter)
+        #[strategy(
+        btree_set(arb::<FieldElement>(), 1..2048)
+            .prop_map(|s: BTreeSet<FieldElement>| s.into_iter().collect::<Vec<FieldElement>>())
+    )]
+        domain: Vec<FieldElement>,
+
+        // For each case, generate 0..10 value vectors matching the domain length
+        #[strategy(vec(vec(arb::<FieldElement>(), #domain.len()), 0..10))]
+        value_vecs: Vec<Vec<FieldElement>>,
+    ) {
+        let root_order = domain.len().next_power_of_two();
+        let root_of_unity =
+            FieldElement::primitive_root_of_unity(root_order as u32).unwrap();
+
+        // Interpolate each vector independently
+        let fast_interpolants: Vec<_> = value_vecs
+            .iter()
+            .map(|values| Polynomial::fast_interpolate(&domain, values))
+            .collect();
+
+        // Interpolate them in batch
+        let batched_interpolants = Polynomial::batch_fast_interpolate(
+            &domain,
+            &value_vecs,
+            root_of_unity,
+            root_order,
+        );
+
+        // Assert functional (pointwise) equivalence on the domain
+        for ((values, p_fast), p_batch) in value_vecs
+            .iter()
+            .zip(fast_interpolants.iter())
+            .zip(batched_interpolants.iter())
+        {
+            let eval_fast = p_fast.batch_evaluate(&domain);
+            let eval_batch = p_batch.batch_evaluate(&domain);
+
+            // Compare as slices to avoid moves
+            prop_assert_eq!(eval_fast.as_slice(), values.as_slice());
+            prop_assert_eq!(eval_batch.as_slice(), values.as_slice());
+            prop_assert_eq!(eval_fast.as_slice(), eval_batch.as_slice());
+        }
+    }
+
     fn coset_domain_of_size_from_generator_with_offset(
         size: usize,
         generator: FieldElement,
@@ -4672,5 +4725,30 @@ mod test_polynomials {
         for (&xi, &yi) in domain.iter().zip(values.iter()) {
             assert_eq!(yi, p.evaluate(xi));
         }
+    }
+
+    #[test]
+    fn fast_modular_coset_interpolate_respects_constant_modulus() {
+        use itertools::Itertools;
+        let n = 32u32;
+        let values = (0..n).map(|i| FieldElement::new(i as u32)).collect_vec();
+        let offset = FieldElement::new(7);
+        let modulus = Polynomial::new(fe_vec![3]); // degree 0, non-zero
+
+        let omega = FieldElement::primitive_root_of_unity(n).unwrap();
+        let domain = (0..n as usize)
+            .scan(offset, |acc, _| {
+                let y = *acc;
+                *acc *= omega;
+                Some(y)
+            })
+            .collect_vec();
+
+        let lhs = Polynomial::fast_modular_coset_interpolate(
+            &values, offset, &modulus,
+        );
+        let rhs = Polynomial::interpolate(&domain, &values).reduce(&modulus);
+        assert_eq!(lhs, rhs); // both must be zero
+        assert!(lhs.is_zero());
     }
 }
