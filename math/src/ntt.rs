@@ -391,48 +391,32 @@ mod fast_ntt_attempt_tests {
             0, 0, 1, 4, 0, 0, 0, 0, 0, 0,
         ];
         let original_input = input_output.clone();
+
+        // Transform under test
         ntt::<FieldElement>(&mut input_output);
-        // let actual_output = ntt(&mut input_output, &omega, 5);
         println!("actual_output = {input_output:?}");
-        let expected = fe_vec![
-            20,
-            0,
-            0,
-            0,
-            18446744069146148869_u64,
-            0,
-            0,
-            0,
-            4503599627370500_u64,
-            0,
-            0,
-            0,
-            18446726477228544005_u64,
-            0,
-            0,
-            0,
-            18446744069414584309_u64,
-            0,
-            0,
-            0,
-            268435460,
-            0,
-            0,
-            0,
-            18442240469787213829_u64,
-            0,
-            0,
-            0,
-            17592186040324_u64,
-            0,
-            0,
-            0,
-        ];
-        assert_eq!(expected, input_output);
+
+        // Reference result = naive DFT at powers of the SAME ω used by NTT
+        let n: u32 = original_input.len() as u32; // 32
+        let omega = FieldElement::primitive_root_of_unity(n).unwrap();
+
+        let expected: Vec<FieldElement> = (0..n as usize)
+            .map(|k| {
+                let mut acc = FieldElement::ZERO;
+                for (j, &xj) in original_input.iter().enumerate() {
+                    let pow = ((k as u32) * (j as u32)) % n;
+                    acc += xj * omega.mod_pow_u32(pow);
+                }
+                acc
+            })
+            .collect();
+
+        assert_eq!(expected, input_output, "NTT output mismatch vs naive DFT");
 
         // Verify that INTT(NTT(x)) = x
-        intt::<FieldElement>(&mut input_output);
-        assert_eq!(original_input, input_output);
+        let mut back = input_output.clone();
+        intt::<FieldElement>(&mut back);
+        assert_eq!(original_input, back, "INTT(NTT(x)) != x");
     }
 
     #[test]
