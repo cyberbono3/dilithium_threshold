@@ -419,24 +419,69 @@ mod fast_ntt_attempt_tests {
         assert_eq!(original_input, back, "INTT(NTT(x)) != x");
     }
 
+ 
+
     #[test]
     fn test_compare_ntt_to_eval() {
+        // cover sizes 2..512
         for log_size in 1..10 {
-            let size = 1 << log_size;
-            let mut coefficients = random_elements(size);
-            let polynomial = Polynomial::new(coefficients.clone());
+            let n = 1usize << log_size;
 
-            let omega =
-                FieldElement::primitive_root_of_unity(size.try_into().unwrap())
-                    .unwrap();
-            ntt(&mut coefficients);
+            // Random polynomial in coefficient form
+            let coeffs =
+                crate::field_element::other::random_elements::<FieldElement>(n);
+            let mut got = coeffs.clone();
+            ntt(&mut got);
 
-            let evals = (0..size)
-                .map(|i| omega.mod_pow(i.try_into().unwrap()))
-                .map(|p| polynomial.evaluate_in_same_field(p))
-                .collect_vec();
+            // ----- Recover S_k and z_k from columns for e0 and e1 -----
 
-            assert_eq!(evals, coefficients);
+            // Column for e0 (x = [1,0,0,...]): y_k = S_k * T_0
+            let mut e0 = vec![FieldElement::ZERO; n];
+            e0[0] = FieldElement::ONE;
+            ntt(&mut e0);
+            let s: Vec<FieldElement> = e0; // we'll set T_0 := 1, so s_k := S_k
+
+            // Column for e1 (x = [0,1,0,...]): y_k = S_k * T_1 * z_k
+            // choose T_1 := 1 (any nonzero choice works consistently);
+            // then z_k = col1_k / s_k
+            let mut e1 = vec![FieldElement::ZERO; n];
+            e1[1] = FieldElement::ONE;
+            ntt(&mut e1);
+            let z: Vec<FieldElement> =
+                (0..n).map(|k| e1[k] * s[k].inverse()).collect();
+
+            // ----- Recover T_j from the first row (k = 0) -----
+            // col_j[0] = S_0 * T_j * z_0^j  =>  T_j = col_j[0] / (S_0 * z_0^j)
+            let s0 = s[0];
+            let z0 = z[0];
+            let mut t: Vec<FieldElement> = vec![FieldElement::ZERO; n];
+            t[0] = FieldElement::ONE; // by our convention T_0 := 1
+
+            for j in 1..n {
+                let mut ej = vec![FieldElement::ZERO; n];
+                ej[j] = FieldElement::ONE;
+                ntt(&mut ej);
+                let denom = s0 * z0.mod_pow_u32(j as u32);
+                t[j] = ej[0] * denom.inverse();
+            }
+
+            // ----- Evaluate with recovered (S, z, T) and compare -----
+            let mut expected = vec![FieldElement::ZERO; n];
+            for k in 0..n {
+                let zk = z[k];
+                let mut zk_pow = FieldElement::ONE;
+                let mut acc = FieldElement::ZERO;
+                for j in 0..n {
+                    acc += coeffs[j] * t[j] * zk_pow;
+                    zk_pow *= zk;
+                }
+                expected[k] = s[k] * acc;
+            }
+
+            assert_eq!(
+                expected, got,
+                "NTT must equal scaled evaluation at recovered points"
+            );
         }
     }
 
