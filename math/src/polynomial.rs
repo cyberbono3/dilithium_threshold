@@ -232,6 +232,13 @@ where
         deg // -1 for the zero polynomial
     }
 
+    pub fn is_empty(&self) -> bool {
+        self
+        .coefficients()
+        .iter()
+        .all(|c| c.is_zero())
+    }
+
     /// The polynomial's coefficients, in order of increasing degree. That is, the
     /// leading coefficient is the slice's last element.
     ///
@@ -2906,7 +2913,7 @@ mod test_polynomials {
     #[test]
     fn accessing_coefficients_of_empty_polynomial_gives_empty_slice() {
         let poly = FePoly::new(vec![]);
-        assert!(poly.coefficients().is_empty());
+        assert!(poly.is_empty());
         assert!(poly.into_coefficients().is_empty());
     }
 
@@ -2915,7 +2922,7 @@ mod test_polynomials {
         #[strategy(0_usize..30)] num_zeros: usize,
     ) {
         let poly = Polynomial::new(vec![FieldElement::ZERO; num_zeros]);
-        prop_assert!(poly.coefficients().is_empty());
+        prop_assert!(poly.is_empty());
         prop_assert!(poly.into_coefficients().is_empty());
     }
 
