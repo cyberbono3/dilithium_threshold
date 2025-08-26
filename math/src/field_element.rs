@@ -51,7 +51,7 @@ const PRIMITIVE_ROOTS: phf::Map<u32, u32> = phf_map! {
 /// Base field element ∈ ℤ_{8380417}.
 ///
 /// In Montgomery representation.
-#[derive(Debug, Copy, Clone, Default, Hash, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FieldElement(u32);
 
 /// Simplifies constructing [FieldElement]s.
