@@ -419,8 +419,6 @@ mod fast_ntt_attempt_tests {
         assert_eq!(original_input, back, "INTT(NTT(x)) != x");
     }
 
- 
-
     #[test]
     fn test_compare_ntt_to_eval() {
         // cover sizes 2..512

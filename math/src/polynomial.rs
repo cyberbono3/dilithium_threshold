@@ -233,10 +233,7 @@ where
     }
 
     pub fn is_empty(&self) -> bool {
-        self
-        .coefficients()
-        .iter()
-        .all(|c| c.is_zero())
+        self.coefficients().iter().all(|c| c.is_zero())
     }
 
     /// The polynomial's coefficients, in order of increasing degree. That is, the
@@ -246,18 +243,30 @@ where
     /// zero-polynomial is the empty slice.
     ///
     /// See also [`into_coefficients()`][Self::into_coefficients].
+    // pub fn coefficients(&self) -> &[FF] {
+    //     // let coefficients = self.coefficients.as_ref();
+
+    //     // let Some(leading_coeff_idx) =
+    //     //     coefficients.iter().rposition(|&c| !c.is_zero())
+    //     // else {
+    //     //     // `coefficients` contains no elements or only zeroes
+    //     //     return &[];
+    //     // };
+
+    //     // &coefficients[0..=leading_coeff_idx]
+    //     self.coefficients.as_ref()
+    // }
     pub fn coefficients(&self) -> &[FF] {
-        // let coefficients = self.coefficients.as_ref();
+        let coefficients = self.coefficients.as_ref();
 
-        // let Some(leading_coeff_idx) =
-        //     coefficients.iter().rposition(|&c| !c.is_zero())
-        // else {
-        //     // `coefficients` contains no elements or only zeroes
-        //     return &[];
-        // };
+        let Some(leading_coeff_idx) =
+            coefficients.iter().rposition(|&c| !c.is_zero())
+        else {
+            // `coefficients` contains no elements or only zeroes
+            return &[];
+        };
 
-        // &coefficients[0..=leading_coeff_idx]
-        self.coefficients.as_ref()
+        &coefficients[0..=leading_coeff_idx]
     }
 
     /// Like [`coefficients()`][Self::coefficients], but consumes `self`.
@@ -387,18 +396,22 @@ where
             return Polynomial::zero();
         }
 
-        let squared_coefficient_len = self.degree() as usize * 2 + 1;
+        //let squared_coefficient_len = self.degree() as usize * 2 + 1;
+        let used_len = degree as usize + 1;
+        let squared_coefficient_len = used_len * 2 - 1;
         let zero = FF::ZERO;
         let one = FF::ONE;
         let two = one + one;
         let mut squared_coefficients = vec![zero; squared_coefficient_len];
 
-        for i in 0..self.coefficients.len() {
+       // for i in 0..self.coefficients.len() {
+        for i in 0..used_len {
             let ci = self.coefficients[i];
             squared_coefficients[2 * i] += ci * ci;
 
             // TODO: Review.
-            for j in i + 1..self.coefficients.len() {
+           //for j in i + 1..self.coefficients.len() {
+             for j in i + 1..used_len {
                 let cj = self.coefficients[j];
                 squared_coefficients[i + j] += two * ci * cj;
             }
@@ -816,8 +829,10 @@ where
             return Polynomial::zero();
         }
 
-        let squared_coefficient_len = self.degree() as usize * 2 + 1;
-        if squared_coefficient_len > 64 {
+        // let squared_coefficient_len = self.degree() as usize * 2 + 1;
+        let used_len = degree as usize + 1;
+        let squared_coefficient_len = used_len * 2 - 1;
+         if squared_coefficient_len > 64 {
             return self.fast_square();
         }
 
@@ -827,11 +842,13 @@ where
         let mut squared_coefficients = vec![zero; squared_coefficient_len];
 
         // TODO: Review.
-        for i in 0..self.coefficients.len() {
+        //for i in 0..self.coefficients.len() {
+        for i in 0..used_len {
             let ci = self.coefficients[i];
             squared_coefficients[2 * i] += ci * ci;
 
-            for j in i + 1..self.coefficients.len() {
+            //for j in i + 1..self.coefficients.len() {
+            for j in 0..used_len {
                 let cj = self.coefficients[j];
                 squared_coefficients[i + j] += two * ci * cj;
             }
