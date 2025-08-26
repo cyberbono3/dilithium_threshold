@@ -66,25 +66,92 @@ impl<FF: FiniteField + MulAssign<FieldElement>> ZerofierTree<'static, FF> {
     /// regulates the number of points contained by each leaf.
     const RECURSION_CUTOFF_THRESHOLD: usize = 16;
 
+    // pub fn new_from_domain(domain: &[FF]) -> Self {
+    //     let mut nodes = domain
+    //         .chunks(Self::RECURSION_CUTOFF_THRESHOLD)
+    //         .map(|chunk| {
+    //             let leaf = Leaf::new(chunk.to_vec());
+    //             ZerofierTree::Leaf(leaf)
+    //         })
+    //         .collect::<VecDeque<_>>();
+    //     nodes.resize(nodes.len().next_power_of_two(), ZerofierTree::Padding);
+    //     while nodes.len() > 1 {
+    //         let right = nodes.pop_back().unwrap();
+    //         let left = nodes.pop_back().unwrap();
+    //         if left == ZerofierTree::Padding {
+    //             nodes.push_front(ZerofierTree::Padding);
+    //         } else {
+    //             let new_node = Branch::new(left, right);
+    //             nodes.push_front(ZerofierTree::Branch(Box::new(new_node)));
+    //         }
+
+    //     }
+    //     nodes.pop_front().unwrap()
+    // }
+
+    // pub fn new_from_domain(domain: &[FF]) -> Self {
+    //     let mut nodes: VecDeque<_> = domain
+    //         .chunks(Self::RECURSION_CUTOFF_THRESHOLD)
+    //         .map(|chunk| ZerofierTree::Leaf(Leaf::new(chunk.to_vec())))
+    //         .collect();
+
+    //     if nodes.is_empty() {
+    //         return ZerofierTree::Padding;
+    //     }
+
+    //     while nodes.len() > 1 {
+    //         let mut next = VecDeque::with_capacity((nodes.len() + 1) / 2);
+    //         while let Some(left) = nodes.pop_front() {
+    //             if let Some(right) = nodes.pop_front() {
+    //                 next.push_back(match (left, right) {
+    //                     (ZerofierTree::Padding, r) => r,
+    //                     (l, ZerofierTree::Padding) => l,
+    //                     (l, r) => {
+    //                         ZerofierTree::Branch(Box::new(Branch::new(l, r)))
+    //                     }
+    //                 });
+    //             } else {
+    //                 next.push_back(left);
+    //             }
+    //         }
+    //         nodes = next;
+    //     }
+
+    //     nodes.pop_front().unwrap()
+    // }
+
     pub fn new_from_domain(domain: &[FF]) -> Self {
-        let mut nodes = domain
+        // Build initial leaves (no padding leaves).
+        let mut nodes: VecDeque<_> = domain
             .chunks(Self::RECURSION_CUTOFF_THRESHOLD)
-            .map(|chunk| {
-                let leaf = Leaf::new(chunk.to_vec());
-                ZerofierTree::Leaf(leaf)
-            })
-            .collect::<VecDeque<_>>();
-        nodes.resize(nodes.len().next_power_of_two(), ZerofierTree::Padding);
-        while nodes.len() > 1 {
-            let right = nodes.pop_back().unwrap();
-            let left = nodes.pop_back().unwrap();
-            if left == ZerofierTree::Padding {
-                nodes.push_front(ZerofierTree::Padding);
-            } else {
-                let new_node = Branch::new(left, right);
-                nodes.push_front(ZerofierTree::Branch(Box::new(new_node)));
-            }
+            .map(|chunk| ZerofierTree::Leaf(Leaf::new(chunk.to_vec())))
+            .collect();
+
+        if nodes.is_empty() {
+            return ZerofierTree::Padding;
         }
+
+        // Pair level-by-level; carry lone nodes forward.
+        while nodes.len() > 1 {
+            let mut next = VecDeque::with_capacity((nodes.len() + 1) / 2);
+            while let Some(left) = nodes.pop_front() {
+                if let Some(right) = nodes.pop_front() {
+                    match (left, right) {
+                        (ZerofierTree::Padding, r) => next.push_back(r),
+                        (l, ZerofierTree::Padding) => next.push_back(l),
+                        (l, r) => {
+                            let node = Branch::new(l, r);
+                            next.push_back(ZerofierTree::Branch(Box::new(node)));
+                        }
+                    }
+                } else {
+                    // Odd count: carry the last node forward unchanged.
+                    next.push_back(left);
+                }
+            }
+            nodes = next;
+        }
+
         nodes.pop_front().unwrap()
     }
 }
