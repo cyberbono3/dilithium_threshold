@@ -491,6 +491,7 @@ where
     /// f.scalar_mul_mut(2);
     /// let expected: Polynomial<'static, FieldElement> = Polynomial::new(fe_vec![2, 4, 6]);
     /// assert_eq!(Polynomial::new(fe_vec![2, 4, 6]), f);
+    /// assert_eq!(expected, f);
     /// ```
     pub fn scalar_mul_mut<S>(&mut self, scalar: S)
     where

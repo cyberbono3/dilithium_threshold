@@ -20,7 +20,7 @@ use num_traits::Zero;
 ///
 /// let p1: Polynomial<'static, FieldElement> = poly![1, 2, 3];
 /// let p2: Polynomial<'static, FieldElement>  = poly![4, 5, 6];
-/// let vec: PolynomialVector<'static, Polynomial<'static, FieldElement>> = poly_vec!(p1, p2);
+/// let vec: PolynomialVector<'static, FieldElement> = poly_vec!(p1.clone(), p2.clone());
 ///
 /// assert_eq!(vec.len(), 2);
 /// assert_eq!(vec.get(0), Some(&p1));
@@ -32,16 +32,17 @@ use num_traits::Zero;
 /// Creating a zero polynomial vector of specified length:
 /// ```
 /// use math::prelude::*;
+/// use num_traits::identities::Zero;
 ///
 /// // Create zero vector with 3 polynomials
-/// let zero_vec = poly_vec![0; 3];
+/// let zero_vec: PolynomialVector<'static, FieldElement> = poly_vec![0; 3];
 /// assert_eq!(zero_vec.len(), 3);
 /// assert!(zero_vec.get(0).unwrap().is_zero());
 /// assert!(zero_vec.get(1).unwrap().is_zero());
 /// assert!(zero_vec.get(2).unwrap().is_zero());
 ///
 /// // Empty vector
-/// let empty = poly_vec![];
+/// let empty: PolynomialVector<'_, FieldElement> = poly_vec![];
 /// assert!(empty.is_empty());
 /// ```
 ///
@@ -50,9 +51,10 @@ use num_traits::Zero;
 /// Creating vectors with polynomial expressions:
 /// ```
 /// use math::prelude::*;
+/// use num_traits::identities::Zero;
 ///
 /// // Using poly! macro inline
-/// let vec1 = poly_vec![
+/// let vec1: PolynomialVector<'static, FieldElement> = poly_vec![
 ///     poly![1, 2, 3],
 ///     poly![4, 5, 6],
 ///     poly![7, 8, 9]
@@ -60,16 +62,16 @@ use num_traits::Zero;
 /// assert_eq!(vec1.len(), 3);
 ///
 /// // With trailing comma
-/// let vec2 = poly_vec![
+/// let vec2: PolynomialVector<'static, FieldElement> = poly_vec![
 ///     poly![10, 20],
 ///     poly![30, 40],
 /// ];
 /// assert_eq!(vec2.len(), 2);
 ///
 /// // Mixed polynomial types
-/// let p1 = poly![1; 5];  // 5 ones
-/// let p2 = poly![];      // zero polynomial
-/// let vec3 = poly_vec![p1, p2, poly![1, 2, 3]];
+/// let p1: Polynomial<'static, FieldElement> = poly![1; 5];  // 5 ones
+/// let p2: Polynomial<'static, FieldElement> = poly![];      // zero polynomial
+/// let vec3: PolynomialVector<'static, FieldElement> = poly_vec![p1, p2, poly![1, 2, 3]];
 /// assert_eq!(vec3.len(), 3);
 /// ```
 ///
@@ -80,8 +82,8 @@ use num_traits::Zero;
 /// use math::prelude::*;
 ///
 /// // Repeat the same polynomial 4 times
-/// let p = poly![42, 17, 99];
-/// let vec = poly_vec![p; 4];
+/// let p: Polynomial<'static, FieldElement> = poly![42, 17, 99];
+/// let vec: PolynomialVector<'static, FieldElement>  = poly_vec![p.clone(); 4];
 ///
 /// assert_eq!(vec.len(), 4);
 /// for i in 0..4 {
@@ -95,12 +97,12 @@ use num_traits::Zero;
 /// ```
 /// use math::prelude::*;
 ///
-/// let polys = vec![
+/// let polys: Vec<Polynomial<'static, FieldElement>> = vec![
 ///     poly![1, 2],
 ///     poly![3, 4],
 ///     poly![5, 6]
 /// ];
-/// let vec = poly_vec![polys];
+/// let vec: PolynomialVector<'static, FieldElement>  = poly_vec![polys];
 /// assert_eq!(vec.len(), 3);
 /// ```
 ///
@@ -109,10 +111,11 @@ use num_traits::Zero;
 /// More complex usage patterns:
 /// ```
 /// use math::prelude::*;
+/// use num_traits::identities::Zero;
 ///
 /// // Using expressions to create polynomials
 /// let a = 5;
-/// let vec1 = poly_vec![
+/// let vec1: PolynomialVector<'static, FieldElement>  = poly_vec![
 ///     poly![a, a*2, a*3],
 ///     poly![a+1, a+2, a+3],
 ///     poly![-a, -2*a, -3*a]  // Will be reduced mod Q
@@ -120,22 +123,22 @@ use num_traits::Zero;
 /// assert_eq!(vec1.len(), 3);
 ///
 /// // Creating from function calls
-/// fn make_poly(start: i32) -> Polynomial {
+/// fn make_poly(start: i32) -> Polynomial<'static, FieldElement> {
 ///     poly![start, start+1, start+2]
 /// }
 ///
-/// let vec2 = poly_vec![
+/// let vec2: PolynomialVector<'static, FieldElement>  = poly_vec![
 ///     make_poly(10),
 ///     make_poly(20),
 ///     make_poly(30)
 /// ];
 /// assert_eq!(vec2.len(), 3);
-/// assert_eq!(vec2.get(0).unwrap().coeffs()[0], 10);
-/// assert_eq!(vec2.get(1).unwrap().coeffs()[0], 20);
-/// assert_eq!(vec2.get(2).unwrap().coeffs()[0], 30);
+/// assert_eq!(vec2.get(0).unwrap().coefficients()[0], fe!(10));
+/// assert_eq!(vec2.get(1).unwrap().coefficients()[0], fe!(20));
+/// assert_eq!(vec2.get(2).unwrap().coefficients()[0], fe!(30));
 ///
 /// // Creating uniform vector with closures
-/// let vec3 = poly_vec![(0..5).map(|i| poly![i, i*i, i*i*i]).collect::<Vec<_>>()];
+/// let vec3: PolynomialVector<'static, FieldElement>  = poly_vec![(0..5).map(|i| poly![i, i*i, i*i*i]).collect::<Vec<_>>()];
 /// assert_eq!(vec3.len(), 5);
 /// ```
 ///
@@ -150,11 +153,11 @@ use num_traits::Zero;
 /// let v1 = poly_vec![poly![1, 2], poly![3, 4]];
 /// let v2 = poly_vec![poly![5, 6], poly![7, 8]];
 /// let sum = v1 + v2;
-/// assert_eq!(sum.get(0).unwrap().coeffs()[0], 6);  // 1 + 5
-/// assert_eq!(sum.get(1).unwrap().coeffs()[0], 10); // 3 + 7
+/// assert_eq!(sum.get(0).unwrap().coefficients()[0], fe!(6));  // 1 + 5
+/// assert_eq!(sum.get(1).unwrap().coefficients()[0], fe!(10)); // 3 + 7
 /// ```
 #[macro_export]
-macro_rules! poly_vec {
+macro_rules! poly_vec { 
     // Empty case - empty polynomial vector
     () => {
         $crate::poly_vector::PolynomialVector::new(vec![])
