@@ -141,7 +141,9 @@ impl<FF: FiniteField + MulAssign<FieldElement>> ZerofierTree<'static, FF> {
                         (l, ZerofierTree::Padding) => next.push_back(l),
                         (l, r) => {
                             let node = Branch::new(l, r);
-                            next.push_back(ZerofierTree::Branch(Box::new(node)));
+                            next.push_back(ZerofierTree::Branch(Box::new(
+                                node,
+                            )));
                         }
                     }
                 } else {

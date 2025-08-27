@@ -848,7 +848,7 @@ where
             squared_coefficients[2 * i] += ci * ci;
 
             //for j in i + 1..self.coefficients.len() {
-            for j in i+1..used_len {
+            for j in i + 1..used_len {
                 let cj = self.coefficients[j];
                 squared_coefficients[i + j] += two * ci * cj;
             }
@@ -1541,6 +1541,33 @@ where
         left.multiply(&right)
     }
 
+    /// Deduplicate domain/value pairs by x, keeping the first y for each x.
+    /// Returns new vectors with unique x's in their original encounter order.
+    fn dedup_points_preserve_first(
+        domain: &[FF],
+        values: &[FF],
+    ) -> (Vec<FF>, Vec<FF>) {
+        use std::collections::hash_map::Entry;
+        use std::collections::HashMap;
+        let mut x_to_index: HashMap<FF, usize> =
+            HashMap::with_capacity(domain.len());
+        let mut xs: Vec<FF> = Vec::with_capacity(domain.len());
+        let mut ys: Vec<FF> = Vec::with_capacity(domain.len());
+        for (&x, &y) in domain.iter().zip(values.iter()) {
+            match x_to_index.entry(x) {
+                Entry::Vacant(e) => {
+                    e.insert(xs.len());
+                    xs.push(x);
+                    ys.push(y);
+                }
+                Entry::Occupied(_idx) => {
+                    // Conflicting duplicate: keep first y; ignore later.
+                }
+            }
+        }
+        (xs, ys)
+    }
+
     /// Construct the lowest-degree polynomial interpolating the given points.
     ///
     /// ```
@@ -1568,6 +1595,12 @@ where
             "The domain and values lists have to be of equal length."
         );
 
+        // NEW:
+        let (unique_domain, unique_values) =
+            Self::dedup_points_preserve_first(domain, values);
+        let domain = &unique_domain;
+        let values = &unique_values;
+
         if domain.len() <= Self::FAST_INTERPOLATE_CUTOFF_THRESHOLD_SEQUENTIAL {
             Self::lagrange_interpolate(domain, values)
         } else {
@@ -1590,6 +1623,12 @@ where
             values.len(),
             "The domain and values lists have to be of equal length."
         );
+
+        // NEW:
+        let (unique_domain, unique_values) =
+            Self::dedup_points_preserve_first(domain, values);
+        let domain = &unique_domain;
+        let values = &unique_values;
 
         // Reuse sequential threshold. We don't know how speed up this task with
         // parallelism below this threshold.
@@ -2007,17 +2046,39 @@ where
 
     /// Parallel version of [`batch_evaluate`](Self::batch_evaluate).
     pub fn par_batch_evaluate(&self, domain: &[FF]) -> Vec<FF> {
+        // if domain.is_empty() || self.is_zero() {
+        //     return vec![FF::ZERO; domain.len()];
+        // }
+        // let num_threads = available_parallelism()
+        //     .map(|non_zero_usize| non_zero_usize.get())
+        //     .unwrap_or(1);
+        // let chunk_size = domain.len().div_ceil(num_threads);
+        // domain
+        //     .par_chunks(chunk_size)
+        //     .flat_map(|ch| self.batch_evaluate(ch))
+        //     .collect()
         if domain.is_empty() || self.is_zero() {
             return vec![FF::ZERO; domain.len()];
         }
         let num_threads = available_parallelism()
             .map(|non_zero_usize| non_zero_usize.get())
             .unwrap_or(1);
+
+        // Compute a stable chunk size and preserve output ordering.
         let chunk_size = domain.len().div_ceil(num_threads);
-        domain
-            .par_chunks(chunk_size)
-            .flat_map(|ch| self.batch_evaluate(ch))
-            .collect()
+
+        // Preallocate output and fill each chunk in place.
+        let mut out = vec![FF::ZERO; domain.len()];
+        out.par_chunks_mut(chunk_size)
+            .zip(domain.par_chunks(chunk_size))
+            .for_each(|(out_chunk, in_chunk)| {
+                let vals = self.batch_evaluate(in_chunk);
+                for (dst, v) in out_chunk.iter_mut().zip(vals) {
+                    *dst = v;
+                }
+            });
+
+        out
     }
 
     /// Only marked `pub` for benchmarking; not considered part of the public API.
@@ -2591,10 +2652,10 @@ where
     // }
 
     pub fn new(coeffs: Vec<FF>) -> Self {
-        Self { coefficients: std::borrow::Cow::Owned(coeffs) }
+        Self {
+            coefficients: std::borrow::Cow::Owned(coeffs),
+        }
     }
-
-    
 
     /// Reduce polynomial modulo X^N + 1
     fn reduce_mod_xn_plus_1(coeffs: &[FF]) -> Vec<FF> {
@@ -2858,12 +2919,10 @@ where
 #[cfg(test)]
 mod test_polynomials {
     use num_traits::ConstZero;
-    use std::collections::BTreeSet;
 
     use proptest::collection::size_range;
     use proptest::collection::vec;
 
-    use proptest::collection::btree_set;
     use proptest::prelude::*;
     use proptest_arbitrary_interop::arb;
     use test_strategy::proptest;
