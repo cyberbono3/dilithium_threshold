@@ -848,7 +848,7 @@ where
             squared_coefficients[2 * i] += ci * ci;
 
             //for j in i + 1..self.coefficients.len() {
-            for j in 0..used_len {
+            for j in i+1..used_len {
                 let cj = self.coefficients[j];
                 squared_coefficients[i + j] += two * ci * cj;
             }
