@@ -41,7 +41,7 @@ use crate::prelude::{FieldElement, N};
 /// use math::prelude::*;
 ///
 /// // Create polynomial from coefficients
-/// let p1: Polynomial<'_, FieldElement> = poly![fe!(1), fe!(2), fe!(3)];
+/// let p1: Polynomial<'static, FieldElement> = poly!(1,2,3);
 /// assert_eq!(p1.coefficients()[0], fe!(1));
 /// assert_eq!(p1.coefficients()[1], fe!(2));
 /// assert_eq!(p1.coefficients()[2], fe!(3));
@@ -52,10 +52,10 @@ use crate::prelude::{FieldElement, N};
 /// use math::prelude::*;
 /// use num_traits::identities::Zero;
 ///
-/// let p_zero = poly![];
+/// let p_zero = poly!();
 /// assert!(p_zero.is_zero());
 /// assert_eq!(p_zero.degree(), -1);
-/// assert_eq!(p_zero, Polynomial::is_zero());
+/// assert_eq!(p_zero, Polynomial::<FieldElement>::zero());
 /// ```
 ///
 /// Creating polynomial with repeated values:
@@ -70,17 +70,12 @@ use crate::prelude::{FieldElement, N};
 /// }
 /// ```
 ///
-/// From arrays and vectors:
+/// From vectors:
 /// ```
 /// use math::prelude::*;
 ///
-/// let arr = [fe!(1), fe!(2), fe!(3), fe!(4)];
-/// let p1: Polynomial<'_, FieldElement>  = poly![&arr[..]];  // Convert array to slice
-/// assert_eq!(p1.coefficients()[0], fe!(1));
-/// assert_eq!(p1.coefficients()[3], fe!(4));
-///
-/// let vec: Vec<FieldElement>> = fe_vec![10, 20, 30];
-/// let p2:  Polynomial<'_, FieldElement>  = poly![vec];
+/// let vec: Vec<FieldElement> = fe_vec!(10, 20, 30);
+/// let p2:  Polynomial<'static, FieldElement>  = poly![vec];
 /// assert_eq!(p2.coefficients()[0], fe!(10));
 /// assert_eq!(p2.coefficients()[2], fe!(30));
 /// ```

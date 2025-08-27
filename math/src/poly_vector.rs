@@ -18,9 +18,9 @@ use num_traits::Zero;
 /// ```
 /// use math::prelude::*;
 ///
-/// let p1 = poly![1, 2, 3];
-/// let p2 = poly![4, 5, 6];
-/// let vec = poly_vec![p1, p2];
+/// let p1: Polynomial<'static, FieldElement> = poly![1, 2, 3];
+/// let p2: Polynomial<'static, FieldElement>  = poly![4, 5, 6];
+/// let vec: PolynomialVector<'static, Polynomial<'static, FieldElement>> = poly_vec!(p1, p2);
 ///
 /// assert_eq!(vec.len(), 2);
 /// assert_eq!(vec.get(0), Some(&p1));
