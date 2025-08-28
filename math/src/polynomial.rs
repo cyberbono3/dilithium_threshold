@@ -474,8 +474,12 @@ where
     /// Multiply a polynomial with x^power
     #[must_use]
     pub fn shift_coefficients(self, power: usize) -> Polynomial<'static, FF> {
-        let mut coefficients = self.coefficients.into_owned();
-        coefficients.splice(0..0, vec![FF::ZERO; power]);
+        let old = self.coefficients.into_owned();
+        if power == 0 {
+            return Polynomial::new(old);
+        }
+        let mut coefficients = vec![FF::ZERO; power + old.len()];
+        coefficients[power..].copy_from_slice(&old);
         Polynomial::new(coefficients)
     }
 
