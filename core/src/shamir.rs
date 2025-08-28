@@ -116,18 +116,24 @@ impl AdaptedShamirSSS {
         self.organize_shares(participant_shares, vector_length)
     }
 
+    #[inline]
+    fn ensure_threshold(&self, provided: usize) -> Result<()> {
+        if self.threshold > provided {
+            return Err(ThresholdError::InvalidThreshold {
+                threshold: self.threshold,
+                participant_number: provided,
+            });
+        }
+        Ok(())
+    }
+
     /// Reconstruct the secret from a sufficient number of shares.
     // TODO fix code duplciation with partial_reconstruct
     pub fn reconstruct_secret<FF: FiniteField>(
         &self,
         shares: &[ShamirShare<'static, FF>],
     ) -> Result<PolynomialVector<'static, FF>> {
-        if self.threshold > shares.len() {
-            return Err(ThresholdError::InvalidThreshold {
-                threshold: self.threshold,
-                participant_number: shares.len(),
-            });
-        }
+        self.ensure_threshold(shares.len())?;
 
         let active_shares = &shares[..self.threshold];
         assert!(!active_shares.is_empty(), "active_shares is empty");
@@ -146,17 +152,10 @@ impl AdaptedShamirSSS {
         shares: &[ShamirShare<'static, FF>],
         poly_indices: &[usize],
     ) -> Result<PolynomialVector<'static, FF>> {
+        self.ensure_threshold(shares.len())?;
         let active_shares = &shares[..self.threshold];
-        // Ensure we have enough shares before slicing to avoid panics
-        if self.threshold > shares.len() {
-            return Err(ThresholdError::InvalidThreshold {
-                threshold: self.threshold,
-                participant_number: shares.len(),
-            });
-        }
         let vector_length = active_shares[0].vector_length();
         self.validate_shares(active_shares, shares, vector_length)?;
-
         Self::reconstruct_poly_vector(active_shares, poly_indices)
     }
 
