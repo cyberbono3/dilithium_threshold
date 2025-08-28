@@ -276,7 +276,7 @@ impl AdaptedShamirSSS {
             //let poly: Polynomial<'static, FF> = Polynomial::from(&share_coeffs);
             let poly_vec: Vec<Polynomial<'static, FF>> = share_coeffs
                 .into_iter()
-                .map(|coeffs| Polynomial::from(coeffs))
+                .map(Polynomial::from)
                 .collect();
 
             let share_vector = PolynomialVector::new(poly_vec);
