@@ -488,7 +488,7 @@ where
     /// ```
     /// use math::prelude::*;
     /// let mut f: Polynomial<'static, FieldElement> = Polynomial::new(fe_vec![1, 2, 3]);
-    /// f.scalar_mul_mut(2);
+    /// f.scalar_mul_mut(fe!(2));
     /// let expected: Polynomial<'static, FieldElement> = Polynomial::new(fe_vec![2, 4, 6]);
     /// assert_eq!(Polynomial::new(fe_vec![2, 4, 6]), f);
     /// assert_eq!(expected, f);

@@ -89,12 +89,16 @@ impl AdaptedShamirSSS {
             ];
 
         for (poly_idx, poly) in secret_vector.as_slice().iter().enumerate() {
-            // Process each coefficient
-            // for (coeff_idx, secret_coeff) in
-            //     poly.coefficients().iter().enumerate()
-            for coeff_idx in 0..N {
-                let secret_coeff = poly.coefficients().get(coeff_idx).unwrap();
-                let shamir_poly = self.create_shamir_polynomial(secret_coeff);
+            let coeff_len = poly.coefficients().len();
+            for coeff_idx in 0..coeff_len {
+                let secret_coeff =
+                    poly.coefficients().get(coeff_idx).copied().ok_or(
+                        ThresholdError::InvalidIndex {
+                            index: coeff_idx,
+                            length: coeff_len,
+                        },
+                    )?;
+                let shamir_poly = self.create_shamir_polynomial(&secret_coeff);
 
                 // Evaluate for each participant
                 for pid in 1..=self.participant_number {
@@ -143,6 +147,13 @@ impl AdaptedShamirSSS {
         poly_indices: &[usize],
     ) -> Result<PolynomialVector<'static, FF>> {
         let active_shares = &shares[..self.threshold];
+        // Ensure we have enough shares before slicing to avoid panics
+        if self.threshold > shares.len() {
+            return Err(ThresholdError::InvalidThreshold {
+                threshold: self.threshold,
+                participant_number: shares.len(),
+            });
+        }
         let vector_length = active_shares[0].vector_length();
         self.validate_shares(active_shares, shares, vector_length)?;
 
@@ -161,7 +172,13 @@ impl AdaptedShamirSSS {
             // Reconstruct each coefficient independently via Shamir interpolation across participants.
             // For a fixed coefficient index i, collect (x_j, y_{j,i}) from each active share j,
             // interpolate the sharing polynomial f_i(x), and take the secret as f_i(0).
-            let mut coeffs = vec![FF::ZERO; N];
+            let coeff_count = active_shares[0]
+                .share_vector
+                .get(*poly_idx)
+                .map(|p| p.coefficients().len())
+                .unwrap_or(0);
+
+            let mut coeffs = vec![FF::ZERO; coeff_count];
             for (i, c) in coeffs.iter_mut().enumerate().take(N) {
                 let (xs, ys) = active_shares.iter().try_fold(
                     (
@@ -228,16 +245,16 @@ impl AdaptedShamirSSS {
                 length: share.vector_length(),
             },
         )?;
-        // dbg!("share_vector.called");
+        dbg!("share_vector.called");
         // dbg!("calling coefficients().get");
         let coeff = poly.coefficients().get(coeff_idx).copied().ok_or(
             ThresholdError::InvalidIndex {
                 index: coeff_idx,
-                length: share.vector_length(),
+                length: poly.coefficients().len(),
             },
         )?;
 
-        //  dbg!("return");
+        //dbg!("poly.coeffcients.get" called");
         Ok((FF::from(share.participant_id as u64), coeff))
     }
 
@@ -286,7 +303,7 @@ impl AdaptedShamirSSS {
     }
 
     /// Evaluate polynomial at given point using Horner's method
-    /// // this is an inplementation
+    #[cfg(test)]
     fn evaluate_polynomial(coeffs: &[i32], x: i32) -> i32 {
         let mut result = 0i64;
         let mut x_power = 1i64;
@@ -415,11 +432,11 @@ mod tests {
 
             // Create test secret vector
             let coeffs = fe_vec!(1, 2, 3, 4, 5);
-            let secret_poly1: Polynomial<'_, FieldElement> = poly!(coeffs);
-            assert_eq!(secret_poly1.coefficients().len(), N);
+            let secret_poly1: Polynomial<'_, FieldElement> = poly!(coeffs.clone());
+            assert_eq!(secret_poly1.coefficients().len(), coeffs.len());
             let secret_poly2: Polynomial<'_, FieldElement> =
                 poly![10, 20, 30, 40, 50];
-            assert_eq!(secret_poly2.coefficients().len(), N);
+            assert_eq!(secret_poly2.coefficients().len(), coeffs.len());
             let secret_vector = poly_vec!(secret_poly1, secret_poly2);
 
             let shares = shamir.split_secret(&secret_vector).unwrap();

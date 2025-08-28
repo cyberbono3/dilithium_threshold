@@ -157,7 +157,7 @@ use num_traits::Zero;
 /// assert_eq!(sum.get(1).unwrap().coefficients()[0], fe!(10)); // 3 + 7
 /// ```
 #[macro_export]
-macro_rules! poly_vec { 
+macro_rules! poly_vec {
     // Empty case - empty polynomial vector
     () => {
         $crate::poly_vector::PolynomialVector::new(vec![])

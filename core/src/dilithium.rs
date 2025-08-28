@@ -381,7 +381,7 @@ impl Dilithium {
                     bytes[idx + 2],
                     bytes[idx + 3],
                 ]);
-                let sample = (val % (2 * self.config.gamma1 + 1));
+                let sample = val % (2 * self.config.gamma1 + 1);
                 let coeff = sample as i32 - self.config.gamma1 as i32;
                 <i32 as Into<FF>>::into(coeff)
             })
