@@ -2080,6 +2080,10 @@ where
     /// Only marked `pub` for benchmarking; not considered part of the public API.
     #[doc(hidden)]
     pub fn iterative_batch_evaluate(&self, domain: &[FF]) -> Vec<FF> {
+        if self.degree() == 0 {
+            let c = self.coefficients[0];
+            return vec![c; domain.len()];
+        }
         domain.iter().map(|&p| self.evaluate(p)).collect()
     }
 
