@@ -3,75 +3,113 @@ use std::ops::MulAssign;
 use num_traits::ConstOne;
 use num_traits::ConstZero;
 
-use super::field_element::FieldElement;
-use super::traits::FiniteField;
-use super::traits::Inverse;
-use super::traits::ModPowU32;
-use super::traits::PrimitiveRootOfUnity;
+use crate::{
+    error::{NttError, Result},
+    field_element::FieldElement,
+    traits::{FiniteField, Inverse, ModPowU32, PrimitiveRootOfUnity},
+};
 
 /// ## Perform NTT on slices of prime-field elements
 ///
 /// NTTs are Number Theoretic Transforms, which are Discrete Fourier Transforms
 /// (DFTs) over finite fields. It aims at being used to compute polynomial multiplication over finite fields.
 /// NTT reduces the complexity of such multiplication.
+// pub fn ntt<FF>(x: &mut [FF])
+// where
+//     FF: FiniteField + MulAssign<FieldElement>,
+// {
+//     let slice_len = u32::try_from(x.len())
+//         .expect("slice should be no longer than u32::MAX");
+
+//     assert!(slice_len == 0 || slice_len.is_power_of_two());
+//     let log2_slice_len = slice_len.checked_ilog2().unwrap_or(0);
+
+//     // `slice_len` is 0 or a power of two smaller than u32::MAX
+//     //  => `unwrap()` never panics
+//     let omega = FieldElement::primitive_root_of_unity(slice_len).unwrap();
+//     ntt_unchecked(x, omega, log2_slice_len);
+// }
+
+/// Direction for a number-theoretic transform.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Transform {
+    Forward,
+    Inverse,
+}
+
+// /// ## Perform INTT on slices of prime-field elements
+// ///
+// /// INTT is the inverse [NTT][self::ntt], so abstractly,
+// /// *intt(values) = ntt(values) / n*.
+// ///
+// /// This transform is performed in-place.
+// ///
+// /// # Example
+// ///
+// /// ```
+// /// use math::prelude::*;
+// /// let original_values = fe_vec![0, 1, 1, 2, 3, 5, 8, 13];
+// /// let mut transformed_values = original_values.clone();
+// /// ntt(&mut transformed_values);
+// /// intt(&mut transformed_values);
+// /// assert_eq!(original_values, transformed_values);
+// /// ```
+// ///
+// /// # Panics
+// ///
+// /// Panics if the length of the input slice is
+// /// - not a power of two
+// /// - larger than [`u32::MAX`]
+// pub fn intt<FF>(x: &mut [FF])
+// where
+//     FF: FiniteField + MulAssign<FieldElement>,
+// {
+//     let slice_len = u32::try_from(x.len())
+//         .expect("slice should be no longer than u32::MAX");
+
+//     assert!(slice_len == 0 || slice_len.is_power_of_two());
+//     let log2_slice_len = slice_len.checked_ilog2().unwrap_or(0);
+
+//     // `slice_len` is 0 or a power of two smaller than u32::MAX
+//     //  => `unwrap()` never panics
+//     let omega = FieldElement::primitive_root_of_unity(slice_len).unwrap();
+//     ntt_unchecked(x, omega.inverse(), log2_slice_len);
+
+//     let n_inv_or_zero = FieldElement::from(x.len()).inverse_or_zero();
+//     for elem in x.iter_mut() {
+//         *elem *= n_inv_or_zero
+//     }
+// }
+
+/// Fallible NTT (no panics).
+pub fn try_ntt<FF>(x: &mut [FF]) -> Result<()>
+where
+    FF: FiniteField + MulAssign<FieldElement>,
+{
+    ntt_in_place(x, Transform::Forward)
+}
+
+/// Fallible INTT (no panics).
+pub fn try_intt<FF>(x: &mut [FF]) -> Result<()>
+where
+    FF: FiniteField + MulAssign<FieldElement>,
+{
+    ntt_in_place(x, Transform::Inverse)
+}
+
+/// Backwards-compatible wrappers that panic on invalid input.
 pub fn ntt<FF>(x: &mut [FF])
 where
     FF: FiniteField + MulAssign<FieldElement>,
 {
-    let slice_len = u32::try_from(x.len())
-        .expect("slice should be no longer than u32::MAX");
-
-    assert!(slice_len == 0 || slice_len.is_power_of_two());
-    let log2_slice_len = slice_len.checked_ilog2().unwrap_or(0);
-
-    // `slice_len` is 0 or a power of two smaller than u32::MAX
-    //  => `unwrap()` never panics
-    let omega = FieldElement::primitive_root_of_unity(slice_len).unwrap();
-    ntt_unchecked(x, omega, log2_slice_len);
+    try_ntt(x).expect("ntt: slice length must be a power of two <= u32::MAX and have a root of unity");
 }
 
-/// ## Perform INTT on slices of prime-field elements
-///
-/// INTT is the inverse [NTT][self::ntt], so abstractly,
-/// *intt(values) = ntt(values) / n*.
-///
-/// This transform is performed in-place.
-///
-/// # Example
-///
-/// ```
-/// use math::prelude::*;
-/// let original_values = fe_vec![0, 1, 1, 2, 3, 5, 8, 13];
-/// let mut transformed_values = original_values.clone();
-/// ntt(&mut transformed_values);
-/// intt(&mut transformed_values);
-/// assert_eq!(original_values, transformed_values);
-/// ```
-///
-/// # Panics
-///
-/// Panics if the length of the input slice is
-/// - not a power of two
-/// - larger than [`u32::MAX`]
 pub fn intt<FF>(x: &mut [FF])
 where
     FF: FiniteField + MulAssign<FieldElement>,
 {
-    let slice_len = u32::try_from(x.len())
-        .expect("slice should be no longer than u32::MAX");
-
-    assert!(slice_len == 0 || slice_len.is_power_of_two());
-    let log2_slice_len = slice_len.checked_ilog2().unwrap_or(0);
-
-    // `slice_len` is 0 or a power of two smaller than u32::MAX
-    //  => `unwrap()` never panics
-    let omega = FieldElement::primitive_root_of_unity(slice_len).unwrap();
-    ntt_unchecked(x, omega.inverse(), log2_slice_len);
-
-    let n_inv_or_zero = FieldElement::from(x.len()).inverse_or_zero();
-    for elem in x.iter_mut() {
-        *elem *= n_inv_or_zero
-    }
+    try_intt(x).expect("intt: slice length must be a power of two <= u32::MAX and have a root of unity");
 }
 
 /// Like [NTT][self::ntt], but with greater control over the root of unity that
@@ -92,7 +130,7 @@ where
     let slice_len = x.len() as u32;
 
     for k in 0..slice_len {
-        let rk = bitreverse(k, log2_slice_len);
+        let rk = bitreverse_u32(k, log2_slice_len);
         if k < rk {
             x.swap(rk as usize, k as usize);
         }
@@ -250,13 +288,86 @@ pub fn unscale(array: &mut [FieldElement]) {
 }
 
 #[inline]
-fn bitreverse(mut n: u32, l: u32) -> u32 {
+fn bitreverse_u32(mut n: u32, l: u32) -> u32 {
     let mut r = 0;
     for _ in 0..l {
         r = (r << 1) | (n & 1);
         n >>= 1;
     }
     r
+}
+
+#[inline]
+fn ilog2_pow2_u32(n: u32) -> u32 {
+    debug_assert!(n.is_power_of_two());
+    n.ilog2()
+}
+
+fn ntt_in_place<FF>(x: &mut [FF], direction: Transform) -> Result<()>
+where
+    FF: FiniteField + MulAssign<FieldElement>,
+{
+    let n_usize = x.len();
+    let n_u32 =
+        u32::try_from(n_usize).map_err(|_| NttError::TooLarge(n_usize))?;
+    if n_u32 != 0 && !n_u32.is_power_of_two() {
+        return Err(NttError::NonPowerOfTwo(n_usize).into());
+    }
+    if n_u32 == 0 {
+        return Ok(()); // nothing to do
+    }
+
+    let root_order = n_u32;
+    let omega = FieldElement::primitive_root_of_unity(root_order)
+        .ok_or(NttError::MissingPrimitiveRoot(root_order))?;
+    let w = match direction {
+        Transform::Forward => omega,
+        Transform::Inverse => omega.inverse(),
+    };
+    let log2 = ilog2_pow2_u32(n_u32);
+
+    // bit-reverse permutation
+    for k in 0..n_u32 {
+        let rk = bitreverse_u32(k, log2);
+        if k < rk {
+            x.swap(rk as usize, k as usize);
+        }
+    }
+
+    // Cooley–Tukey butterflies
+    let mut m = 1u32;
+    for _stage in 0..log2 {
+        let w_m = w.mod_pow_u32(n_u32 / (2 * m));
+        let mut k = 0u32;
+        while k < n_u32 {
+            let mut twiddle = FieldElement::ONE;
+            for j in 0..m {
+                let u = x[(k + j) as usize];
+                let mut v = x[(k + j + m) as usize];
+                v *= twiddle;
+                x[(k + j) as usize] = u + v;
+                x[(k + j + m) as usize] = u - v;
+                twiddle *= w_m;
+            }
+            k += 2 * m;
+        }
+        m *= 2;
+    }
+
+    if matches!(direction, Transform::Inverse) {
+        unscale_ffi(x, n_usize);
+    }
+    Ok(())
+}
+
+#[inline]
+fn unscale_ffi<FF>(x: &mut [FF], n: usize)
+where    FF: FiniteField + MulAssign<FieldElement>,
+{
+    let ninv = FieldElement::new(n as u32).inverse();
+    for a in x.iter_mut() {
+        *a *= ninv;
+    }
 }
 
 #[cfg(test)]

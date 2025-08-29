@@ -6,3 +6,4 @@ pub mod polynomial;
 pub mod prelude;
 pub mod traits;
 pub mod zerofier_tree;
+pub mod matrix;

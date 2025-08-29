@@ -7,7 +7,10 @@ use sha3::{
 use crate::error::Result;
 use crate::utils::{get_hash_reader, get_randomness, hash_message};
 use crate::{error::ThresholdError, params::DilithiumConfig};
-use math::traits::FiniteField;
+use math::{
+    traits::FiniteField,
+    matrix::Matrix,
+};
 
 use math::prelude::*;
 
@@ -35,7 +38,7 @@ impl<'a, FF: FiniteField> DilithiumKeyPair<'a, FF> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct DilithiumPublicKey<'a, FF: FiniteField> {
     // TODO define a standalone type
-    pub m: Vec<Vec<Polynomial<'a, FF>>>,
+    pub m: Matrix<'a, FF>,
     pub t: PolynomialVector<'a, FF>,
     pub security_level: usize,
     pub config: DilithiumConfig,
@@ -44,7 +47,7 @@ pub struct DilithiumPublicKey<'a, FF: FiniteField> {
 impl<'a, FF: FiniteField> DilithiumPublicKey<'a, FF> {
     /// Initialize public key.
     pub fn new(
-        m: Vec<Vec<Polynomial<'a, FF>>>,
+        m: Matrix<'a, FF>,
         t: PolynomialVector<'a, FF>,
         security_level: usize,
     ) -> Self {
@@ -257,7 +260,7 @@ impl Dilithium {
     fn expand_a<FF: FiniteField>(
         &self,
         rho: &[u8],
-    ) -> Vec<Vec<Polynomial<'static, FF>>> {
+    ) -> Matrix<'static, FF>{
         let mut a = Vec::with_capacity(self.config.k);
 
         for i in 0..self.config.k {
@@ -274,7 +277,7 @@ impl Dilithium {
             a.push(row);
         }
 
-        a
+        Matrix::new(a)
     }
 
     /// Sample uniform polynomial from seed.
