@@ -3,6 +3,8 @@ use math::{prelude::*, traits::FiniteField};
 use crate::{
     error::{Result, ThresholdError},
     params::validate_threshold_config,
+    points::PointSource,
+    utils::reconstruct_vector_from_points,
 };
 
 use rand::Rng;
@@ -142,7 +144,7 @@ impl AdaptedShamirSSS {
         self.validate_shares(active_shares, shares, vector_length)?;
 
         let poly_indices: Vec<usize> = (0..vector_length).collect();
-        Self::reconstruct_poly_vector(active_shares, &poly_indices)
+        self.reconstruct_poly_vector(active_shares, &poly_indices)
     }
 
     #[cfg(test)]
@@ -156,49 +158,62 @@ impl AdaptedShamirSSS {
         let active_shares = &shares[..self.threshold];
         let vector_length = active_shares[0].vector_length();
         self.validate_shares(active_shares, shares, vector_length)?;
-        Self::reconstruct_poly_vector(active_shares, poly_indices)
+        self.reconstruct_poly_vector(active_shares, poly_indices)
     }
 
     /// Common logic for reconstructing polynomials
+    // fn reconstruct_poly_vector<FF: FiniteField>(
+    //     active_shares: &[ShamirShare<'static, FF>],
+    //     poly_indices: &[usize],
+    // ) -> Result<PolynomialVector<'static, FF>> {
+    //     let mut reconstructed_polys: Vec<Polynomial<'static, FF>> =
+    //         Vec::with_capacity(poly_indices.len());
+
+    //     for poly_idx in poly_indices {
+    //         // Reconstruct each coefficient independently via Shamir interpolation across participants.
+    //         // For a fixed coefficient index i, collect (x_j, y_{j,i}) from each active share j,
+    //         // interpolate the sharing polynomial f_i(x), and take the secret as f_i(0).
+    //         let coeff_count = active_shares[0]
+    //             .share_vector
+    //             .get(*poly_idx)
+    //             .map(|p| p.coefficients().len())
+    //             .unwrap_or(0);
+
+    //         let mut coeffs = vec![FF::ZERO; coeff_count];
+    //         for (i, c) in coeffs.iter_mut().enumerate().take(N) {
+    //             let (xs, ys) = active_shares.iter().try_fold(
+    //                 (
+    //                     Vec::with_capacity(active_shares.len()),
+    //                     Vec::with_capacity(active_shares.len()),
+    //                 ),
+    //                 |(mut xs, mut ys), share| {
+    //                     let (x, y) = Self::yield_points(share, *poly_idx, i)?;
+    //                     xs.push(x);
+    //                     ys.push(y);
+    //                     Ok((xs, ys))
+    //                 },
+    //             )?;
+    //             let f_i = Polynomial::lagrange_interpolate(&xs, &ys);
+    //             // Secret coefficient is the constant term f_i(0)
+    //             *c = f_i.batch_evaluate(&[FF::ZERO])[0];
+    //         }
+    //         reconstructed_polys.push(Polynomial::from(coeffs));
+    //     }
+
+    //     Ok(poly_vec![reconstructed_polys])
+    // }
     fn reconstruct_poly_vector<FF: FiniteField>(
-        active_shares: &[ShamirShare<'static, FF>],
+        &self,
+        shares: &[ShamirShare<'static, FF>],
         poly_indices: &[usize],
     ) -> Result<PolynomialVector<'static, FF>> {
-        let mut reconstructed_polys: Vec<Polynomial<'static, FF>> =
-            Vec::with_capacity(poly_indices.len());
+        self.ensure_threshold(shares.len())?;
+        let active = &shares[..self.threshold];
 
-        for poly_idx in poly_indices {
-            // Reconstruct each coefficient independently via Shamir interpolation across participants.
-            // For a fixed coefficient index i, collect (x_j, y_{j,i}) from each active share j,
-            // interpolate the sharing polynomial f_i(x), and take the secret as f_i(0).
-            let coeff_count = active_shares[0]
-                .share_vector
-                .get(*poly_idx)
-                .map(|p| p.coefficients().len())
-                .unwrap_or(0);
+        // Optional: your existing structural validations
+        self.validate_shares(active, shares, active[0].vector_length())?;
 
-            let mut coeffs = vec![FF::ZERO; coeff_count];
-            for (i, c) in coeffs.iter_mut().enumerate().take(N) {
-                let (xs, ys) = active_shares.iter().try_fold(
-                    (
-                        Vec::with_capacity(active_shares.len()),
-                        Vec::with_capacity(active_shares.len()),
-                    ),
-                    |(mut xs, mut ys), share| {
-                        let (x, y) = Self::yield_points(share, *poly_idx, i)?;
-                        xs.push(x);
-                        ys.push(y);
-                        Ok((xs, ys))
-                    },
-                )?;
-                let f_i = Polynomial::lagrange_interpolate(&xs, &ys);
-                // Secret coefficient is the constant term f_i(0)
-                *c = f_i.batch_evaluate(&[FF::ZERO])[0];
-            }
-            reconstructed_polys.push(Polynomial::from(coeffs));
-        }
-
-        Ok(poly_vec![reconstructed_polys])
+        reconstruct_vector_from_points::<FF, _>(active, poly_indices)
     }
 
     /// Validate shares for reconstruction
@@ -272,12 +287,9 @@ impl AdaptedShamirSSS {
             for share in &participant_shares[pid - 1] {
                 share_coeffs[share.poly_idx][share.coeff_idx] = share.value;
             }
-            //let polys = share_coeffs.into_iter().map(Polynomial::from).collect();
-            //let poly: Polynomial<'static, FF> = Polynomial::from(&share_coeffs);
-            let poly_vec: Vec<Polynomial<'static, FF>> = share_coeffs
-                .into_iter()
-                .map(Polynomial::from)
-                .collect();
+
+            let poly_vec: Vec<Polynomial<'static, FF>> =
+                share_coeffs.into_iter().map(Polynomial::from).collect();
 
             let share_vector = PolynomialVector::new(poly_vec);
             shares.push(ShamirShare::new(pid, share_vector)?);
@@ -313,6 +325,22 @@ impl AdaptedShamirSSS {
         }
 
         result as i32
+    }
+}
+
+impl<FF: FiniteField> PointSource<FF> for ShamirShare<'static, FF> {
+    fn x(&self) -> FF {
+        // Adjust field name as needed: `id` or `participant_id`.
+        let pid: usize = self.participant_id; // or `self.id`
+        (pid as u64).into()
+    }
+
+    fn poly_at(&self, index: usize) -> Option<&Polynomial<'static, FF>> {
+        self.share_vector.get(index)
+    }
+
+    fn poly_count(&self) -> usize {
+        self.vector_length()
     }
 }
 

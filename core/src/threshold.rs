@@ -6,8 +6,12 @@ use std::collections::HashMap;
 use crate::{
     error::{Result, ThresholdError},
     params::{validate_threshold_config, DEFAULT_SECURITY_LEVEL},
+    points::PointSource,
     shamir::{AdaptedShamirSSS, ShamirShare},
-    utils::{get_hash_reader, get_randomness, hash_message},
+    utils::{
+        get_hash_reader, get_randomness, hash_message,
+        reconstruct_vector_from_points,
+    },
 };
 
 use math::{prelude::*, traits::FiniteField};
@@ -313,40 +317,38 @@ impl ThresholdSignature {
     ) -> PolynomialVector<'static, FF> {
         let polys = (0..self.dilithium.config.l)
             .map(|i| {
-                let coeffs: Vec<FF> =
-                    self.sample_gamma1(&[randomness, &[i as u8]].concat());
-                poly![coeffs]
+                self.dilithium
+                    .sample_gamma1(&[randomness, &[i as u8]].concat())
             })
             .collect();
-
         poly_vec!(polys)
     }
 
     // TODO optimize it
     /// Sample coefficients from gamma1 distribution
-    fn sample_gamma1<FF: FiniteField>(&self, seed: &[u8]) -> Vec<FF> {
-        // Create SHAKE256 hasher and generate output
-        let mut reader = get_hash_reader(seed);
+    // fn sample_gamma1<FF: FiniteField>(&self, seed: &[u8]) -> Vec<FF> {
+    //     // Create SHAKE256 hasher and generate output
+    //     let mut reader = get_hash_reader(seed);
 
-        // Read N * 4 bytes
-        let mut hash_output = vec![0u8; N * 4];
-        reader.read(&mut hash_output);
+    //     // Read N * 4 bytes
+    //     let mut hash_output = vec![0u8; N * 4];
+    //     reader.read(&mut hash_output);
 
-        // Convert bytes to u32 values and transform to coefficients
-        hash_output
-            .chunks_exact(4)
-            .take(N)
-            .map(|chunk| {
-                let value = u32::from_le_bytes([
-                    chunk[0], chunk[1], chunk[2], chunk[3],
-                ]);
-                let coeff = (value % (2 * self.dilithium.config.gamma1 + 1)
-                    - self.dilithium.config.gamma1)
-                    as i32;
-                coeff.into()
-            })
-            .collect::<Vec<FF>>()
-    }
+    //     // Convert bytes to u32 values and transform to coefficients
+    //     hash_output
+    //         .chunks_exact(4)
+    //         .take(N)
+    //         .map(|chunk| {
+    //             let value = u32::from_le_bytes([
+    //                 chunk[0], chunk[1], chunk[2], chunk[3],
+    //             ]);
+    //             let coeff = (value % (2 * self.dilithium.config.gamma1 + 1)
+    //                 - self.dilithium.config.gamma1)
+    //                 as i32;
+    //             coeff.into()
+    //         })
+    //         .collect::<Vec<FF>>()
+    // }
 
     /// Convert to polynomial with tau non-zero coefficients
     fn generate_partial_challenge<FF: FiniteField>(
@@ -379,7 +381,63 @@ impl ThresholdSignature {
 
     /// Reconstruct z vector from partial signatures using Lagrange interpolation.
     /// TODO update it
-    fn reconstruct_z_vector<FF: FiniteField + From<i32>>(
+    // fn reconstruct_z_vector<FF: FiniteField + From<i32>>(
+    //     &self,
+    //     partial_signatures: &[PartialSignature<'static, FF>],
+    // ) -> Result<PolynomialVector<'static, FF>> {
+    //     if partial_signatures.is_empty() {
+    //         return Err(ThresholdError::InsufficientShares {
+    //             required: 1,
+    //             provided: 0,
+    //         });
+    //     }
+
+    //     // Get vector length from first partial signature
+    //     let vector_length = partial_signatures[0].z_partial.len();
+
+    //     // Reconstruct each polynomial in the vector
+    //     let mut reconstructed_polys = Vec::with_capacity(vector_length);
+
+    //     for poly_idx in 0..vector_length {
+    //         // Reconstruct each coefficient of this polynomial
+
+    //         // TODO fix possible code duplication
+    //         for coeff_idx in 0..N {
+    //             // Collect points for Lagrange interpolation
+    //             let mut xs = Vec::with_capacity(partial_signatures.len());
+    //             let mut ys = Vec::with_capacity(partial_signatures.len());
+
+    //             for ps in partial_signatures {
+    //                 let x: FF = (ps.participant_id as u64).into();
+    //                 let poly = ps.z_partial.get(poly_idx).ok_or(
+    //                     ThresholdError::InvalidIndex {
+    //                         index: poly_idx,
+    //                         length: vector_length,
+    //                     },
+    //                 )?;
+    //                 // .coeffs()[coeff_idx];
+    //                 let y = poly.coefficients().get(coeff_idx).copied().ok_or(
+    //                     ThresholdError::InvalidIndex {
+    //                         index: coeff_idx,
+    //                         length: poly.coefficients().len(),
+    //                     },
+    //                 )?;
+    //                 xs.push(x);
+    //                 ys.push(y);
+    //             }
+
+    //             // Perform Lagrange interpolation
+    //             let reconstructed_poly: Polynomial<'static, FF> =
+    //                 Polynomial::lagrange_interpolate(&xs, &ys);
+    //             //coeffs[coeff_idx] = reconstructed_coeff;
+    //             reconstructed_polys.push(reconstructed_poly);
+    //         }
+    //     }
+
+    //     Ok(poly_vec!(reconstructed_polys))
+    // }
+
+    fn reconstruct_z_vector<FF: FiniteField>(
         &self,
         partial_signatures: &[PartialSignature<'static, FF>],
     ) -> Result<PolynomialVector<'static, FF>> {
@@ -390,49 +448,21 @@ impl ThresholdSignature {
             });
         }
 
-        // Get vector length from first partial signature
-        let vector_length = partial_signatures[0].z_partial.len();
-
-        // Reconstruct each polynomial in the vector
-        let mut reconstructed_polys = Vec::with_capacity(vector_length);
-
-        for poly_idx in 0..vector_length {
-            // Reconstruct each coefficient of this polynomial
-
-            // TODO fix possible code duplication
-            for coeff_idx in 0..N {
-                // Collect points for Lagrange interpolation
-                let mut xs = Vec::with_capacity(partial_signatures.len());
-                let mut ys = Vec::with_capacity(partial_signatures.len());
-
-                for ps in partial_signatures {
-                    let x: FF = (ps.participant_id as u64).into();
-                    let poly = ps.z_partial.get(poly_idx).ok_or(
-                        ThresholdError::InvalidIndex {
-                            index: poly_idx,
-                            length: vector_length,
-                        },
-                    )?;
-                    // .coeffs()[coeff_idx];
-                    let y = poly.coefficients().get(coeff_idx).copied().ok_or(
-                        ThresholdError::InvalidIndex {
-                            index: coeff_idx,
-                            length: poly.coefficients().len(),
-                        },
-                    )?;
-                    xs.push(x);
-                    ys.push(y);
-                }
-
-                // Perform Lagrange interpolation
-                let reconstructed_poly: Polynomial<'static, FF> =
-                    Polynomial::lagrange_interpolate(&xs, &ys);
-                //coeffs[coeff_idx] = reconstructed_coeff;
-                reconstructed_polys.push(reconstructed_poly);
-            }
+        // Respect the threshold here (Dependency Inversion-lite: caller decides slice size)
+        // TODO declare ensure_threshold
+        let provided = partial_signatures.len();
+        if self.threshold > provided {
+            return Err(ThresholdError::InvalidThreshold {
+                threshold: self.threshold,
+                participant_number: provided,
+            });
         }
+        let active = &partial_signatures[..self.threshold];
 
-        Ok(poly_vec!(reconstructed_polys))
+        let vector_length = active[0].z_partial.len();
+        let indices: Vec<usize> = (0..vector_length).collect();
+
+        reconstruct_vector_from_points::<FF, _>(active, &indices)
     }
 
     /// Reconstruct hint vector (simplified implementation).
@@ -468,6 +498,20 @@ impl ThresholdSignature {
         info.insert("min_signers", self.threshold);
         info.insert("max_participants", self.participants);
         info
+    }
+}
+
+impl<FF: FiniteField> PointSource<FF> for PartialSignature<'static, FF> {
+    fn x(&self) -> FF {
+        (self.participant_id as u64).into()
+    }
+
+    fn poly_at(&self, index: usize) -> Option<&Polynomial<'static, FF>> {
+        self.z_partial.get(index)
+    }
+
+    fn poly_count(&self) -> usize {
+        self.z_partial.len()
     }
 }
 

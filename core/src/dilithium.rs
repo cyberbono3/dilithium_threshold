@@ -362,7 +362,7 @@ impl Dilithium {
     }
 
     /// Sample polynomial with coefficients in [-gamma1, gamma1].
-    fn sample_gamma1<FF: FiniteField>(
+    pub(crate) fn sample_gamma1<FF: FiniteField>(
         &self,
         seed: &[u8],
     ) -> Polynomial<'static, FF> {
