@@ -1,4 +1,4 @@
-use rand::{prelude::*, rng};
+use rand::prelude::*;
 use sha3::{
     digest::{ExtendableOutput, Update, XofReader},
     Shake256,
@@ -6,22 +6,23 @@ use sha3::{
 
 use crate::error::Result;
 use crate::utils::{get_hash_reader, get_randomness, hash_message};
-use crate::{config::DilithiumConfig, error::ThresholdError};
+use crate::{error::ThresholdError, params::DilithiumConfig};
+use math::traits::FiniteField;
 
 use math::prelude::*;
 
 /// Represents a Dilithium key pair (public and private keys).
 #[derive(Clone, Debug)]
-pub struct DilithiumKeyPair {
-    pub public_key: DilithiumPublicKey,
-    pub private_key: DilithiumPrivateKey,
+pub struct DilithiumKeyPair<'a, FF: FiniteField> {
+    pub public_key: DilithiumPublicKey<'a, FF>,
+    pub private_key: DilithiumPrivateKey<'a, FF>,
 }
 
-impl DilithiumKeyPair {
+impl<'a, FF: FiniteField> DilithiumKeyPair<'a, FF> {
     /// Initialize key pair.
     pub fn new(
-        public_key: DilithiumPublicKey,
-        private_key: DilithiumPrivateKey,
+        public_key: DilithiumPublicKey<'a, FF>,
+        private_key: DilithiumPrivateKey<'a, FF>,
     ) -> Self {
         Self {
             public_key,
@@ -32,18 +33,19 @@ impl DilithiumKeyPair {
 
 /// Dilithium public key containing matrix m and vector t.
 #[derive(Clone, Debug, PartialEq)]
-pub struct DilithiumPublicKey {
-    pub m: Vec<Vec<Polynomial>>,
-    pub t: PolynomialVector,
+pub struct DilithiumPublicKey<'a, FF: FiniteField> {
+    // TODO define a standalone type
+    pub m: Vec<Vec<Polynomial<'a, FF>>>,
+    pub t: PolynomialVector<'a, FF>,
     pub security_level: usize,
     pub config: DilithiumConfig,
 }
 
-impl DilithiumPublicKey {
+impl<'a, FF: FiniteField> DilithiumPublicKey<'a, FF> {
     /// Initialize public key.
     pub fn new(
-        m: Vec<Vec<Polynomial>>,
-        t: PolynomialVector,
+        m: Vec<Vec<Polynomial<'a, FF>>>,
+        t: PolynomialVector<'a, FF>,
         security_level: usize,
     ) -> Self {
         let config = DilithiumConfig::new(security_level);
@@ -58,17 +60,17 @@ impl DilithiumPublicKey {
 
 /// Dilithium private key containing secret vectors s1 and s2.
 #[derive(Clone, Debug)]
-pub struct DilithiumPrivateKey {
-    pub(crate) s1: PolynomialVector,
-    pub(crate) s2: PolynomialVector,
+pub struct DilithiumPrivateKey<'a, FF: FiniteField> {
+    pub(crate) s1: PolynomialVector<'a, FF>,
+    pub(crate) s2: PolynomialVector<'a, FF>,
     pub dilithium: Dilithium,
 }
 
-impl DilithiumPrivateKey {
+impl<'a, FF: FiniteField> DilithiumPrivateKey<'a, FF> {
     /// Initialize private key.
     pub fn new(
-        s1: PolynomialVector,
-        s2: PolynomialVector,
+        s1: PolynomialVector<'a, FF>,
+        s2: PolynomialVector<'a, FF>,
         security_level: usize,
     ) -> Self {
         let dilithium = Dilithium::new(security_level);
@@ -78,18 +80,18 @@ impl DilithiumPrivateKey {
 
 /// Dilithium signature containing vectors z and h, and challenge c.
 #[derive(Clone, Debug, PartialEq)]
-pub struct DilithiumSignature {
-    pub z: PolynomialVector,
-    pub h: PolynomialVector,
-    pub c: Polynomial,
+pub struct DilithiumSignature<'a, FF: FiniteField> {
+    pub z: PolynomialVector<'a, FF>,
+    pub h: PolynomialVector<'a, FF>,
+    pub c: Polynomial<'a, FF>,
 }
 
-impl DilithiumSignature {
+impl<'a, FF: FiniteField> DilithiumSignature<'a, FF> {
     /// Initialize signature.
     pub fn new(
-        z: PolynomialVector,
-        h: PolynomialVector,
-        c: Polynomial,
+        z: PolynomialVector<'a, FF>,
+        h: PolynomialVector<'a, FF>,
+        c: Polynomial<'a, FF>,
     ) -> Self {
         DilithiumSignature { z, h, c }
     }
@@ -116,12 +118,14 @@ impl Dilithium {
     }
 
     /// Generate a Dilithium key pair.
-    /// self not needed
-    pub fn keygen(self, seed: Option<&[u8]>) -> DilithiumKeyPair {
+    pub fn keygen<FF: FiniteField>(
+        self,
+        seed: Option<&[u8]>,
+    ) -> DilithiumKeyPair<'static, FF> {
         let seed = match seed {
             Some(s) => s.to_vec(),
             None => {
-                let mut rng = rng();
+                let mut rng = rand::thread_rng();
                 let mut bytes = vec![0u8; 32];
                 rng.fill_bytes(&mut bytes);
                 bytes
@@ -152,12 +156,12 @@ impl Dilithium {
 
     /// Sign a message using Dilithium.
     // TODO add proper error handling
-    pub fn sign(
+    pub fn sign<FF: FiniteField>(
         &self,
         message: &[u8],
-        private_key: &DilithiumPrivateKey,
+        private_key: &DilithiumPrivateKey<'static, FF>,
         randomness: Option<&[u8]>,
-    ) -> Result<DilithiumSignature> {
+    ) -> Result<DilithiumSignature<'static, FF>> {
         const MAX_ATTEMPTS: u16 = 1000;
         let randomness = get_randomness(randomness);
 
@@ -182,16 +186,18 @@ impl Dilithium {
             // Generate challenge
             let c = self.generate_challenge(&mu, &w1);
 
+            let s1 = private_key.s1.clone();
             // Compute response z = y + c * s1
-            let cs1 = private_key.s1.clone() * c;
+            let cs1 = s1 * &c;
             let z = y + &cs1;
 
             // Check bounds
             if self.check_z_bounds(&z) {
                 // Compute hint h
-                let h = self.compute_hint(&w, &z, private_key.s2.clone(), &c);
+                let s2 = private_key.s2.clone();
+                let h = self.compute_hint(&w, s2, &c);
 
-                if self.check_h_bounds(&h) {
+                if self.check_h_bounds() {
                     //return Ok(DilithiumSignature::new(z, h, c));
                     signature = Some(DilithiumSignature::new(z, h, c));
                     break;
@@ -206,14 +212,14 @@ impl Dilithium {
     }
 
     /// Verify a Dilithium signature.
-    pub fn verify(
+    pub fn verify<FF: FiniteField>(
         &self,
         message: &[u8],
-        signature: &DilithiumSignature,
-        public_key: &DilithiumPublicKey,
+        signature: &DilithiumSignature<'static, FF>,
+        public_key: &DilithiumPublicKey<'static, FF>,
     ) -> bool {
         // Check signature bounds
-        if !self.check_signature_bounds(signature) {
+        if !self.check_signature_bounds(&signature.z, &signature.c) {
             return false;
         }
 
@@ -221,10 +227,10 @@ impl Dilithium {
         let mu = hash_message(message);
 
         // Recompute w'
-        let w_prime = self.recompute_w(signature, public_key);
+        let w_prime = self.recompute_w(signature.clone(), public_key);
 
         // Extract high bits using hint
-        let w1_prime = self.use_hint(&w_prime);
+        let w1_prime = self.high_bits(&w_prime);
 
         // Recompute challenge
         let c_prime = self.generate_challenge(&mu, &w1_prime);
@@ -248,7 +254,10 @@ impl Dilithium {
     }
 
     /// Expand rho to generate public matrix A.
-    fn expand_a(&self, rho: &[u8]) -> Vec<Vec<Polynomial>> {
+    fn expand_a<FF: FiniteField>(
+        &self,
+        rho: &[u8],
+    ) -> Vec<Vec<Polynomial<'static, FF>>> {
         let mut a = Vec::with_capacity(self.config.k);
 
         for i in 0..self.config.k {
@@ -271,6 +280,7 @@ impl Dilithium {
     /// Sample uniform polynomial from seed.
     /// TODO test it
     /// TODO update it
+    /// TODO refactor
     fn sample_uniform(&self, seed: &[u8]) -> Vec<i32> {
         let mut reader = get_hash_reader(seed);
 
@@ -278,7 +288,7 @@ impl Dilithium {
         reader.read(&mut bytes);
 
         let mut coeffs = vec![0i32; N];
-        for (i,c) in coeffs.iter_mut().enumerate().take(N) {
+        for (i, c) in coeffs.iter_mut().enumerate().take(N) {
             let idx = i * 4;
             let val = u32::from_le_bytes([
                 bytes[idx],
@@ -293,26 +303,26 @@ impl Dilithium {
     }
 
     /// Sample secret vector s1 or s2.
-    fn sample_s(
+    fn sample_s<FF: FiniteField>(
         &self,
         rho_prime: &[u8],
         s_type: &str,
         length: usize,
-    ) -> PolynomialVector {
-         let polys = (0..length)
-                .map(|i| {
-                    let mut seed = rho_prime.to_vec();
-                    seed.extend_from_slice(s_type.as_bytes());
-                    seed.push(i as u8);
-                    poly![self.sample_eta(&seed)]
-                })
-                .collect();
+    ) -> PolynomialVector<'static, FF> {
+        let polys = (0..length)
+            .map(|i| {
+                let mut seed = rho_prime.to_vec();
+                seed.extend_from_slice(s_type.as_bytes());
+                seed.push(i as u8);
+                Polynomial::from(self.sample_eta(&seed))
+            })
+            .collect();
         poly_vec!(polys)
-      
     }
 
     /// Sample polynomial with coefficients in [-eta, eta].
     /// TODO add proper testing
+    /// TODO refactor
     fn sample_eta(&self, seed: &[u8]) -> Vec<i32> {
         let mut reader = get_hash_reader(seed);
 
@@ -321,8 +331,8 @@ impl Dilithium {
 
         let mut coeffs = vec![0i32; N];
         for (i, c) in coeffs.iter_mut().enumerate().take(N) {
-            let val =
-                (bytes[i] as i32) % (2 * self.config.eta + 1) - self.config.eta;
+            let val = (bytes[i] as i32) % (2 * self.config.eta as i32 + 1)
+                - self.config.eta as i32;
             *c = val.rem_euclid(Q);
         }
 
@@ -330,7 +340,11 @@ impl Dilithium {
     }
 
     /// Sample mask vector y.
-    fn sample_y(&self, randomness: &[u8], kappa: u16) -> PolynomialVector {
+    fn sample_y<FF: FiniteField>(
+        &self,
+        randomness: &[u8],
+        kappa: u16,
+    ) -> PolynomialVector<'static, FF> {
         let polys = (0..self.config.l)
             .map(|i| {
                 let mut seed = randomness.to_vec();
@@ -344,42 +358,51 @@ impl Dilithium {
     }
 
     /// Sample polynomial with coefficients in [-gamma1, gamma1].
-    fn sample_gamma1(&self, seed: &[u8]) -> Vec<i32> {
+    pub(crate) fn sample_gamma1<FF: FiniteField>(
+        &self,
+        seed: &[u8],
+    ) -> Polynomial<'static, FF> {
         let mut reader = get_hash_reader(seed);
 
         let mut bytes = vec![0u8; N * 4];
         reader.read(&mut bytes);
 
-        let mut coeffs = vec![0i32; N];
-        coeffs.iter_mut().enumerate().take(N).for_each(|(i, c)| {
-            let idx = i * 4;
-            let val = u32::from_le_bytes([
-                bytes[idx],
-                bytes[idx + 1],
-                bytes[idx + 2],
-                bytes[idx + 3],
-            ]);
-            *c = ((val % (2 * self.config.gamma1 as u32 + 1)) as i32
-                - self.config.gamma1)
-                .rem_euclid(Q);
-        });
+        //let mut coeffs = vec![0i32; N];
+        let coeffs: Vec<FF> = (0..N)
+            .map(|i| {
+                let idx = i * 4;
+                let val = u32::from_le_bytes([
+                    bytes[idx],
+                    bytes[idx + 1],
+                    bytes[idx + 2],
+                    bytes[idx + 3],
+                ]);
+                let sample = val % (2 * self.config.gamma1 + 1);
+                let coeff = sample as i32 - self.config.gamma1 as i32;
+                <i32 as Into<FF>>::into(coeff)
+            })
+            .collect();
 
-        coeffs
+        poly!(coeffs)
     }
 
     /// Extract high-order bits from polynomial vector.
-    fn high_bits(&self, v: &PolynomialVector) -> PolynomialVector {
+    fn high_bits<FF: FiniteField>(
+        &self,
+        v: &PolynomialVector<'static, FF>,
+    ) -> PolynomialVector<'static, FF> {
+        let gamma2: FF = self.config.gamma2.into();
+        let double_gamma2: FF = (2 * self.config.gamma2).into();
+
         let result_polys = v
             .as_slice()
             .iter()
             .map(|poly| {
-                let high_coeffs = poly
-                    .coeffs()
+                let high_coeffs: Vec<FF> = poly
+                    .coefficients()
                     .iter()
-                    .map(|&coeff| {
-                        (coeff + self.config.gamma2) / (2 * self.config.gamma2)
-                    })
-                    .collect::<Vec<i32>>();
+                    .map(|&coeff| (coeff + gamma2) / double_gamma2)
+                    .collect();
                 poly!(high_coeffs)
             })
             .collect();
@@ -388,17 +411,17 @@ impl Dilithium {
     }
 
     /// Generate challenge polynomial from message hash and w1.
-    fn generate_challenge(
+    fn generate_challenge<FF: FiniteField>(
         &self,
         mu: &[u8],
-        w1: &PolynomialVector,
-    ) -> Polynomial {
+        w1: &PolynomialVector<'static, FF>,
+    ) -> Polynomial<'static, FF> {
         let mut hasher = Shake256::default();
         hasher.update(mu);
         hasher.update(b"challenge");
 
         w1.as_slice().iter().for_each(|p| {
-            p.coeffs()
+            p.coefficients()
                 .iter()
                 .for_each(|c| hasher.update(&c.to_le_bytes()))
         });
@@ -423,65 +446,65 @@ impl Dilithium {
         poly![coeffs]
     }
 
-    fn check_z_bounds(&self, z: &PolynomialVector) -> bool {
+    fn check_z_bounds<FF: FiniteField>(
+        &self,
+        z: &PolynomialVector<'static, FF>,
+    ) -> bool {
         z.norm_infinity() < self.config.gamma1 - self.config.beta
     }
 
     /// Compute hint vector h.
-    fn compute_hint(
+    fn compute_hint<FF: FiniteField>(
         &self,
-        w: &PolynomialVector,
-        _z: &PolynomialVector,
-        s2: PolynomialVector,
-        c: &Polynomial,
-    ) -> PolynomialVector {
+        w: &PolynomialVector<'static, FF>,
+        s2: PolynomialVector<'static, FF>,
+        c: &Polynomial<'static, FF>,
+    ) -> PolynomialVector<'static, FF> {
         let cs2 = s2 * c;
         let w_minus_cs2 = w.clone() - cs2;
         self.make_hint(&w_minus_cs2, w)
     }
 
     /// Create hint from two vectors.
-    fn make_hint(
+    fn make_hint<'a, FF: FiniteField>(
         &self,
-        _v1: &PolynomialVector,
-        _v2: &PolynomialVector,
-    ) -> PolynomialVector {
-        let result_polys = (0..self.config.k)
-            .map(|_| poly![0; N])
-            .collect();
-
+        _v1: &PolynomialVector<'a, FF>,
+        _v2: &PolynomialVector<'a, FF>,
+    ) -> PolynomialVector<'static, FF> {
+        let result_polys = (0..self.config.k).map(|_| poly![0; N]).collect();
         poly_vec!(result_polys)
     }
 
     /// Check if hint h satisfies bound requirements.
-    fn check_h_bounds(&self, _h: &PolynomialVector) -> bool {
+    /// TODO remove it
+    fn check_h_bounds(&self) -> bool {
+        // TODO review it
         // Simplified bound check
         true
     }
 
     /// Check if signature components satisfy bound requirements.
-    fn check_signature_bounds(&self, signature: &DilithiumSignature) -> bool {
-        signature.z.norm_infinity() < self.config.gamma1 - self.config.beta
-            && signature.c.norm_infinity() <= self.config.tau as i32
+    fn check_signature_bounds<FF: FiniteField>(
+        &self,
+        z: &PolynomialVector<'static, FF>,
+        c: &Polynomial<'static, FF>,
+    ) -> bool {
+        z.norm_infinity() < self.config.gamma1 - self.config.beta
+            && c.norm_infinity() <= self.config.tau as u32
     }
 
     /// Recompute w during verification.
-    fn recompute_w(
+    fn recompute_w<FF: FiniteField>(
         &self,
-        signature: &DilithiumSignature,
-        public_key: &DilithiumPublicKey,
-    ) -> PolynomialVector {
+        signature: DilithiumSignature<'static, FF>,
+        public_key: &DilithiumPublicKey<'static, FF>,
+    ) -> PolynomialVector<'static, FF> {
         // w = m * z - c * t * 2^d
         let az = &public_key.m * &signature.z;
         let ct = public_key.t.clone() * signature.c;
-        let ct_scaled = ct * (1 << self.config.d);
+        let scalar = 1u64 << self.config.d;
+        let ct_scaled = ct * scalar;
 
         az - ct_scaled
-    }
-
-    /// Use hint to recover high-order bits.
-    fn use_hint(&self, w: &PolynomialVector) -> PolynomialVector {
-        // Simplified hint usage
-        self.high_bits(w)
     }
 }

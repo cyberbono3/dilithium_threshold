@@ -6,4 +6,20 @@ edition = "2021"
 [dependencies]
 quickcheck = "1.0.3"
 quickcheck_macros = "1.1.0"
-rand = "0.9.1"
+arbitrary = { version = "1", features = ["derive"] }
+get-size2 = { version = "0.1.2", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+phf = { version = "0.11", features = ["macros"] }
+num-traits = "0.2"
+thiserror = "2.0.12"
+rand = { version = "0.8", features = ["min_const_gen"] }
+rand_distr = "0.4"
+serde_json = "1.0"
+rayon = "1.10"
+itertools = "0.13"
+
+[dev-dependencies]
+itertools = "0.13"
+proptest = "1.5"
+proptest-arbitrary-interop = "0.1"
+test-strategy = "0.4"
