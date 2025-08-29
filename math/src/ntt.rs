@@ -47,51 +47,7 @@ where
     try_intt(x).expect("intt: slice length must be a power of two <= u32::MAX and have a root of unity");
 }
 
-/// Like [NTT][self::ntt], but with greater control over the root of unity that
-/// is to be used.
-///
-/// Does _not_ check whether
-/// - the passed-in root of unity is indeed a primitive root of unity of the
-///   appropriate order, or whether
-/// - the passed-in log₂ of the slice length matches.
-///
-/// Use [NTT][self:ntt] if you want a nicer interface.
-#[expect(clippy::many_single_char_names)]
-#[inline]
-fn ntt_unchecked<FF>(x: &mut [FF], omega: FieldElement, log2_slice_len: u32)
-where
-    FF: FiniteField + MulAssign<FieldElement>,
-{
-    let slice_len = x.len() as u32;
 
-    for k in 0..slice_len {
-        let rk = bitreverse_u32(k, log2_slice_len);
-        if k < rk {
-            x.swap(rk as usize, k as usize);
-        }
-    }
-
-    let mut m = 1;
-    for _ in 0..log2_slice_len {
-        let w_m = omega.mod_pow_u32(slice_len / (2 * m));
-        let mut k = 0;
-        while k < slice_len {
-            let mut w = FieldElement::ONE;
-            for j in 0..m {
-                let u = x[(k + j) as usize];
-                let mut v = x[(k + j + m) as usize];
-                v *= w;
-                x[(k + j) as usize] = u + v;
-                x[(k + j + m) as usize] = u - v;
-                w *= w_m;
-            }
-
-            k += 2 * m;
-        }
-
-        m *= 2;
-    }
-}
 
 #[inline]
 pub fn bitreverse_usize(mut n: usize, l: usize) -> usize {
@@ -238,6 +194,69 @@ fn ilog2_pow2_u32(n: u32) -> u32 {
     n.ilog2()
 }
 
+/// Perform an in‑place NTT/INTT on a slice (fallible, no panics).
+///
+/// This is the internal workhorse behind [`try_ntt`] (forward transform)
+/// and [`try_intt`] (inverse transform). It performs the Cooley–Tukey
+/// decimation-in-time transform with a bit‑reversal permutation up front.
+/// For the inverse transform it also multiplies by `n^{-1}` so that
+/// `INTT(NTT(x)) = x`.
+///
+/// # Errors
+///
+/// Returns an [`Err`] if:
+///
+/// - the input length is not a power of two, or
+/// - the length exceeds [`u32::MAX`], or
+/// - a primitive root of unity of the required order is unavailable
+///   for the field modulus.
+///
+/// # Examples
+///
+/// Basic round‑trip on a small vector:
+///
+/// ```
+/// use math::prelude::*;
+///
+/// let mut v = fe_vec![1, 4, 0, 0];
+/// let original = v.clone();
+///
+/// // Forward transform
+/// try_ntt(&mut v).unwrap();
+///
+/// // Expected values in the Dilithium field (mod 8380417) for n = 4.
+/// assert_eq!(v, fe_vec![5, 2_471_943, 8_380_414, 5_908_476]);
+///
+/// // Inverse transform returns the original (unscaling by n is handled internally)
+/// try_intt(&mut v).unwrap();
+/// assert_eq!(v, original);
+/// ```
+///
+/// Empty and length‑one inputs are supported:
+///
+/// ```
+/// use math::prelude::*;
+///
+/// let mut empty: Vec<FieldElement> = vec![];
+/// try_ntt(&mut empty).unwrap();
+/// try_intt(&mut empty).unwrap();
+/// assert!(empty.is_empty());
+///
+/// let x = fe!(123u32);
+/// let mut singleton = vec![x];
+/// try_ntt(&mut singleton).unwrap();
+/// try_intt(&mut singleton).unwrap();
+/// assert_eq!(singleton, vec![x]);
+/// ```
+///
+/// Errors on non‑power‑of‑two lengths:
+///
+/// ```
+/// use math::prelude::*;
+///
+/// let mut not_pow2 = fe_vec![1, 2, 3];
+/// assert!(try_ntt(&mut not_pow2).is_err());
+/// ```
 fn ntt_in_place<FF>(x: &mut [FF], direction: Transform) -> Result<()>
 where
     FF: FiniteField + MulAssign<FieldElement>,
