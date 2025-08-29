@@ -7,10 +7,7 @@ use sha3::{
 use crate::error::Result;
 use crate::utils::{get_hash_reader, get_randomness, hash_message};
 use crate::{error::ThresholdError, params::DilithiumConfig};
-use math::{
-    traits::FiniteField,
-    matrix::Matrix,
-};
+use math::{matrix::Matrix, traits::FiniteField};
 
 use math::prelude::*;
 
@@ -257,10 +254,7 @@ impl Dilithium {
     }
 
     /// Expand rho to generate public matrix A.
-    fn expand_a<FF: FiniteField>(
-        &self,
-        rho: &[u8],
-    ) -> Matrix<'static, FF>{
+    fn expand_a<FF: FiniteField>(&self, rho: &[u8]) -> Matrix<'static, FF> {
         let mut a = Vec::with_capacity(self.config.k);
 
         for i in 0..self.config.k {

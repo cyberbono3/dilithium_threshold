@@ -193,7 +193,7 @@ impl FieldElement {
     fn try_new(v: u32) -> Result<Self, ParseFieldElementError> {
         Self::is_canonical(v)
             .then(|| Self::new(v))
-           .ok_or(ParseFieldElementError::NotCanonical(v as u64))
+            .ok_or(ParseFieldElementError::NotCanonical(v as u64))
     }
 
     #[inline]

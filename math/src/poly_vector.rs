@@ -1,9 +1,9 @@
-use std::ops::{Add, Mul, Sub, Index, IndexMut, Deref, DerefMut};
+use std::ops::{Add, Deref, DerefMut, Index, IndexMut, Mul, Sub};
 
 use crate::{
-    polynomial::Polynomial, 
+    error::{Error, Result},
+    polynomial::Polynomial,
     traits::FiniteField,
-    error::{Result, Error},
 };
 
 use num_traits::Zero;
@@ -262,33 +262,46 @@ impl<FF: FiniteField> PolynomialVector<'static, FF> {
 }
 
 impl<'a, FF: FiniteField> IntoIterator for &'a PolynomialVector<'static, FF> {
-   type Item = &'a Polynomial<'static, FF>;
+    type Item = &'a Polynomial<'static, FF>;
     type IntoIter = std::slice::Iter<'a, Polynomial<'static, FF>>;
-    fn into_iter(self) -> Self::IntoIter { self.polys.iter() }
+    fn into_iter(self) -> Self::IntoIter {
+        self.polys.iter()
+    }
 }
 
-impl<FF: FiniteField> From<Vec<Polynomial<'static, FF>>> for PolynomialVector<'static, FF> {
-    fn from(polys: Vec<Polynomial<'static, FF>>) -> Self { Self { polys } }
+impl<FF: FiniteField> From<Vec<Polynomial<'static, FF>>>
+    for PolynomialVector<'static, FF>
+{
+    fn from(polys: Vec<Polynomial<'static, FF>>) -> Self {
+        Self { polys }
+    }
 }
 
 impl<FF: FiniteField> Deref for PolynomialVector<'static, FF> {
     type Target = [Polynomial<'static, FF>];
-    fn deref(&self) -> &Self::Target { &self.polys }
+    fn deref(&self) -> &Self::Target {
+        &self.polys
+    }
 }
 
 impl<FF: FiniteField> DerefMut for PolynomialVector<'static, FF> {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.polys }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.polys
+    }
 }
 
 impl<FF: FiniteField> Index<usize> for PolynomialVector<'static, FF> {
     type Output = Polynomial<'static, FF>;
-   fn index(&self, i: usize) -> &Self::Output { &self.polys[i] }
+    fn index(&self, i: usize) -> &Self::Output {
+        &self.polys[i]
+    }
 }
 
 impl<FF: FiniteField> IndexMut<usize> for PolynomialVector<'static, FF> {
-    fn index_mut(&mut self, i: usize) -> &mut Self::Output { &mut self.polys[i] }
+    fn index_mut(&mut self, i: usize) -> &mut Self::Output {
+        &mut self.polys[i]
+    }
 }
-
 
 /// Fallible version with shape checks returned as an error instead of panics.
 // pub fn try_matrix_vector_multiply<FF: FiniteField>(
@@ -303,7 +316,6 @@ impl<FF: FiniteField> IndexMut<usize> for PolynomialVector<'static, FF> {
 //     }
 //     Ok(matrix_vector_multiply(m, v))
 // }
-
 
 impl<FF: FiniteField> Add for PolynomialVector<'static, FF> {
     type Output = Self;

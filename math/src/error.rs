@@ -8,8 +8,8 @@ use crate::field_element::FieldElement;
 pub enum PolynomialError {
     #[error("сoefficient is out of range")]
     CoefficientOutOfRange,
-     #[error("expected {0} elements for digest, but got {1}")]
-    IndexOufOfBounds(usize, usize)
+    #[error("expected {0} elements for digest, but got {1}")]
+    IndexOufOfBounds(usize, usize),
 }
 
 /// Common result type used across this crate.
@@ -39,13 +39,12 @@ pub enum NttError {
     MissingPrimitiveRoot(u32),
 }
 
-
 #[derive(Debug, Clone, Eq, PartialEq, Error)]
 #[non_exhaustive]
 pub enum ParseFieldElementError {
     #[error("invalid `u64`")]
     ParseU64Error(#[source] <u64 as FromStr>::Err),
-     #[error(
+    #[error(
         "incorrect number of bytes: {0} != {bytes} == `FieldElement::BYTES`",
         bytes = FieldElement::BYTES
     )]

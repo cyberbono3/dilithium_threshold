@@ -9,15 +9,12 @@ use crate::{
     traits::{FiniteField, Inverse, ModPowU32, PrimitiveRootOfUnity},
 };
 
-
-
 /// Direction for a number-theoretic transform.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Transform {
     Forward,
     Inverse,
 }
-
 
 /// Fallible NTT (no panics).
 pub fn try_ntt<FF>(x: &mut [FF]) -> Result<()>
@@ -300,7 +297,8 @@ where
 
 #[inline]
 fn unscale_ffi<FF>(x: &mut [FF], n: usize)
-where    FF: FiniteField + MulAssign<FieldElement>,
+where
+    FF: FiniteField + MulAssign<FieldElement>,
 {
     let ninv = FieldElement::new(n as u32).inverse();
     for a in x.iter_mut() {
@@ -537,6 +535,151 @@ mod fast_ntt_attempt_tests {
                 *a2e *= FieldElement::new(size.try_into().unwrap()).inverse();
             }
             assert_eq!(a1, a2);
+        }
+    }
+}
+
+#[cfg(test)]
+mod ntt_in_place_tests {
+    use super::*; // brings private items (like ntt_in_place and Transform) into scope
+    use crate::field_element::other::random_elements;
+    use crate::field_element::FieldElement;
+    use crate::prelude::*;
+    use crate::traits::ModPowU32;
+
+    // --- Edge cases ---
+
+    #[test]
+    fn length_zero_is_ok_and_noop_both_directions() {
+        let mut v: Vec<FieldElement> = vec![];
+        let before = v.clone();
+        ntt_in_place(&mut v, Transform::Forward).unwrap();
+        assert_eq!(before, v);
+        ntt_in_place(&mut v, Transform::Inverse).unwrap();
+        assert_eq!(before, v);
+    }
+
+    #[test]
+    fn length_one_is_identity_both_directions() {
+        let x = FieldElement::new(1234567);
+        let mut v = vec![x];
+        ntt_in_place(&mut v, Transform::Forward).unwrap();
+        assert_eq!(vec![x], v);
+        ntt_in_place(&mut v, Transform::Inverse).unwrap();
+        assert_eq!(vec![x], v);
+    }
+
+    // --- Correctness on tiny sizes ---
+
+    #[test]
+    fn length_two_matches_simple_butterfly() {
+        let a = FieldElement::new(5);
+        let b = FieldElement::new(9);
+        let mut v = vec![a, b];
+
+        // NTT_2([a, b]) = [a+b, a-b]
+        ntt_in_place(&mut v, Transform::Forward).unwrap();
+        assert_eq!(vec![a + b, a - b], v);
+
+        // INTT_2 should bring us back (internal scaling by 1/2 is handled)
+        ntt_in_place(&mut v, Transform::Inverse).unwrap();
+        assert_eq!(vec![a, b], v);
+    }
+
+    #[test]
+    fn four_point_known_example_forward_and_inverse() {
+        // Example for the commonly used field with p = 8380417.
+        // primitive_root_of_unity(4) = 4808194 and the NTT of [1,4,0,0] is:
+        // [5, 2471943, 8380414, 5908476]
+        let mut v = fe_vec!(1, 4, 0, 0);
+        let expected = fe_vec!(5, 2471943, 8380414, 5908476);
+
+        ntt_in_place(&mut v, Transform::Forward).unwrap();
+        assert_eq!(expected, v);
+
+        ntt_in_place(&mut v, Transform::Inverse).unwrap();
+        assert_eq!(fe_vec!(1, 4, 0, 0), v);
+    }
+
+    #[test]
+    fn matches_naive_dft_for_small_powers_of_two() {
+        // Compare against the definition X[k] = sum_j x[j] * omega^(j*k)
+        // for sizes up to 32 to keep runtime small.
+        for logn in 1..=5 {
+            let n = 1usize << logn;
+            let omega =
+                FieldElement::primitive_root_of_unity(n as u32).unwrap();
+
+            // a couple of random trials per size
+            for _ in 0..3 {
+                let coeffs: Vec<FieldElement> = random_elements(n);
+                let mut got = coeffs.clone();
+                ntt_in_place(&mut got, Transform::Forward).unwrap();
+
+                let mut expect = vec![FieldElement::ZERO; n];
+                for k in 0..n {
+                    let mut acc = FieldElement::ZERO;
+                    for j in 0..n {
+                        let power = (j * k) as u32;
+                        acc += coeffs[j] * omega.mod_pow_u32(power);
+                    }
+                    expect[k] = acc;
+                }
+                assert_eq!(expect, got, "mismatch at n={n}");
+            }
+        }
+    }
+
+    // --- Round-trip property ---
+
+    #[test]
+    fn forward_then_inverse_is_identity_up_to_512() {
+        for logn in 0..=9 {
+            let n = 1usize << logn;
+            let mut v: Vec<FieldElement> = random_elements(n);
+            let before = v.clone();
+            ntt_in_place(&mut v, Transform::Forward).unwrap();
+            ntt_in_place(&mut v, Transform::Inverse).unwrap();
+            assert_eq!(before, v, "round-trip failed at n={n}");
+        }
+    }
+
+    // --- Error paths ---
+
+    #[test]
+    fn non_power_of_two_length_is_error_and_input_not_mutated() {
+        let mut v: Vec<FieldElement> = random_elements(6); // 6 is not a power of two
+        let before = v.clone();
+        let err = ntt_in_place(&mut v, Transform::Forward);
+        assert!(err.is_err());
+        assert_eq!(before, v, "input should not be mutated on error");
+    }
+
+    #[test]
+    fn missing_primitive_root_returns_error_for_16384() {
+        // For FieldElement with p = 8380417, p-1 = 2^13 * 3 * 11 * 31, so
+        // there is no primitive 2^14-th root of unity. Length 16384 should fail.
+        let mut v = vec![FieldElement::ZERO; 1 << 14]; // 16384
+        assert!(ntt_in_place(&mut v, Transform::Forward).is_err());
+        assert!(ntt_in_place(&mut v, Transform::Inverse).is_err());
+    }
+
+    // --- Sanity check against public wrappers ---
+
+    #[test]
+    fn agrees_with_public_wrappers_on_valid_sizes() {
+        for logn in 0..=9 {
+            let n = 1usize << logn;
+            let mut x1: Vec<FieldElement> = random_elements(n);
+            let mut x2 = x1.clone();
+
+            ntt_in_place(&mut x1, Transform::Forward).unwrap();
+            ntt::<FieldElement>(&mut x2);
+            assert_eq!(x1, x2, "forward mismatch at n={n}");
+
+            ntt_in_place(&mut x1, Transform::Inverse).unwrap();
+            intt::<FieldElement>(&mut x2);
+            assert_eq!(x1, x2, "inverse mismatch at n={n}");
         }
     }
 }

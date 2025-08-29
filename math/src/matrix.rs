@@ -1,11 +1,10 @@
-
-use std::ops::{Add, Sub, Mul, Index, IndexMut, Deref, DerefMut};
+use std::ops::{Add, Deref, DerefMut, Index, IndexMut, Mul, Sub};
 
 use crate::{
-    polynomial::Polynomial,
+    error::{Error, Result},
     poly_vector::PolynomialVector,
+    polynomial::Polynomial,
     traits::FiniteField,
-    error::{Result, Error},
 };
 
 use num_traits::Zero;
@@ -35,16 +34,28 @@ impl<FF: FiniteField> Matrix<'static, FF> {
     }
 
     /// Borrow the underlying rows.
-    pub fn as_slice(&self) -> &[Vec<Polynomial<'static, FF>>] { &self.rows }
+    pub fn as_slice(&self) -> &[Vec<Polynomial<'static, FF>>] {
+        &self.rows
+    }
 
     /// Number of rows.
-    pub fn rows(&self) -> usize { self.rows.len() }
+    pub fn rows(&self) -> usize {
+        self.rows.len()
+    }
 
     /// Number of columns (0 if empty).
-    pub fn cols(&self) -> usize { if self.rows.is_empty() { 0 } else { self.rows[0].len() } }
+    pub fn cols(&self) -> usize {
+        if self.rows.is_empty() {
+            0
+        } else {
+            self.rows[0].len()
+        }
+    }
 
     /// (rows, cols)
-    pub fn shape(&self) -> (usize, usize) { (self.rows(), self.cols()) }
+    pub fn shape(&self) -> (usize, usize) {
+        (self.rows(), self.cols())
+    }
 
     /// Create a zero matrix of size (rows x cols).
     pub fn zeros(rows: usize, cols: usize) -> Self {
@@ -80,29 +91,40 @@ impl<FF: FiniteField> Matrix<'static, FF> {
     ) -> Result<PolynomialVector<'static, FF>> {
         // mirror the style from `poly_vector.rs`
         if self.rows.is_empty() {
-            return Err(Error::Polynomial(super::error::PolynomialError::CoefficientOutOfRange));
+            return Err(Error::Polynomial(
+                super::error::PolynomialError::CoefficientOutOfRange,
+            ));
         }
         let cols = self.cols();
         if cols != v.len() {
-            return Err(Error::Polynomial(super::error::PolynomialError::CoefficientOutOfRange));
+            return Err(Error::Polynomial(
+                super::error::PolynomialError::CoefficientOutOfRange,
+            ));
         }
         if !self.rows.iter().all(|row| row.len() == cols) {
-            return Err(Error::Polynomial(super::error::PolynomialError::CoefficientOutOfRange));
+            return Err(Error::Polynomial(
+                super::error::PolynomialError::CoefficientOutOfRange,
+            ));
         }
         Ok(self.mul_vector(v))
     }
 
     /// Panicking matrix–vector multiplication (asserts on shape mismatch).
-    pub fn mul_vector(&self, v: &PolynomialVector<'static, FF>) -> PolynomialVector<'static, FF> {
+    pub fn mul_vector(
+        &self,
+        v: &PolynomialVector<'static, FF>,
+    ) -> PolynomialVector<'static, FF> {
         // Check matrix is not empty
         assert!(!self.rows.is_empty(), "Matrix cannot be empty");
 
         let cols = self.cols();
         // Check matrix columns match vector length
         assert_eq!(
-            cols, v.len(),
+            cols,
+            v.len(),
             "Matrix columns ({}) must match vector length ({})",
-            cols, v.len()
+            cols,
+            v.len()
         );
 
         // Check all rows have same length (rectangular matrix)
@@ -133,23 +155,31 @@ impl<FF: FiniteField> Matrix<'static, FF> {
 /// Immutable indexing by row.
 impl<FF: FiniteField> Index<usize> for Matrix<'static, FF> {
     type Output = Vec<Polynomial<'static, FF>>;
-    fn index(&self, i: usize) -> &Self::Output { &self.rows[i] }
+    fn index(&self, i: usize) -> &Self::Output {
+        &self.rows[i]
+    }
 }
 
 /// Mutable indexing by row.
 impl<FF: FiniteField> IndexMut<usize> for Matrix<'static, FF> {
-    fn index_mut(&mut self, i: usize) -> &mut Self::Output { &mut self.rows[i] }
+    fn index_mut(&mut self, i: usize) -> &mut Self::Output {
+        &mut self.rows[i]
+    }
 }
 
 /// Deref to a slice of rows.
 impl<FF: FiniteField> Deref for Matrix<'static, FF> {
     type Target = [Vec<Polynomial<'static, FF>>];
-    fn deref(&self) -> &Self::Target { &self.rows }
+    fn deref(&self) -> &Self::Target {
+        &self.rows
+    }
 }
 
 /// DerefMut to a slice of rows.
 impl<FF: FiniteField> DerefMut for Matrix<'static, FF> {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.rows }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.rows
+    }
 }
 
 /// Element-wise matrix addition. Panics if shapes are not equal.
@@ -162,7 +192,10 @@ impl<FF: FiniteField> Add for Matrix<'static, FF> {
         assert!(
             r1 == r2 && c1 == c2,
             "Matrix shapes must match for addition: ({}, {}) vs ({}, {})",
-            r1, c1, r2, c2
+            r1,
+            c1,
+            r2,
+            c2
         );
 
         let rows = self
@@ -170,10 +203,11 @@ impl<FF: FiniteField> Add for Matrix<'static, FF> {
             .into_iter()
             .zip(rhs.rows)
             .map(|(row_a, row_b)| {
-                row_a.into_iter()
-                     .zip(row_b.into_iter())
-                     .map(|(a, b)| a + b)
-                     .collect::<Vec<_>>()
+                row_a
+                    .into_iter()
+                    .zip(row_b.into_iter())
+                    .map(|(a, b)| a + b)
+                    .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
 
@@ -191,7 +225,10 @@ impl<FF: FiniteField> Sub for Matrix<'static, FF> {
         assert!(
             r1 == r2 && c1 == c2,
             "Matrix shapes  must match for subtraction: ({}, {}) vs ({}, {})",
-            r1, c1, r2, c2
+            r1,
+            c1,
+            r2,
+            c2
         );
 
         let rows = self
@@ -199,10 +236,11 @@ impl<FF: FiniteField> Sub for Matrix<'static, FF> {
             .into_iter()
             .zip(rhs.rows)
             .map(|(row_a, row_b)| {
-                row_a.into_iter()
-                     .zip(row_b.into_iter())
-                     .map(|(a, b)| a - b)
-                     .collect::<Vec<_>>()
+                row_a
+                    .into_iter()
+                    .zip(row_b.into_iter())
+                    .map(|(a, b)| a - b)
+                    .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
 
@@ -215,20 +253,23 @@ impl<FF: FiniteField> Mul<&Polynomial<'static, FF>> for Matrix<'static, FF> {
     type Output = Self;
 
     fn mul(self, scalar: &Polynomial<'static, FF>) -> Self::Output {
-        let rows = self.rows
+        let rows = self
+            .rows
             .into_iter()
             .map(|row| {
                 row.into_iter()
-                   .map(|p| p * scalar.clone())
-                   .collect::<Vec<_>>()
+                    .map(|p| p * scalar.clone())
+                    .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-            Self { rows }
+        Self { rows }
     }
 }
 
 /// Matrix–vector multiplication via `*` operator.
-impl<FF: FiniteField> Mul<PolynomialVector<'static, FF>> for Matrix<'static, FF> {
+impl<FF: FiniteField> Mul<PolynomialVector<'static, FF>>
+    for Matrix<'static, FF>
+{
     type Output = PolynomialVector<'static, FF>;
 
     fn mul(self, v: PolynomialVector<'static, FF>) -> Self::Output {
@@ -237,7 +278,9 @@ impl<FF: FiniteField> Mul<PolynomialVector<'static, FF>> for Matrix<'static, FF>
 }
 
 /// Also support `&Matrix * &PolynomialVector` ergonomically.
-impl<FF: FiniteField> Mul<&PolynomialVector<'static, FF>> for &Matrix<'static, FF> {
+impl<FF: FiniteField> Mul<&PolynomialVector<'static, FF>>
+    for &Matrix<'static, FF>
+{
     type Output = PolynomialVector<'static, FF>;
 
     fn mul(self, v: &PolynomialVector<'static, FF>) -> Self::Output {
@@ -260,7 +303,6 @@ pub fn matrix_vector_multiply<FF: FiniteField>(
     m.mul_vector(v)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,13 +314,15 @@ mod tests {
     };
     use num_traits::Zero;
 
-    type FE   = FieldElement;
+    type FE = FieldElement;
     type Poly = Polynomial<'static, FE>;
-    type Mat  = Matrix<'static, FE>;
-    type PV   = PolynomialVector<'static, FE>;
+    type Mat = Matrix<'static, FE>;
+    type PV = PolynomialVector<'static, FE>;
 
     #[inline]
-    fn c(v: u32) -> Poly { Polynomial::from(vec![v]) }
+    fn c(v: u32) -> Poly {
+        Polynomial::from(vec![v])
+    }
 
     #[inline]
     fn pv_from_consts(vals: &[u32]) -> PV {
@@ -306,10 +350,7 @@ mod tests {
     #[should_panic(expected = "All matrix rows must have the same length")]
     fn new_ragged_panics() {
         // First row has 2 entries, second row has 1 -> should panic.
-        let _ = Mat::new(vec![
-            vec![c(1), c(2)],
-            vec![c(3)],
-        ]);
+        let _ = Mat::new(vec![vec![c(1), c(2)], vec![c(3)]]);
     }
 
     #[test]
@@ -365,14 +406,8 @@ mod tests {
 
     #[test]
     fn elementwise_add() {
-        let a = Mat::new(vec![
-            vec![c(1), c(2)],
-            vec![c(3), c(4)],
-        ]);
-        let b = Mat::new(vec![
-            vec![c(10), c(20)],
-            vec![c(30), c(40)],
-        ]);
+        let a = Mat::new(vec![vec![c(1), c(2)], vec![c(3), c(4)]]);
+        let b = Mat::new(vec![vec![c(10), c(20)], vec![c(30), c(40)]]);
         let sum = a + b;
         assert_eq!(sum[0][0], c(11));
         assert_eq!(sum[0][1], c(22));
@@ -391,13 +426,13 @@ mod tests {
     #[test]
     fn elementwise_sub() {
         let a = Mat::new(vec![
-            vec![Polynomial::from(vec![10u32]), Polynomial::from(vec![20u32, 1u32])],
+            vec![
+                Polynomial::from(vec![10u32]),
+                Polynomial::from(vec![20u32, 1u32]),
+            ],
             vec![c(30), c(40)],
         ]);
-        let b = Mat::new(vec![
-            vec![c(7), c(5)],
-            vec![c(12), c(40)],
-        ]);
+        let b = Mat::new(vec![vec![c(7), c(5)], vec![c(12), c(40)]]);
         let d = a - b;
         assert_eq!(d[0][0], c(3));
         //  (20 + x) - 5 = (15 + x)
@@ -446,10 +481,7 @@ mod tests {
     #[test]
     fn mul_vector_with_constants() {
         // 2x3 * 3 -> 2
-        let m = Mat::new(vec![
-            vec![c(1), c(2), c(3)],
-            vec![c(4), c(5), c(6)],
-        ]);
+        let m = Mat::new(vec![vec![c(1), c(2), c(3)], vec![c(4), c(5), c(6)]]);
         let v = pv_from_consts(&[7, 8, 9]);
 
         let out = m.mul_vector(&v);
@@ -469,7 +501,7 @@ mod tests {
         // Let x = [0,1], then:
         // Row 0: [x, 1, 0] • [1, 2, 3] = x*1 + 1*2 + 0*3 = x + 2
         // Row 1: [0, x, 3] • [1, 2, 3] = 0*1 + x*2 + 3*3 = 2x + 9
-        let x   = Polynomial::x_to_the(1);
+        let x = Polynomial::x_to_the(1);
         let one = c(1);
         let two = c(2);
         let three = c(3);
@@ -482,8 +514,8 @@ mod tests {
 
         let out = m.mul_vector(&v);
         assert_eq!(out.len(), 2);
-        assert_eq!(out[0], x.clone() + two.clone());              // x + 2
-        assert_eq!(out[1], (x * two.clone()) + c(9));             // 2x + 9
+        assert_eq!(out[0], x.clone() + two.clone()); // x + 2
+        assert_eq!(out[1], (x * two.clone()) + c(9)); // 2x + 9
     }
 
     #[test]
@@ -495,12 +527,11 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Matrix columns (3) must match vector length (2)")]
+    #[should_panic(
+        expected = "Matrix columns (3) must match vector length (2)"
+    )]
     fn mul_vector_panics_on_mismatched_shapes() {
-        let m = Mat::new(vec![
-            vec![c(1), c(2), c(3)],
-            vec![c(4), c(5), c(6)],
-        ]);
+        let m = Mat::new(vec![vec![c(1), c(2), c(3)], vec![c(4), c(5), c(6)]]);
         let v = pv_from_consts(&[7, 8]); // length 2, but matrix has 3 columns
         let _ = m.mul_vector(&v);
     }
@@ -515,16 +546,19 @@ mod tests {
         let m_empty: Mat = Mat::new(vec![]);
         let v_empty = PV::new(vec![]);
         let err = m_empty.try_mul_vector(&v_empty).unwrap_err();
-        assert_eq!(err, MathError::Polynomial(PolynomialError::CoefficientOutOfRange));
+        assert_eq!(
+            err,
+            MathError::Polynomial(PolynomialError::CoefficientOutOfRange)
+        );
 
         // column/length mismatch
-        let m = Mat::new(vec![
-            vec![c(1), c(2), c(3)],
-            vec![c(4), c(5), c(6)],
-        ]);
+        let m = Mat::new(vec![vec![c(1), c(2), c(3)], vec![c(4), c(5), c(6)]]);
         let v_bad = pv_from_consts(&[7, 8]);
         let err2 = m.try_mul_vector(&v_bad).unwrap_err();
-        assert_eq!(err2, MathError::Polynomial(PolynomialError::CoefficientOutOfRange));
+        assert_eq!(
+            err2,
+            MathError::Polynomial(PolynomialError::CoefficientOutOfRange)
+        );
     }
 
     // --------------------------
@@ -533,10 +567,7 @@ mod tests {
 
     #[test]
     fn wrapper_free_functions_match_methods() {
-        let m = Mat::new(vec![
-            vec![c(1), c(2)],
-            vec![c(3), c(4)],
-        ]);
+        let m = Mat::new(vec![vec![c(1), c(2)], vec![c(3), c(4)]]);
         let v = pv_from_consts(&[5, 6]);
 
         let out_method = m.mul_vector(&v);
@@ -548,4 +579,3 @@ mod tests {
         assert_eq!(out_ok, out_method);
     }
 }
-
