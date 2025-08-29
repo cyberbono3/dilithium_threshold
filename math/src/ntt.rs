@@ -9,26 +9,7 @@ use crate::{
     traits::{FiniteField, Inverse, ModPowU32, PrimitiveRootOfUnity},
 };
 
-/// ## Perform NTT on slices of prime-field elements
-///
-/// NTTs are Number Theoretic Transforms, which are Discrete Fourier Transforms
-/// (DFTs) over finite fields. It aims at being used to compute polynomial multiplication over finite fields.
-/// NTT reduces the complexity of such multiplication.
-// pub fn ntt<FF>(x: &mut [FF])
-// where
-//     FF: FiniteField + MulAssign<FieldElement>,
-// {
-//     let slice_len = u32::try_from(x.len())
-//         .expect("slice should be no longer than u32::MAX");
 
-//     assert!(slice_len == 0 || slice_len.is_power_of_two());
-//     let log2_slice_len = slice_len.checked_ilog2().unwrap_or(0);
-
-//     // `slice_len` is 0 or a power of two smaller than u32::MAX
-//     //  => `unwrap()` never panics
-//     let omega = FieldElement::primitive_root_of_unity(slice_len).unwrap();
-//     ntt_unchecked(x, omega, log2_slice_len);
-// }
 
 /// Direction for a number-theoretic transform.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -37,49 +18,6 @@ pub enum Transform {
     Inverse,
 }
 
-// /// ## Perform INTT on slices of prime-field elements
-// ///
-// /// INTT is the inverse [NTT][self::ntt], so abstractly,
-// /// *intt(values) = ntt(values) / n*.
-// ///
-// /// This transform is performed in-place.
-// ///
-// /// # Example
-// ///
-// /// ```
-// /// use math::prelude::*;
-// /// let original_values = fe_vec![0, 1, 1, 2, 3, 5, 8, 13];
-// /// let mut transformed_values = original_values.clone();
-// /// ntt(&mut transformed_values);
-// /// intt(&mut transformed_values);
-// /// assert_eq!(original_values, transformed_values);
-// /// ```
-// ///
-// /// # Panics
-// ///
-// /// Panics if the length of the input slice is
-// /// - not a power of two
-// /// - larger than [`u32::MAX`]
-// pub fn intt<FF>(x: &mut [FF])
-// where
-//     FF: FiniteField + MulAssign<FieldElement>,
-// {
-//     let slice_len = u32::try_from(x.len())
-//         .expect("slice should be no longer than u32::MAX");
-
-//     assert!(slice_len == 0 || slice_len.is_power_of_two());
-//     let log2_slice_len = slice_len.checked_ilog2().unwrap_or(0);
-
-//     // `slice_len` is 0 or a power of two smaller than u32::MAX
-//     //  => `unwrap()` never panics
-//     let omega = FieldElement::primitive_root_of_unity(slice_len).unwrap();
-//     ntt_unchecked(x, omega.inverse(), log2_slice_len);
-
-//     let n_inv_or_zero = FieldElement::from(x.len()).inverse_or_zero();
-//     for elem in x.iter_mut() {
-//         *elem *= n_inv_or_zero
-//     }
-// }
 
 /// Fallible NTT (no panics).
 pub fn try_ntt<FF>(x: &mut [FF]) -> Result<()>
@@ -372,7 +310,6 @@ where    FF: FiniteField + MulAssign<FieldElement>,
 
 #[cfg(test)]
 mod fast_ntt_attempt_tests {
-    use itertools::Itertools;
     use proptest::collection::vec;
     use proptest::prelude::*;
     use proptest_arbitrary_interop::arb;
