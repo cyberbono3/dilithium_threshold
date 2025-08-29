@@ -248,7 +248,6 @@ impl<FF: FiniteField> PolynomialVector<'static, FF> {
         }
     }
 
-
     pub fn norm_infinity(&self) -> u32 {
         self.polys
             .iter()

@@ -296,8 +296,8 @@ mod fast_ntt_attempt_tests {
 
     #[test]
     fn field_basic_test_of_chu_ntt() {
-        let mut input_output = fe_vec!(1,4,0,0);
-           
+        let mut input_output = fe_vec!(1, 4, 0, 0);
+
         let original_input = input_output.clone();
 
         // For the field with prime 8380417, we need to calculate the expected values
@@ -324,7 +324,12 @@ mod fast_ntt_attempt_tests {
     fn bfield_max_value_test_of_chu_ntt() {
         let mut input_output = fe_vec!(FieldElement::MAX, 0, 0, 0);
         let original_input = input_output.clone();
-        let expected = fe_vec!(FieldElement::MAX, FieldElement::MAX, FieldElement::MAX, FieldElement::MAX);
+        let expected = fe_vec!(
+            FieldElement::MAX,
+            FieldElement::MAX,
+            FieldElement::MAX,
+            FieldElement::MAX
+        );
 
         ntt::<FieldElement>(&mut input_output);
         assert_eq!(expected, input_output);

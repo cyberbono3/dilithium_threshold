@@ -106,7 +106,7 @@ where
     Ok(poly_vec!(reconstructed))
 }
 
-// TODO icnrease test coeverage 
+// TODO icnrease test coeverage
 #[cfg(test)]
 mod tests {
     use super::*;

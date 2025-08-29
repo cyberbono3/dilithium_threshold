@@ -161,7 +161,6 @@ impl AdaptedShamirSSS {
         self.reconstruct_poly_vector(active_shares, poly_indices)
     }
 
-   
     fn reconstruct_poly_vector<FF: FiniteField>(
         &self,
         shares: &[ShamirShare<'static, FF>],

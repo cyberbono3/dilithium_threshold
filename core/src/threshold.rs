@@ -353,7 +353,6 @@ impl ThresholdSignature {
         poly![coeffs]
     }
 
-  
     fn reconstruct_z_vector<FF: FiniteField>(
         &self,
         partial_signatures: &[PartialSignature<'static, FF>],
@@ -441,7 +440,6 @@ mod tests {
         vec![value; 32]
     }
 
-   
     mod threshold_key_share_tests {
         use super::*;
 

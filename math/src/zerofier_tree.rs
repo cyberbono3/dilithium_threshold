@@ -66,7 +66,6 @@ impl<FF: FiniteField + MulAssign<FieldElement>> ZerofierTree<'static, FF> {
     /// regulates the number of points contained by each leaf.
     const RECURSION_CUTOFF_THRESHOLD: usize = 16;
 
-
     pub fn new_from_domain(domain: &[FF]) -> Self {
         // Build initial leaves (no padding leaves).
         let mut nodes: VecDeque<_> = domain

@@ -230,7 +230,6 @@ where
         self.coefficients().iter().all(|c| c.is_zero())
     }
 
-    
     pub fn coefficients(&self) -> &[FF] {
         let coefficients = self.coefficients.as_ref();
 
@@ -1638,7 +1637,6 @@ where
         Self::lagrange_interpolate(&xs, &ys)
     }
 
-    
     #[doc(hidden)]
     pub fn lagrange_interpolate(domain: &[FF], values: &[FF]) -> Self {
         debug_assert!(

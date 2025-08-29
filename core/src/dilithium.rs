@@ -420,7 +420,6 @@ impl Dilithium {
         hasher.update(mu);
         hasher.update(b"challenge");
 
-      
         w1.as_slice().iter().for_each(|p| {
             p.coefficients()
                 .iter()
@@ -476,9 +475,8 @@ impl Dilithium {
         poly_vec!(result_polys)
     }
 
-
     /// Check if hint h satisfies bound requirements.
-    /// TODO remove it 
+    /// TODO remove it
     fn check_h_bounds(&self) -> bool {
         // TODO review it
         // Simplified bound check
