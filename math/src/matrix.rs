@@ -3,7 +3,7 @@ use std::ops::{Add, Deref, DerefMut, Index, IndexMut, Mul, Sub};
 use crate::{
     error::{Error, Result},
     poly_vector::PolynomialVector,
-    polynomial::Polynomial,
+    poly::Polynomial,
     traits::FiniteField,
 };
 
@@ -310,7 +310,7 @@ mod tests {
         error::{Error as MathError, PolynomialError},
         field_element::FieldElement,
         poly_vector::PolynomialVector,
-        polynomial::Polynomial,
+        poly::Polynomial,
     };
     use num_traits::Zero;
 

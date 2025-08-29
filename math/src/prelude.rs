@@ -3,7 +3,7 @@ pub use crate::{
     field_element::FieldElement,
     ntt::{intt, ntt, try_intt, try_ntt, Transform},
     poly_vector::PolynomialVector,
-    polynomial::Polynomial,
+    poly::Polynomial,
 };
 
 /// Dilithium prime modulus (alias to the single source of truth).

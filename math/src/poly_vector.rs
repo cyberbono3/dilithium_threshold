@@ -2,7 +2,7 @@ use std::ops::{Add, Deref, DerefMut, Index, IndexMut, Mul, Sub};
 
 use crate::{
     error::{Error, Result},
-    polynomial::Polynomial,
+    poly::Polynomial,
     traits::FiniteField,
 };
 
