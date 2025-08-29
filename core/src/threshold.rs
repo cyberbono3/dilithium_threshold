@@ -324,32 +324,6 @@ impl ThresholdSignature {
         poly_vec!(polys)
     }
 
-    // TODO optimize it
-    /// Sample coefficients from gamma1 distribution
-    // fn sample_gamma1<FF: FiniteField>(&self, seed: &[u8]) -> Vec<FF> {
-    //     // Create SHAKE256 hasher and generate output
-    //     let mut reader = get_hash_reader(seed);
-
-    //     // Read N * 4 bytes
-    //     let mut hash_output = vec![0u8; N * 4];
-    //     reader.read(&mut hash_output);
-
-    //     // Convert bytes to u32 values and transform to coefficients
-    //     hash_output
-    //         .chunks_exact(4)
-    //         .take(N)
-    //         .map(|chunk| {
-    //             let value = u32::from_le_bytes([
-    //                 chunk[0], chunk[1], chunk[2], chunk[3],
-    //             ]);
-    //             let coeff = (value % (2 * self.dilithium.config.gamma1 + 1)
-    //                 - self.dilithium.config.gamma1)
-    //                 as i32;
-    //             coeff.into()
-    //         })
-    //         .collect::<Vec<FF>>()
-    // }
-
     /// Convert to polynomial with tau non-zero coefficients
     fn generate_partial_challenge<FF: FiniteField>(
         &self,
@@ -379,64 +353,7 @@ impl ThresholdSignature {
         poly![coeffs]
     }
 
-    /// Reconstruct z vector from partial signatures using Lagrange interpolation.
-    /// TODO update it
-    // fn reconstruct_z_vector<FF: FiniteField + From<i32>>(
-    //     &self,
-    //     partial_signatures: &[PartialSignature<'static, FF>],
-    // ) -> Result<PolynomialVector<'static, FF>> {
-    //     if partial_signatures.is_empty() {
-    //         return Err(ThresholdError::InsufficientShares {
-    //             required: 1,
-    //             provided: 0,
-    //         });
-    //     }
-
-    //     // Get vector length from first partial signature
-    //     let vector_length = partial_signatures[0].z_partial.len();
-
-    //     // Reconstruct each polynomial in the vector
-    //     let mut reconstructed_polys = Vec::with_capacity(vector_length);
-
-    //     for poly_idx in 0..vector_length {
-    //         // Reconstruct each coefficient of this polynomial
-
-    //         // TODO fix possible code duplication
-    //         for coeff_idx in 0..N {
-    //             // Collect points for Lagrange interpolation
-    //             let mut xs = Vec::with_capacity(partial_signatures.len());
-    //             let mut ys = Vec::with_capacity(partial_signatures.len());
-
-    //             for ps in partial_signatures {
-    //                 let x: FF = (ps.participant_id as u64).into();
-    //                 let poly = ps.z_partial.get(poly_idx).ok_or(
-    //                     ThresholdError::InvalidIndex {
-    //                         index: poly_idx,
-    //                         length: vector_length,
-    //                     },
-    //                 )?;
-    //                 // .coeffs()[coeff_idx];
-    //                 let y = poly.coefficients().get(coeff_idx).copied().ok_or(
-    //                     ThresholdError::InvalidIndex {
-    //                         index: coeff_idx,
-    //                         length: poly.coefficients().len(),
-    //                     },
-    //                 )?;
-    //                 xs.push(x);
-    //                 ys.push(y);
-    //             }
-
-    //             // Perform Lagrange interpolation
-    //             let reconstructed_poly: Polynomial<'static, FF> =
-    //                 Polynomial::lagrange_interpolate(&xs, &ys);
-    //             //coeffs[coeff_idx] = reconstructed_coeff;
-    //             reconstructed_polys.push(reconstructed_poly);
-    //         }
-    //     }
-
-    //     Ok(poly_vec!(reconstructed_polys))
-    // }
-
+  
     fn reconstruct_z_vector<FF: FiniteField>(
         &self,
         partial_signatures: &[PartialSignature<'static, FF>],
@@ -514,7 +431,7 @@ impl<FF: FiniteField> PointSource<FF> for PartialSignature<'static, FF> {
         self.z_partial.len()
     }
 }
-
+// TODO update tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -524,11 +441,7 @@ mod tests {
         vec![value; 32]
     }
 
-    // Helper function to create test message
-    fn create_test_message(content: &str) -> Vec<u8> {
-        content.as_bytes().to_vec()
-    }
-
+   
     mod threshold_key_share_tests {
         use super::*;
 

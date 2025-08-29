@@ -75,7 +75,7 @@ where
 
         let mut coeffs = vec![FF::ZERO; coeff_len];
 
-        for coeff_idx in 0..coeff_len {
+        for (coeff_idx, c) in coeffs.iter_mut().enumerate().take(coeff_len) {
             let mut xs = Vec::with_capacity(items.len());
             let mut ys = Vec::with_capacity(items.len());
 
@@ -97,7 +97,7 @@ where
                 ys.push(y);
             }
 
-            coeffs[coeff_idx] = interpolate_constant_at_zero(&xs, &ys);
+            *c = interpolate_constant_at_zero(&xs, &ys);
         }
 
         reconstructed.push(Polynomial::from(coeffs));
@@ -106,6 +106,7 @@ where
     Ok(poly_vec!(reconstructed))
 }
 
+// TODO icnrease test coeverage 
 #[cfg(test)]
 mod tests {
     use super::*;

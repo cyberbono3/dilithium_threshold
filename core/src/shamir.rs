@@ -161,47 +161,7 @@ impl AdaptedShamirSSS {
         self.reconstruct_poly_vector(active_shares, poly_indices)
     }
 
-    /// Common logic for reconstructing polynomials
-    // fn reconstruct_poly_vector<FF: FiniteField>(
-    //     active_shares: &[ShamirShare<'static, FF>],
-    //     poly_indices: &[usize],
-    // ) -> Result<PolynomialVector<'static, FF>> {
-    //     let mut reconstructed_polys: Vec<Polynomial<'static, FF>> =
-    //         Vec::with_capacity(poly_indices.len());
-
-    //     for poly_idx in poly_indices {
-    //         // Reconstruct each coefficient independently via Shamir interpolation across participants.
-    //         // For a fixed coefficient index i, collect (x_j, y_{j,i}) from each active share j,
-    //         // interpolate the sharing polynomial f_i(x), and take the secret as f_i(0).
-    //         let coeff_count = active_shares[0]
-    //             .share_vector
-    //             .get(*poly_idx)
-    //             .map(|p| p.coefficients().len())
-    //             .unwrap_or(0);
-
-    //         let mut coeffs = vec![FF::ZERO; coeff_count];
-    //         for (i, c) in coeffs.iter_mut().enumerate().take(N) {
-    //             let (xs, ys) = active_shares.iter().try_fold(
-    //                 (
-    //                     Vec::with_capacity(active_shares.len()),
-    //                     Vec::with_capacity(active_shares.len()),
-    //                 ),
-    //                 |(mut xs, mut ys), share| {
-    //                     let (x, y) = Self::yield_points(share, *poly_idx, i)?;
-    //                     xs.push(x);
-    //                     ys.push(y);
-    //                     Ok((xs, ys))
-    //                 },
-    //             )?;
-    //             let f_i = Polynomial::lagrange_interpolate(&xs, &ys);
-    //             // Secret coefficient is the constant term f_i(0)
-    //             *c = f_i.batch_evaluate(&[FF::ZERO])[0];
-    //         }
-    //         reconstructed_polys.push(Polynomial::from(coeffs));
-    //     }
-
-    //     Ok(poly_vec![reconstructed_polys])
-    // }
+   
     fn reconstruct_poly_vector<FF: FiniteField>(
         &self,
         shares: &[ShamirShare<'static, FF>],
@@ -240,36 +200,6 @@ impl AdaptedShamirSSS {
         }
 
         Ok(())
-    }
-
-    fn yield_points<FF: FiniteField>(
-        share: &ShamirShare<'static, FF>,
-        poly_idx: usize,
-        coeff_idx: usize,
-    ) -> Result<(FF, FF)> {
-        // dbg!(
-        //     "yield_points, poly_idx: {}, coeff_idx: {}, length: {}",
-        //     poly_idx,
-        //     coeff_idx,
-        //     share.vector_length()
-        // );
-        let poly = share.share_vector.get(poly_idx).ok_or(
-            ThresholdError::InvalidIndex {
-                index: poly_idx,
-                length: share.vector_length(),
-            },
-        )?;
-        dbg!("share_vector.called");
-        // dbg!("calling coefficients().get");
-        let coeff = poly.coefficients().get(coeff_idx).copied().ok_or(
-            ThresholdError::InvalidIndex {
-                index: coeff_idx,
-                length: poly.coefficients().len(),
-            },
-        )?;
-
-        //dbg!("poly.coeffcients.get" called");
-        Ok((FF::from(share.participant_id as u64), coeff))
     }
 
     /// Organize participant shares into ShamirShare objects

@@ -95,11 +95,6 @@ impl<'a, FF: FiniteField> DilithiumSignature<'a, FF> {
     ) -> Self {
         DilithiumSignature { z, h, c }
     }
-    // // you can name it as verify
-    // fn check_bounds<CV:CenteredValue>(self, dilithium: &Dilithium) -> bool {
-    //     self.z.norm_infinity() <  dilithium.config.gamma1 - dilithium.config.beta
-    //         && self.c.norm_infinity() <= dilithium.config.tau as i32
-    // }
 }
 
 /// Main Dilithium algorithm implementation.
@@ -123,7 +118,6 @@ impl Dilithium {
     }
 
     /// Generate a Dilithium key pair.
-    /// self not needed
     pub fn keygen<FF: FiniteField>(
         self,
         seed: Option<&[u8]>,
@@ -286,6 +280,7 @@ impl Dilithium {
     /// Sample uniform polynomial from seed.
     /// TODO test it
     /// TODO update it
+    /// TODO refactor
     fn sample_uniform(&self, seed: &[u8]) -> Vec<i32> {
         let mut reader = get_hash_reader(seed);
 
@@ -327,6 +322,7 @@ impl Dilithium {
 
     /// Sample polynomial with coefficients in [-eta, eta].
     /// TODO add proper testing
+    /// TODO refactor
     fn sample_eta(&self, seed: &[u8]) -> Vec<i32> {
         let mut reader = get_hash_reader(seed);
 
@@ -424,12 +420,7 @@ impl Dilithium {
         hasher.update(mu);
         hasher.update(b"challenge");
 
-        // w1.as_slice().iter().for_each(|p| {
-        //     p.coefficients()
-        //         .iter()
-        //         .for_each(|&c|
-        //           hasher.update(c.to_le_bytes());
-        // });
+      
         w1.as_slice().iter().for_each(|p| {
             p.coefficients()
                 .iter()
@@ -464,7 +455,7 @@ impl Dilithium {
     }
 
     /// Compute hint vector h.
-    fn compute_hint<'a, FF: FiniteField>(
+    fn compute_hint<FF: FiniteField>(
         &self,
         w: &PolynomialVector<'static, FF>,
         s2: PolynomialVector<'static, FF>,
@@ -482,11 +473,12 @@ impl Dilithium {
         _v2: &PolynomialVector<'a, FF>,
     ) -> PolynomialVector<'static, FF> {
         let result_polys = (0..self.config.k).map(|_| poly![0; N]).collect();
-
         poly_vec!(result_polys)
     }
 
+
     /// Check if hint h satisfies bound requirements.
+    /// TODO remove it 
     fn check_h_bounds(&self) -> bool {
         // TODO review it
         // Simplified bound check

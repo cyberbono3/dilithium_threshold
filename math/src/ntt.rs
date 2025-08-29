@@ -296,12 +296,8 @@ mod fast_ntt_attempt_tests {
 
     #[test]
     fn field_basic_test_of_chu_ntt() {
-        let mut input_output = vec![
-            FieldElement::new(1),
-            FieldElement::new(4),
-            FieldElement::new(0),
-            FieldElement::new(0),
-        ];
+        let mut input_output = fe_vec!(1,4,0,0);
+           
         let original_input = input_output.clone();
 
         // For the field with prime 8380417, we need to calculate the expected values
@@ -314,12 +310,7 @@ mod fast_ntt_attempt_tests {
         // X[2] = 1*1 + 4*omega^2 + 0*omega^4 + 0*omega^6 = 1 + 4*8380416 = 1 + 33521664 mod 8380417 = 8380413
         // X[3] = 1*1 + 4*omega^3 + 0*omega^6 + 0*omega^9 = 1 + 4*3572223 = 1 + 14288892 mod 8380417 = 5908476
 
-        let expected = vec![
-            FieldElement::new(5),
-            FieldElement::new(2471943),
-            FieldElement::new(8380414),
-            FieldElement::new(5908476),
-        ];
+        let expected = fe_vec!(5, 2471943, 8380414, 5908476);
 
         ntt::<FieldElement>(&mut input_output);
         assert_eq!(expected, input_output);
@@ -331,19 +322,9 @@ mod fast_ntt_attempt_tests {
 
     #[test]
     fn bfield_max_value_test_of_chu_ntt() {
-        let mut input_output = vec![
-            FieldElement::new(FieldElement::MAX),
-            FieldElement::new(0),
-            FieldElement::new(0),
-            FieldElement::new(0),
-        ];
+        let mut input_output = fe_vec!(FieldElement::MAX, 0, 0, 0);
         let original_input = input_output.clone();
-        let expected = vec![
-            FieldElement::new(FieldElement::MAX),
-            FieldElement::new(FieldElement::MAX),
-            FieldElement::new(FieldElement::MAX),
-            FieldElement::new(FieldElement::MAX),
-        ];
+        let expected = fe_vec!(FieldElement::MAX, FieldElement::MAX, FieldElement::MAX, FieldElement::MAX);
 
         ntt::<FieldElement>(&mut input_output);
         assert_eq!(expected, input_output);

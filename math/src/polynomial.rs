@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fmt::Display;
@@ -231,26 +230,7 @@ where
         self.coefficients().iter().all(|c| c.is_zero())
     }
 
-    /// The polynomial's coefficients, in order of increasing degree. That is, the
-    /// leading coefficient is the slice's last element.
-    ///
-    /// The leading coefficient is guaranteed to be non-zero. Consequently, the
-    /// zero-polynomial is the empty slice.
-    ///
-    /// See also [`into_coefficients()`][Self::into_coefficients].
-    // pub fn coefficients(&self) -> &[FF] {
-    //     // let coefficients = self.coefficients.as_ref();
-
-    //     // let Some(leading_coeff_idx) =
-    //     //     coefficients.iter().rposition(|&c| !c.is_zero())
-    //     // else {
-    //     //     // `coefficients` contains no elements or only zeroes
-    //     //     return &[];
-    //     // };
-
-    //     // &coefficients[0..=leading_coeff_idx]
-    //     self.coefficients.as_ref()
-    // }
+    
     pub fn coefficients(&self) -> &[FF] {
         let coefficients = self.coefficients.as_ref();
 
@@ -1658,51 +1638,7 @@ where
         Self::lagrange_interpolate(&xs, &ys)
     }
 
-    // #[doc(hidden)]
-    // pub fn lagrange_interpolate(domain: &[FF], values: &[FF]) -> Self {
-    //     debug_assert!(
-    //         !domain.is_empty(),
-    //         "interpolation domain cannot have zero points"
-    //     );
-    //     debug_assert_eq!(domain.len(), values.len());
-
-    //     let zero = FF::ZERO;
-    //     let zerofier = Self::zerofier(domain).coefficients;
-
-    //     // In each iteration of this loop, accumulate into the sum one polynomial that evaluates
-    //     // to some abscis (y-value) in the given ordinate (domain point), and to zero in all other
-    //     // ordinates.
-    //     let mut lagrange_sum_array = vec![zero; domain.len()];
-    //     let mut summand_array = vec![zero; domain.len()];
-    //     for (i, &abscis) in values.iter().enumerate() {
-    //         // divide (X - domain[i]) out of zerofier to get unweighted summand
-    //         let mut leading_coefficient = zerofier[domain.len()]; // out of bounds error
-    //         let mut supporting_coefficient = zerofier[domain.len() - 1];
-    //         let mut summand_eval = zero;
-    //         for j in (1..domain.len()).rev() {
-    //             summand_array[j] = leading_coefficient;
-    //             summand_eval = summand_eval * domain[i] + leading_coefficient;
-    //             leading_coefficient =
-    //                 supporting_coefficient + leading_coefficient * domain[i];
-    //             supporting_coefficient = zerofier[j - 1];
-    //         }
-
-    //         // avoid `j - 1` for j == 0 in the loop above
-    //         summand_array[0] = leading_coefficient;
-    //         summand_eval = summand_eval * domain[i] + leading_coefficient;
-
-    //         // summand does not necessarily evaluate to 1 in domain[i]: correct for this value
-    //         let corrected_abscis = abscis / summand_eval;
-
-    //         // accumulate term
-    //         for j in 0..domain.len() {
-    //             lagrange_sum_array[j] += corrected_abscis * summand_array[j];
-    //         }
-    //     }
-
-    //     Self::new(lagrange_sum_array)
-    // }
-
+    
     #[doc(hidden)]
     pub fn lagrange_interpolate(domain: &[FF], values: &[FF]) -> Self {
         debug_assert!(
@@ -2628,54 +2564,10 @@ where
     /// Create a new polynomial with the given coefficients.
     ///
     /// See also [`Self::new_borrowed`].
-    // pub fn new(coeffs: Vec<FF>) -> Self {
-    //     let reduced_coeffs = match coeffs.len().cmp(&N) {
-    //         Ordering::Greater => {
-    //             // Reduce modulo X^N + 1
-    //             Self::reduce_mod_xn_plus_1(&coeffs)
-    //         }
-    //         Ordering::Less => {
-    //             //dbg!("padded");
-    //             // Pad with zeros
-    //             let mut padded = vec![FF::ZERO; N];
-    //             padded[..coeffs.len()].copy_from_slice(&coeffs);
-    //             padded
-    //         }
-    //         Ordering::Equal => {
-    //             // Use as-is
-    //             coeffs
-    //         }
-    //     };
-    //     assert_eq!(reduced_coeffs.len(), N);
-    //     //assert_eq!(Cow::Owned(reduced_coeffs).to_owned().len(), N);
-
-    //     // let coefficients = Cow::Owned(coefficients);
-    //     Self {
-    //         coefficients: Cow::Owned(reduced_coeffs),
-    //     }
-    // }
-
     pub fn new(coeffs: Vec<FF>) -> Self {
         Self {
             coefficients: std::borrow::Cow::Owned(coeffs),
         }
-    }
-
-    /// Reduce polynomial modulo X^N + 1
-    fn reduce_mod_xn_plus_1(coeffs: &[FF]) -> Vec<FF> {
-        let mut result = vec![FF::ZERO; N];
-
-        for (i, &coeff) in coeffs.iter().enumerate() {
-            let pos = i % N;
-            if i >= N && (i / N) % 2 == 1 {
-                // X^N = -1, so X^(N+k) = -X^k
-                result[pos] -= coeff;
-            } else {
-                result[pos] += coeff;
-            }
-        }
-
-        result
     }
 
     /// `x^n`
@@ -2706,7 +2598,6 @@ where
 {
     /// Like [`Self::new`], but without owning the coefficients.
     pub fn new_borrowed(coeffs: &'coeffs [FF]) -> Self {
-        dbg!("new_borrowed_call");
         let coefficients = Cow::Borrowed(coeffs);
         Self { coefficients }
     }

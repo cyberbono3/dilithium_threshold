@@ -248,12 +248,6 @@ impl<FF: FiniteField> PolynomialVector<'static, FF> {
         }
     }
 
-    // /// Generate random polynomial vector.
-    // pub fn random(length: usize, bound: i32) -> Self {
-    //     Self {
-    //         polys: (0..length).map(|_| Polynomial::random(bound)).collect(),
-    //     }
-    // }
 
     pub fn norm_infinity(&self) -> u32 {
         self.polys
