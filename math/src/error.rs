@@ -6,7 +6,7 @@ use crate::field_element::FieldElement;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum PolynomialError {
-    #[error("сoefficient is out of range")]
+    #[error("сoefficient out of range")]
     CoefficientOutOfRange,
 }
 

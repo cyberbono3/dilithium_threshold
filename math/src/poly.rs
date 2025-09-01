@@ -27,7 +27,7 @@ use rayon::prelude::*;
 use super::traits::{FiniteField, Inverse, ModPowU32, PrimitiveRootOfUnity};
 use super::zerofier_tree::ZerofierTree;
 use crate::ntt::{intt, ntt};
-use crate::prelude::{FieldElement, N};
+use crate::prelude::FieldElement;
 
 /// Macro for convenient polynomial creation
 ///
@@ -4760,7 +4760,7 @@ mod test_polynomials {
     fn fast_modular_coset_interpolate_respects_constant_modulus() {
         use itertools::Itertools;
         let n = 32u32;
-        let values = (0..n).map(|i| FieldElement::new(i as u32)).collect_vec();
+        let values = (0..n).map(FieldElement::new).collect_vec();
         let offset = FieldElement::new(7);
         let modulus = Polynomial::new(fe_vec![3]); // degree 0, non-zero
 

@@ -752,7 +752,7 @@ mod tests {
         let expected = (1 + large_x + large_x * large_x) % Q;
         assert_eq!(
             AdaptedShamirSSS::evaluate_polynomial(&coeffs, large_x),
-            expected as i32
+            expected
         );
 
         // Verify Horner's method: f(x) = 5 + 3x + 2x^2 + 4x^3

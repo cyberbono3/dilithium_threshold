@@ -79,7 +79,7 @@ impl<FF: FiniteField + MulAssign<FieldElement>> ZerofierTree<'static, FF> {
 
         // Pair level-by-level; carry lone nodes forward.
         while nodes.len() > 1 {
-            let mut next = VecDeque::with_capacity((nodes.len() + 1) / 2);
+            let mut next = VecDeque::with_capacity(nodes.len().div_ceil(2));
             while let Some(left) = nodes.pop_front() {
                 if let Some(right) = nodes.pop_front() {
                     match (left, right) {

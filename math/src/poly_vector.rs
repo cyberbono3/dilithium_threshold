@@ -1,10 +1,6 @@
 use std::ops::{Add, Deref, DerefMut, Index, IndexMut, Mul, Sub};
 
-use crate::{
-    error::{Error, Result},
-    poly::Polynomial,
-    traits::FiniteField,
-};
+use crate::{error::Result, poly::Polynomial, traits::FiniteField};
 
 use num_traits::Zero;
 
@@ -190,7 +186,6 @@ macro_rules! poly_vec {
 }
 
 /// Represents a vector of polynomials in Rq.
-
 /// Used for representing keys and intermediate values in Dilithium.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PolynomialVector<'coeffs, FF: FiniteField> {
@@ -302,20 +297,6 @@ impl<FF: FiniteField> IndexMut<usize> for PolynomialVector<'static, FF> {
         &mut self.polys[i]
     }
 }
-
-/// Fallible version with shape checks returned as an error instead of panics.
-// pub fn try_matrix_vector_multiply<FF: FiniteField>(
-//     m: &[Vec<Polynomial<'static, FF>>],
-//    v: &PolynomialVector<'static, FF>,
-// ) -> Result<PolynomialVector<'static, FF>> {
-//     if m.is_empty() { return Err(Error::Polynomial(super::error::PolynomialError::CoefficientOutOfRange)); }
-//     let cols = m[0].len();
-//    if cols != v.len() { return Err(Error::Polynomial(super::error::PolynomialError::CoefficientOutOfRange)); }
-//     if !m.iter().all(|row| row.len() == cols) {
-//         return Err(Error::Polynomial(super::error::PolynomialError::CoefficientOutOfRange));
-//     }
-//     Ok(matrix_vector_multiply(m, v))
-// }
 
 impl<FF: FiniteField> Add for PolynomialVector<'static, FF> {
     type Output = Self;

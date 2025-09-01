@@ -2,8 +2,8 @@ pub use crate::{fe, fe_array, fe_vec, poly, poly_vec};
 pub use crate::{
     field_element::FieldElement,
     ntt::{intt, ntt, try_intt, try_ntt, Transform},
-    poly_vector::PolynomialVector,
     poly::Polynomial,
+    poly_vector::PolynomialVector,
 };
 
 /// Dilithium prime modulus (alias to the single source of truth).

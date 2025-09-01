@@ -47,8 +47,6 @@ where
     try_intt(x).expect("intt: slice length must be a power of two <= u32::MAX and have a root of unity");
 }
 
-
-
 #[inline]
 pub fn bitreverse_usize(mut n: usize, l: usize) -> usize {
     let mut r = 0;
@@ -635,16 +633,16 @@ mod ntt_in_place_tests {
                 let mut got = coeffs.clone();
                 ntt_in_place(&mut got, Transform::Forward).unwrap();
 
-                let mut expect = vec![FieldElement::ZERO; n];
-                for k in 0..n {
+                let mut expected = vec![FieldElement::ZERO; n];
+                for (i, e) in expected.iter_mut().enumerate() {
                     let mut acc = FieldElement::ZERO;
-                    for j in 0..n {
-                        let power = (j * k) as u32;
-                        acc += coeffs[j] * omega.mod_pow_u32(power);
+                    for (j, coeff) in coeffs.iter().enumerate() {
+                        let power = (j * i) as u32;
+                        acc += *coeff * omega.mod_pow_u32(power);
                     }
-                    expect[k] = acc;
+                    *e = acc;
                 }
-                assert_eq!(expect, got, "mismatch at n={n}");
+                assert_eq!(expected, got, "mismatch at n={n}");
             }
         }
     }
