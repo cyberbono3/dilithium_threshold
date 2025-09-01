@@ -1,7 +1,7 @@
 use std::ops::{Add, Deref, DerefMut, Index, IndexMut, Mul, Sub};
 
 use crate::{
-    error::{Error, Result},
+    error::{Error, Result, PolynomialError},
     poly_vector::PolynomialVector,
     poly::Polynomial,
     traits::FiniteField,
@@ -92,18 +92,18 @@ impl<FF: FiniteField> Matrix<'static, FF> {
         // mirror the style from `poly_vector.rs`
         if self.rows.is_empty() {
             return Err(Error::Polynomial(
-                super::error::PolynomialError::CoefficientOutOfRange,
+                PolynomialError::CoefficientOutOfRange,
             ));
         }
         let cols = self.cols();
         if cols != v.len() {
             return Err(Error::Polynomial(
-                super::error::PolynomialError::CoefficientOutOfRange,
+                PolynomialError::CoefficientOutOfRange,
             ));
         }
         if !self.rows.iter().all(|row| row.len() == cols) {
             return Err(Error::Polynomial(
-                super::error::PolynomialError::CoefficientOutOfRange,
+                PolynomialError::CoefficientOutOfRange,
             ));
         }
         Ok(self.mul_vector(v))
@@ -205,7 +205,7 @@ impl<FF: FiniteField> Add for Matrix<'static, FF> {
             .map(|(row_a, row_b)| {
                 row_a
                     .into_iter()
-                    .zip(row_b.into_iter())
+                    .zip(row_b)
                     .map(|(a, b)| a + b)
                     .collect::<Vec<_>>()
             })
@@ -238,7 +238,7 @@ impl<FF: FiniteField> Sub for Matrix<'static, FF> {
             .map(|(row_a, row_b)| {
                 row_a
                     .into_iter()
-                    .zip(row_b.into_iter())
+                    .zip(row_b)
                     .map(|(a, b)| a - b)
                     .collect::<Vec<_>>()
             })
