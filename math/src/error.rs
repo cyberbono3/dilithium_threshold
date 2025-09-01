@@ -8,8 +8,6 @@ use crate::field_element::FieldElement;
 pub enum PolynomialError {
     #[error("сoefficient is out of range")]
     CoefficientOutOfRange,
-    #[error("expected {0} elements for digest, but got {1}")]
-    IndexOufOfBounds(usize, usize),
 }
 
 /// Common result type used across this crate.
