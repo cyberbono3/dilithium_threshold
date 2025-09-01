@@ -4,7 +4,7 @@ use std::ops::MulAssign;
 use num_traits::One;
 
 use super::field_element::FieldElement;
-use super::polynomial::Polynomial;
+use super::poly::Polynomial;
 use super::traits::FiniteField;
 
 #[derive(Debug, Clone, PartialEq)]

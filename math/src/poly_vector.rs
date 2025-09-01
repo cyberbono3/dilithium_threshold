@@ -1,6 +1,10 @@
-use std::ops::{Add, Mul, Sub};
+use std::ops::{Add, Deref, DerefMut, Index, IndexMut, Mul, Sub};
 
-use super::{polynomial::Polynomial, traits::FiniteField};
+use crate::{
+    error::{Error, Result},
+    poly::Polynomial,
+    traits::FiniteField,
+};
 
 use num_traits::Zero;
 
@@ -257,6 +261,62 @@ impl<FF: FiniteField> PolynomialVector<'static, FF> {
     }
 }
 
+impl<'a, FF: FiniteField> IntoIterator for &'a PolynomialVector<'static, FF> {
+    type Item = &'a Polynomial<'static, FF>;
+    type IntoIter = std::slice::Iter<'a, Polynomial<'static, FF>>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.polys.iter()
+    }
+}
+
+impl<FF: FiniteField> From<Vec<Polynomial<'static, FF>>>
+    for PolynomialVector<'static, FF>
+{
+    fn from(polys: Vec<Polynomial<'static, FF>>) -> Self {
+        Self { polys }
+    }
+}
+
+impl<FF: FiniteField> Deref for PolynomialVector<'static, FF> {
+    type Target = [Polynomial<'static, FF>];
+    fn deref(&self) -> &Self::Target {
+        &self.polys
+    }
+}
+
+impl<FF: FiniteField> DerefMut for PolynomialVector<'static, FF> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.polys
+    }
+}
+
+impl<FF: FiniteField> Index<usize> for PolynomialVector<'static, FF> {
+    type Output = Polynomial<'static, FF>;
+    fn index(&self, i: usize) -> &Self::Output {
+        &self.polys[i]
+    }
+}
+
+impl<FF: FiniteField> IndexMut<usize> for PolynomialVector<'static, FF> {
+    fn index_mut(&mut self, i: usize) -> &mut Self::Output {
+        &mut self.polys[i]
+    }
+}
+
+/// Fallible version with shape checks returned as an error instead of panics.
+// pub fn try_matrix_vector_multiply<FF: FiniteField>(
+//     m: &[Vec<Polynomial<'static, FF>>],
+//    v: &PolynomialVector<'static, FF>,
+// ) -> Result<PolynomialVector<'static, FF>> {
+//     if m.is_empty() { return Err(Error::Polynomial(super::error::PolynomialError::CoefficientOutOfRange)); }
+//     let cols = m[0].len();
+//    if cols != v.len() { return Err(Error::Polynomial(super::error::PolynomialError::CoefficientOutOfRange)); }
+//     if !m.iter().all(|row| row.len() == cols) {
+//         return Err(Error::Polynomial(super::error::PolynomialError::CoefficientOutOfRange));
+//     }
+//     Ok(matrix_vector_multiply(m, v))
+// }
+
 impl<FF: FiniteField> Add for PolynomialVector<'static, FF> {
     type Output = Self;
 
@@ -378,25 +438,25 @@ impl<FF: FiniteField> Mul<u64> for PolynomialVector<'static, FF> {
     }
 }
 
-impl<FF: FiniteField> Mul<PolynomialVector<'static, FF>>
-    for &Vec<Vec<Polynomial<'static, FF>>>
-{
-    type Output = PolynomialVector<'static, FF>;
+// impl<FF: FiniteField> Mul<PolynomialVector<'static, FF>>
+//     for &Vec<Vec<Polynomial<'static, FF>>>
+// {
+//     type Output = PolynomialVector<'static, FF>;
 
-    fn mul(self, vector: PolynomialVector<'static, FF>) -> Self::Output {
-        matrix_vector_multiply(self, &vector)
-    }
-}
+//     fn mul(self, vector: PolynomialVector<'static, FF>) -> Self::Output {
+//         matrix_vector_multiply(self, &vector)
+//     }
+// }
 
-impl<FF: FiniteField> Mul<&PolynomialVector<'static, FF>>
-    for &Vec<Vec<Polynomial<'static, FF>>>
-{
-    type Output = PolynomialVector<'static, FF>;
+// impl<FF: FiniteField> Mul<&PolynomialVector<'static, FF>>
+//     for &Vec<Vec<Polynomial<'static, FF>>>
+// {
+//     type Output = PolynomialVector<'static, FF>;
 
-    fn mul(self, vector: &PolynomialVector<'static, FF>) -> Self::Output {
-        matrix_vector_multiply(self, vector)
-    }
-}
+//     fn mul(self, vector: &PolynomialVector<'static, FF>) -> Self::Output {
+//         matrix_vector_multiply(self, vector)
+//     }
+// }
 
 pub fn matrix_vector_multiply<FF: FiniteField>(
     m: &[Vec<Polynomial<'static, FF>>],
