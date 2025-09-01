@@ -1,4 +1,3 @@
-use rand::prelude::*;
 use sha3::{
     digest::{ExtendableOutput, Update, XofReader},
     Shake256,
@@ -122,15 +121,7 @@ impl Dilithium {
         self,
         seed: Option<&[u8]>,
     ) -> DilithiumKeyPair<'static, FF> {
-        let seed = match seed {
-            Some(s) => s.to_vec(),
-            None => {
-                let mut rng = rand::thread_rng();
-                let mut bytes = vec![0u8; 32];
-                rng.fill_bytes(&mut bytes);
-                bytes
-            }
-        };
+        let seed = get_randomness(seed);
 
         // Expand seed to generate randomness
         let (rho, rho_prime, _k) = Self::expand_seed(&seed);
@@ -227,7 +218,7 @@ impl Dilithium {
         let mu = hash_message(message);
 
         // Recompute w'
-        let w_prime = self.recompute_w(signature.clone(), public_key);
+        let w_prime = self.recompute_w(signature, public_key);
 
         // Extract high bits using hint
         let w1_prime = self.high_bits(&w_prime);
@@ -493,15 +484,264 @@ impl Dilithium {
     /// Recompute w during verification.
     fn recompute_w<FF: FiniteField>(
         &self,
-        signature: DilithiumSignature<'static, FF>,
+        signature: &DilithiumSignature<'static, FF>,
         public_key: &DilithiumPublicKey<'static, FF>,
     ) -> PolynomialVector<'static, FF> {
         // w = m * z - c * t * 2^d
         let az = &public_key.m * &signature.z;
-        let ct = public_key.t.clone() * signature.c;
+        let ct = public_key.t.clone() * &signature.c;
         let scalar = 1u64 << self.config.d;
         let ct_scaled = ct * scalar;
 
         az - ct_scaled
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::hash_message;
+
+    fn seed32(byte: u8) -> Vec<u8> {
+        vec![byte; 32]
+    }
+
+    impl Default for Dilithium {
+        fn default() -> Self {
+            Dilithium::new(crate::params::DEFAULT_SECURITY_LEVEL)
+        }
+    }
+
+    #[test]
+    fn expand_seed_is_deterministic_and_lengths_match() {
+        let seed = seed32(7);
+        let (rho1, rho_prime1, k1) = Dilithium::expand_seed(&seed);
+        let (rho2, rho_prime2, k2) = Dilithium::expand_seed(&seed);
+
+        assert_eq!(rho1, rho2);
+        assert_eq!(rho_prime1, rho_prime2);
+        assert_eq!(k1, k2);
+
+        assert_eq!(rho1.len(), 32);
+        assert_eq!(rho_prime1.len(), 32);
+        assert_eq!(k1.len(), 32);
+    }
+
+    #[test]
+    fn keygen_is_deterministic_for_fixed_seed() {
+        let seed = seed32(42);
+
+        // create two independent instances
+        let d1 = Dilithium::default();
+        let d2 = Dilithium::default();
+
+        let kp1 = d1.keygen::<FieldElement>(Some(&seed));
+        let kp2 = d2.keygen::<FieldElement>(Some(&seed));
+
+        // Public keys: ensure the derived t (high bits of t) are identical.
+        assert_eq!(kp1.public_key.t, kp2.public_key.t);
+
+        // Private parts should also be identical (s1 and s2)
+        assert_eq!(kp1.private_key.s1, kp2.private_key.s1);
+        assert_eq!(kp1.private_key.s2, kp2.private_key.s2);
+    }
+
+    #[test]
+    fn keygen_with_different_seeds_produces_different_keys() {
+        let d = Dilithium::default();
+        let kp1 = d.keygen::<FieldElement>(Some(&seed32(1)));
+        let kp2 = d.keygen::<FieldElement>(Some(&seed32(2)));
+        // At least one of the secret vectors should differ with high probability.
+        assert!(
+            kp1.private_key.s1 != kp2.private_key.s1
+                || kp1.private_key.s2 != kp2.private_key.s2
+                || kp1.public_key.t != kp2.public_key.t
+        );
+    }
+
+    #[test]
+    fn t1_matches_high_bits_of_a_s1_plus_s2() {
+        let dil = Dilithium::default();
+        let kp = dil.keygen::<FieldElement>(Some(&seed32(99)));
+
+        let t = &kp.public_key.m * &kp.private_key.s1 + &kp.private_key.s2;
+        let t1 = dil.high_bits::<FieldElement>(&t);
+
+        assert_eq!(t1, kp.public_key.t);
+    }
+
+    #[test]
+    fn sample_uniform_has_length_n_and_in_field_range() {
+        let dil = Dilithium::default();
+        let coeffs = dil.sample_uniform(&seed32(5));
+        assert_eq!(coeffs.len(), N);
+        for c in coeffs {
+            assert!((0..Q).contains(&c));
+        }
+    }
+
+    #[test]
+    fn sample_eta_is_centered_bounded_by_eta() {
+        let dil = Dilithium::default();
+        let coeffs = dil.sample_eta(&seed32(11));
+        assert_eq!(coeffs.len(), N);
+
+        let eta = dil.config.eta as i32;
+        for &c in &coeffs {
+            // Because coefficients are reduced mod Q to [0, Q),
+            // the centered absolute value must be <= eta.
+            let centered = std::cmp::min(c, Q - c);
+            assert!(
+                centered <= eta,
+                "centered={} eta={} c={}",
+                centered,
+                eta,
+                c
+            );
+        }
+    }
+
+    #[test]
+    fn sample_s_lengths_match_config() {
+        let dil = Dilithium::default();
+        let (rho, rho_prime, _) = Dilithium::expand_seed(&seed32(123));
+
+        let s1 = dil.sample_s::<FieldElement>(&rho_prime, "s1", dil.config.l);
+        let s2 = dil.sample_s::<FieldElement>(&rho_prime, "s2", dil.config.k);
+
+        assert_eq!(s1.as_slice().len(), dil.config.l);
+        assert_eq!(s2.as_slice().len(), dil.config.k);
+
+        // Ensure values look small in infinity norm as they come from eta sampler.
+        assert!(s1.norm_infinity() <= dil.config.eta);
+        assert!(s2.norm_infinity() <= dil.config.eta);
+
+        // Use rho to build A and verify shapes via multiply
+        let a = dil.expand_a::<FieldElement>(&rho);
+        let w = &a * &s1;
+        assert_eq!(w.as_slice().len(), dil.config.k);
+    }
+
+    #[test]
+    fn sign_and_verify_roundtrip() {
+        let dil = Dilithium::default();
+        let kp = dil.keygen::<FieldElement>(Some(&seed32(77)));
+
+        let msg = b"threshold pq sigs FTW";
+        let randomness = seed32(33);
+        let sig = dil
+            .sign::<FieldElement>(msg, &kp.private_key, Some(&randomness))
+            .expect("sign");
+
+        assert!(dil.verify::<FieldElement>(msg, &sig, &kp.public_key));
+        // a signature should satisfy signature bounds
+        assert!(dil.check_signature_bounds::<FieldElement>(&sig.z, &sig.c));
+        // and our placeholder hint is zero vector
+        assert_eq!(sig.h.norm_infinity(), 0);
+    }
+
+    #[test]
+    fn verify_fails_on_modified_message() {
+        let dil = Dilithium::default();
+        let kp = dil.keygen::<FieldElement>(Some(&seed32(1)));
+
+        let msg = b"hello world";
+        let randomness = seed32(55);
+        let sig = dil
+            .sign::<FieldElement>(msg, &kp.private_key, Some(&randomness))
+            .expect("sign");
+
+        let mut tampered = msg.to_vec();
+        tampered[0] ^= 0x01;
+
+        assert!(!dil.verify::<FieldElement>(&tampered, &sig, &kp.public_key));
+    }
+
+    #[test]
+    fn verify_fails_on_modified_challenge() {
+        let dil = Dilithium::default();
+        let kp = dil.keygen::<FieldElement>(Some(&seed32(9)));
+
+        let msg = b"alter c";
+        let randomness = seed32(99);
+        let sig = dil
+            .sign::<FieldElement>(msg, &kp.private_key, Some(&randomness))
+            .expect("sign");
+
+        // flip the first coefficient of c
+        let mut c_coeffs = sig.c.coefficients().to_vec();
+        let zero = c_coeffs[0] - c_coeffs[0]; // portable zero in field
+                                              // toggle between zero and non-zero
+        c_coeffs[0] = if c_coeffs[0] == zero {
+            // set to 1
+            <i32 as Into<FieldElement>>::into(1)
+        } else {
+            zero
+        };
+        let bad_sig = DilithiumSignature::new(
+            sig.z.clone(),
+            sig.h.clone(),
+            poly!(c_coeffs),
+        );
+
+        assert!(!dil.verify::<FieldElement>(msg, &bad_sig, &kp.public_key));
+    }
+
+    #[test]
+    fn recompute_w_matches_manual_formula() {
+        let dil = Dilithium::default();
+        let kp = dil.keygen::<FieldElement>(Some(&seed32(101)));
+        let msg = b"manual w recompute";
+        let randomness = seed32(202);
+        let sig = dil
+            .sign::<FieldElement>(msg, &kp.private_key, Some(&randomness))
+            .expect("sign");
+
+        let az = &kp.public_key.m * &sig.z;
+        let ct = kp.public_key.t.clone() * sig.c.clone();
+        let ct_scaled = ct * (1u64 << dil.config.d);
+        let expected = az - ct_scaled;
+
+        let recomputed = dil.recompute_w::<FieldElement>(&sig, &kp.public_key);
+        assert_eq!(recomputed, expected);
+    }
+
+    #[test]
+    fn generate_challenge_has_small_norm_and_reasonable_weight() {
+        let dil = Dilithium::default();
+
+        let msg = b"challenge test";
+        let mu = hash_message(msg);
+
+        // Construct w1 like signing does
+        let randomness = seed32(77);
+        let (rho, _, _) = Dilithium::expand_seed(&randomness);
+        let a = dil.expand_a::<FieldElement>(&rho);
+        let y = dil.sample_y::<FieldElement>(&randomness, 0);
+        let w = &a * &y;
+        let w1 = dil.high_bits::<FieldElement>(&w);
+
+        let c = dil.generate_challenge::<FieldElement>(&mu, &w1);
+        // Challenge polynomial should be very sparse with ±1 entries
+        assert!(c.norm_infinity() <= 1);
+
+        // Count non-zeros; since positions are sampled with possible collisions,
+        // the count must be <= tau.
+        let coeffs = c.coefficients();
+        let zero = coeffs[0] - coeffs[0];
+        let nonzeros = coeffs.iter().filter(|&&x| x != zero).count();
+        assert!(nonzeros <= dil.config.tau);
+    }
+
+    #[test]
+    fn z_bounds_hold_for_signature() {
+        let dil = Dilithium::default();
+        let kp = dil.keygen::<FieldElement>(Some(&seed32(121)));
+        let msg = b"bounds test";
+        let sig = dil
+            .sign::<FieldElement>(msg, &kp.private_key, Some(&seed32(88)))
+            .expect("sign");
+        assert!(dil.check_z_bounds::<FieldElement>(&sig.z));
+        assert!(dil.check_signature_bounds::<FieldElement>(&sig.z, &sig.c));
     }
 }
