@@ -2,6 +2,7 @@
 members = [
     "core",
     "math",
+    "logic"
 ]
 
 
