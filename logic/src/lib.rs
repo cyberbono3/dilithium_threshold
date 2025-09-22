@@ -1,14 +1,9 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
+#[allow(clippy::module_inception)]
+pub mod hash;
+pub mod keypair;
+pub mod matrix;
+pub mod params;
+pub mod poly;
+pub mod sign;
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub mod tests;

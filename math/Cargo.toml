@@ -23,8 +23,3 @@ itertools = "0.13"
 proptest = "1.5"
 proptest-arbitrary-interop = "0.1"
 test-strategy = "0.4"
-
-[dev-dependencies.cargo-husky]
-version = "1"
-default-features = false
-features = ["user-hooks"]

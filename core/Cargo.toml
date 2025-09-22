@@ -15,7 +15,3 @@ thiserror = { version = "1.0", default-features = false }
 sha2 = "0.10"
 arbitrary = { version = "1", features = ["derive"] }
 
-[dev-dependencies.cargo-husky]
-version = "1"
-default-features = false
-features = ["user-hooks"]
