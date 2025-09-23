@@ -124,6 +124,37 @@ pub fn keygen<FF: FiniteField + From<i64>>()
     (pk, sk)
 }
 
+
+pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
+    rho: [u8; 32],
+    s1_seed: [u8; 32],
+    s2_seed: [u8; 32],
+) -> (PublicKey<'static, FF>, SecretKey<'static, FF>) {
+    let a = expand_a_from_rho(rho);
+    let s1: [Polynomial<'static, FF>; L] = std::array::from_fn(|j| {
+        let mut inp = Vec::new();
+        inp.extend_from_slice(&s1_seed);
+        inp.extend_from_slice(&(j as u16).to_le_bytes());
+        let bs1 = shake256(2 * N, &inp);
+        cbd_eta2::<FF>(&bs1)
+    });
+    let s2: [Polynomial<'static, FF>; K] = std::array::from_fn(|j| {
+        let mut inp = Vec::new();
+        inp.extend_from_slice(&s2_seed);
+        inp.extend_from_slice(&(j as u16).to_le_bytes());
+        let bs2 = shake256(2 * N, &inp);
+        cbd_eta2::<FF>(&bs2)
+    });
+    let t_vec = mat_vec_mul(&a, &s1);
+    let t: [Polynomial<'static, FF>; K] = std::array::from_fn(|i| {
+        let mut sum = t_vec[i].clone();
+        sum += s2[i].clone();
+        sum
+    });
+    (PublicKey { a: a.clone(), t, rho }, SecretKey { a, s1, s2 })
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,6 +232,27 @@ mod tests {
         }
         for i in 0..K {
             assert_eq!(pk.t[i], expected_t[i], "t mismatch at row {}", i);
+        }
+    }
+
+    #[test]
+    fn keygen_is_deterministic_given_seeds() {
+        let rho = [3u8; 32];
+        let s1 = [5u8; 32];
+        let s2 = [7u8; 32];
+        let (pk1, sk1) = keygen_with_seeds::<FieldElement>(rho, s1, s2);
+        let (pk2, sk2) = keygen_with_seeds::<FieldElement>(rho, s1, s2);
+
+        // Matrices and secrets identical
+        assert_eq!(pk1.a.a, pk2.a.a);
+        for i in 0..K {
+            assert_eq!(sk1.s2[i], sk2.s2[i]);
+        }
+        for j in 0..L {
+            assert_eq!(sk1.s1[j], sk2.s1[j]);
+        }
+        for i in 0..K {
+            assert_eq!(pk1.t[i], pk2.t[i]);
         }
     }
 }

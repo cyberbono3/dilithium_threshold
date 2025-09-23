@@ -40,12 +40,15 @@ pub fn mat_vec_mul<FF: FiniteField>(
     a: &MatrixA<FF>,
     y: &[Polynomial<FF>; L],
 ) -> [Polynomial<'static, FF>; K] {
-    let mut out = [
-        Polynomial::zero(),
-        Polynomial::zero(),
-        Polynomial::zero(),
-        Polynomial::zero(),
-    ];
+    // let mut out = [
+    //     Polynomial::zero(),
+    //     Polynomial::zero(),
+    //     Polynomial::zero(),
+    //     Polynomial::zero(),
+    // ];
+    let mut out: [Polynomial<'static, FF>; K] =
+        std::array::from_fn(|_| Polynomial::zero());
+
     for i in 0..K {
         let mut acc = Polynomial::zero();
         for j in 0..L {

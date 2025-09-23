@@ -21,7 +21,6 @@ pub fn shake256(out_len: usize, input: &[u8]) -> Vec<u8> {
     out
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,4 +63,3 @@ mod tests {
     xof_smoke_tests!(shake128_suite, crate::hash::shake128);
     xof_smoke_tests!(shake256_suite, crate::hash::shake256);
 }
-
