@@ -30,16 +30,16 @@ fn cbd_eta2<FF: FiniteField + From<i64>>(
     // Each coefficient uses 4 bits: (b0 + b1) - (b2 + b3)
     let mut out = [0i64; N];
     let mut bitpos = 0usize;
-    for i in 0..N {
+    for out_i in out.iter_mut().take(N) {
         let mut bits = 0u32;
         // pull 2 bytes (16 bits) for simplicity
         let byte_idx = bitpos / 8;
         let two =
             u16::from_le_bytes([stream[byte_idx], stream[byte_idx + 1]]) as u32;
         bits = two;
-        let a0 = ((bits >> 0) & 1) + ((bits >> 1) & 1);
+        let a0 = (bits & 1) + ((bits >> 1) & 1);
         let a1 = ((bits >> 2) & 1) + ((bits >> 3) & 1);
-        out[i] = (a0 as i64) - (a1 as i64); // in [-2,2]
+        *out_i = (a0 as i64) - (a1 as i64); // in [-2,2]
         bitpos += 4;
     }
     out.into()
