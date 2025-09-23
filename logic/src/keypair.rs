@@ -1,13 +1,16 @@
 use std::convert::From;
 
-use crate::hash::shake256;
-
-use crate::matrix::{MatrixA, expand_a_from_rho, mat_vec_mul};
-use crate::params::{ETA, K, L, N};
-use math::{poly::Polynomial, traits::FiniteField};
-
 use num_traits::Zero;
 use rand::RngCore;
+
+use crate::hash::shake256;
+use crate::matrix::{MatrixA, expand_a_from_rho, mat_vec_mul};
+use crate::params::{ETA, K, L, N};
+use crate::utils::random_bytes;
+use math::{poly::Polynomial, traits::FiniteField};
+
+
+
 
 #[derive(Clone, Debug)]
 pub struct PublicKey<'a, FF: FiniteField> {
@@ -54,16 +57,8 @@ pub fn keygen<FF: FiniteField + From<i64>>()
     let a = expand_a_from_rho(rho);
 
     // Expand s1, s2 with SHAKE256 streams (deterministic from seeds)
-    let s1_seed = {
-        let mut tmp = [0u8; 32];
-        rng.fill_bytes(&mut tmp);
-        tmp
-    };
-    let s2_seed = {
-        let mut tmp = [0u8; 32];
-        rng.fill_bytes(&mut tmp);
-        tmp
-    };
+    let s1_seed = random_bytes();
+    let s2_seed = random_bytes();
 
     let mut s1 = [
         Polynomial::zero(),
@@ -96,8 +91,6 @@ pub fn keygen<FF: FiniteField + From<i64>>()
         inbuf.push((i as u8) ^ 0xA5);
         let stream = shake256(2 * N, &inbuf);
         s2[i] = cbd_eta2(&stream);
-        // TODO fix it
-        // debug_assert!(s2[i].c.iter().all(|&x| x.abs() <= ETA));
     }
 
     // t = A*s1 + s2
