@@ -1,18 +1,30 @@
-/*
+use std::convert::{From, Into};
+
+
 use crate::hash::shake256;
 use crate::matrix::{MatrixA, mat_vec_mul};
 use crate::params::{ALPHA, BETA, ETA, GAMMA1, GAMMA2, K, L, N, Q, TAU};
-use crate::poly::{Poly, centered, mod_q};
+use crate::poly::mod_q;
+use math::{
+    poly::Polynomial,
+    traits::FiniteField,
+};
+
+
+
 use rand::RngCore;
+use num_traits::Zero;
+
 
 #[derive(Clone, Debug)]
-pub struct Signature {
-    pub z: [Poly; L],
-    pub c: Poly, // challenge polynomial with TAU non-zeros in {-1,0,1}
+pub struct Signature<'a, FF: FiniteField> {
+    pub z: [Polynomial<'a, FF>; L],
+    pub c: Polynomial<'a, FF>, // challenge polynomial with TAU non-zeros in {-1,0,1}
 }
 
 fn high_low_bits(x: i64) -> (i64, i64) {
     // Input x is taken modulo q
+    //TODO mod_q does not needed, address it 
     let x0 = mod_q(x);
     // w1 = floor(x / ALPHA), w0 = x - w1*ALPHA adjusted to centered (-ALPHA/2, ALPHA/2]
     let w1 = x0 / ALPHA;
@@ -23,32 +35,34 @@ fn high_low_bits(x: i64) -> (i64, i64) {
     (w1, w0)
 }
 
-fn poly_high_low(p: &Poly) -> (Poly, Poly) {
+fn poly_high_low<FF: FiniteField + From<FF> + From<i64>  >(p: &Polynomial<'_, FF>) -> (Polynomial<'static, FF>, Polynomial<'static, FF>) where i64: From<FF>  {
     let mut hi = [0i64; N];
     let mut lo = [0i64; N];
     for i in 0..N {
-        let (h, l) = high_low_bits(p.c[i]);
+        // TODO add error handling
+        let val = p.coefficients()[i];
+        let (h, l) = high_low_bits(val.into());
         hi[i] = h;
         lo[i] = l;
     }
-    (Poly { c: hi }, Poly { c: lo })
+    (hi.into(), lo.into())
 }
 
-fn poly_high(p: &Poly) -> Poly {
+fn poly_high<FF: FiniteField + From<FF> + From<i64>>(p: &Polynomial<'_, FF>) -> Polynomial<'static, FF> where i64: From<FF> {
     poly_high_low(p).0
 }
 
-fn poly_low(p: &Poly) -> Poly {
+fn poly_low<FF: FiniteField + From<i64>>(p: &Polynomial<'_, FF>) -> Polynomial<'static, FF> where i64: From<FF>  {
     poly_high_low(p).1
 }
 
 /// Pack w1 (k polys of small integers) into bytes for hashing.
 /// For ML-DSA-44, w1 coeffs are in 0..=43 (6 bits). We'll store as u16 for simplicity.
-fn pack_w1_for_hash(w1: &[Poly; K]) -> Vec<u8> {
+fn pack_w1_for_hash<FF: FiniteField + Into<u16> >(w1: &[Polynomial<'_, FF>; K]) -> Vec<u8> {
     let mut out = Vec::with_capacity(K * N * 2);
     for i in 0..K {
-        for &v in &w1[i].c {
-            let u = v as u16;
+        for v in w1[i].coefficients() {
+            let u: u16 = (*v).into();
             out.extend_from_slice(&u.to_le_bytes());
         }
     }
@@ -56,8 +70,8 @@ fn pack_w1_for_hash(w1: &[Poly; K]) -> Vec<u8> {
 }
 
 /// Sample masking y in [-GAMMA1, GAMMA1] deterministically from a seed.
-fn sample_y(seed: &[u8], ctr: u32) -> [Poly; L] {
-    let mut out = [Poly::zero(), Poly::zero(), Poly::zero(), Poly::zero()];
+fn sample_y<FF: FiniteField + From<i64>>(seed: &[u8], ctr: u32) -> [Polynomial<'static, FF>; L] {
+    let mut out = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
     for j in 0..L {
         let mut inp = Vec::new();
         inp.extend_from_slice(seed);
@@ -75,14 +89,14 @@ fn sample_y(seed: &[u8], ctr: u32) -> [Poly; L] {
             let r = (v % m + m) % m;
             c[i] = r - GAMMA1; // centered
         }
-        out[j] = Poly { c };
+        out[j] = c.into();
     }
     out
 }
 
 /// Build a sparse ternary polynomial c with TAU nonzeros in {-1, +1},
 /// derived from H(M || w1_pack). Uses SHAKE256 as a PRF.
-fn derive_challenge(m: &[u8], w1_pack: &[u8]) -> Poly {
+fn derive_challenge<FF: FiniteField + From<i64> >(m: &[u8], w1_pack: &[u8]) -> Polynomial<'static, FF> {
     let mut seed = Vec::with_capacity(m.len() + w1_pack.len());
     seed.extend_from_slice(m);
     seed.extend_from_slice(w1_pack);
@@ -109,18 +123,18 @@ fn derive_challenge(m: &[u8], w1_pack: &[u8]) -> Poly {
             filled += 1;
         }
     }
-    Poly { c }
+    c.into()
 }
 
 /// Sign according to the (uncompressed) template in Fig. 1 of the spec/paper.
 /// z = y + c*s1; checks: ||z||_∞ < GAMMA1 - BETA,  ||LowBits(Ay - c*s2)||_∞ < GAMMA2 - BETA
-pub fn sign(
-    sk_a: &MatrixA,
-    s1: &[Poly; L],
-    s2: &[Poly; K],
-    t: &[Poly; K],
+pub fn sign<FF: FiniteField + Into<u16> + From<i64> >(
+    sk_a: &MatrixA<'_, FF>,
+    s1: &[Polynomial<'_, FF>; L],
+    s2: &[Polynomial<'_, FF>; K],
+    t: &[Polynomial<'_, FF>; K],
     msg: &[u8],
-) -> Signature {
+) -> Signature<'static, FF> where i64: From<FF>  {
     // Hedged/deterministic seed (simple approach: H(msg) as seed for y)
     let y_seed = shake256(32, msg);
 
@@ -140,28 +154,30 @@ pub fn sign(
         let c = derive_challenge(msg, &w1_pack);
 
         // z = y + c*s1 (component-wise in Rq)
-        let mut z = [Poly::zero(), Poly::zero(), Poly::zero(), Poly::zero()];
+        let mut z = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
         for j in 0..L {
-            let cj_s1 = c.mul(&s1[j]);
+            // TODO remove remove by immplementing new traits for Polynomial
+            let cj_s1 = c.clone() * s1[j].clone();
             let mut z_j = y[j].clone();
-            z_j.add_assign(&cj_s1);
+            z_j += cj_s1.clone();
             z[j] = z_j;
         }
 
         // First reject check: ||z||_∞ < GAMMA1 - BETA
-        let ok1 = z.iter().all(|p| p.norm_inf() < (GAMMA1 - BETA));
+        let ok1 = z.iter().all(|p|(p.norm_infinity() as i64) < (GAMMA1 - BETA));
 
         // Second reject check: ||LowBits(Ay - c*s2, 2*GAMMA2)||_∞ < GAMMA2 - BETA
-        let mut cs2 = [Poly::zero(), Poly::zero(), Poly::zero(), Poly::zero()];
+        let mut cs2 = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
         for i in 0..K {
-            cs2[i] = c.mul(&s2[i]);
+            cs2[i] = c.clone() * s2[i].clone();
         }
         let mut ay_minus_cs2 = w.clone();
         for i in 0..K {
-            ay_minus_cs2[i].sub_assign(&cs2[i]);
+            // TODO implemenet SubAssign for 
+            ay_minus_cs2[i] = ay_minus_cs2[i].clone() - cs2[i].clone();
         }
         let w0 = ay_minus_cs2.map(|p| poly_low(&p));
-        let ok2 = w0.iter().all(|p| p.norm_inf() < (GAMMA2 - BETA));
+        let ok2 = w0.iter().all(|p| (p.norm_infinity() as i64)  < (GAMMA2 - BETA));
 
         if ok1 && ok2 {
             return Signature { z, c };
@@ -175,14 +191,14 @@ pub fn sign(
 /// 1) compute w1' = HighBits(Az - c t, 2*GAMMA2)
 /// 2) check ||z||_∞ < GAMMA1 - BETA
 /// 3) check c == H(M || pack(w1'))
-pub fn verify(
-    pk_a: &MatrixA,
-    t: &[Poly; K],
+pub fn verify<FF: FiniteField + From<i64> + Into<u16> + From<FF> + Into<i64> + 'static >(
+    pk_a: &MatrixA<'_, FF>,
+    t: &[Polynomial<'_, FF>; K],
     msg: &[u8],
-    sig: &Signature,
-) -> bool {
+    sig: &Signature<'_, FF>,
+) -> bool where i64: From<FF>{
     // ||z||_∞ < GAMMA1 - BETA
-    if !sig.z.iter().all(|p| p.norm_inf() < (GAMMA1 - BETA)) {
+    if !sig.z.iter().all(|p| (p.norm_infinity() as i64)  < (GAMMA1 - BETA)) {
         return false;
     }
 
@@ -190,13 +206,14 @@ pub fn verify(
     let az = mat_vec_mul(pk_a, &sig.z);
 
     // Compute c*t (k polys), subtract: Az - c*t
-    let mut c_t = [Poly::zero(), Poly::zero(), Poly::zero(), Poly::zero()];
+    let mut c_t = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
     for i in 0..K {
-        c_t[i] = sig.c.mul(&t[i]);
+        // TODO make trait for mul &
+        c_t[i] = sig.c.clone() * t[i].clone();
     }
     let mut az_minus_ct = az.clone();
     for i in 0..K {
-        az_minus_ct[i].sub_assign(&c_t[i]);
+        az_minus_ct[i] = az_minus_ct[i].clone() - c_t[i].clone();
     }
 
     // w1' high bits
@@ -209,7 +226,6 @@ pub fn verify(
     c2 == sig.c
 }
 
-*/
 
 // #[cfg(test)]
 // mod tests {

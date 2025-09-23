@@ -24,11 +24,11 @@ pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(rho: [u8; 32
             seed.extend_from_slice(&(i as u16).to_le_bytes());
             seed.extend_from_slice(&(j as u16).to_le_bytes());
             let stream = shake128(4 * N, &seed); // 4*N bytes -> N u32s
-            let mut coeffs = [0i64; N];
+            let mut coeffs = [0u32; N];
             for t in 0..N {
                 let b = &stream[4 * t..4 * t + 4];
-                let v = u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as i64;
-                coeffs[t] = mod_q(v % Q); // simple mod (note: slight bias; ok educationally)
+                let v = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+                coeffs[t] = v; 
             }
             row.push(Polynomial::from(coeffs));
         }

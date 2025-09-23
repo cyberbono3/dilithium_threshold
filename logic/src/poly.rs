@@ -1,6 +1,8 @@
 use crate::params::{N, Q};
 use core::ops::{Add, Sub};
 
+use math::field_element::FieldElement;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Poly {
     pub c: [i64; N],
@@ -73,11 +75,14 @@ impl Poly {
 
 /// Modular reduction to [0, Q)
 pub fn mod_q(x: i64) -> i64 {
-    let mut r = x % Q;
-    if r < 0 {
-        r += Q;
-    }
-    r
+//     let mut r = x % Q;
+//     if r < 0 {
+//         r += Q;
+//     }
+//     r
+    let fe = FieldElement::from(x);
+    fe.into()
+       
 }
 
 /// Center to (-Q/2, Q/2]
