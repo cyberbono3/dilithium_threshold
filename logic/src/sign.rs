@@ -286,6 +286,133 @@ where
     c2 == sig.c
 }
 
+
+// mod tests {
+//     use super::*;
+//     use crate::keypair::{keygen_with_seeds, PublicKey, SecretKey};
+//     use math::field_element::FieldElement;
+
+//     #[test]
+//     fn high_low_bits_roundtrip_and_bounds() {
+//         // hit edges and arbitrary values
+//         let tests = [
+//             -5, -1, 0, 1, 5,
+//             ALPHA - 1, ALPHA, ALPHA + 1,
+//             2 * ALPHA + 3, Q - 1, Q, Q + 1, Q + 3 * ALPHA + 7
+//         ];
+//         for &x in &tests {
+//             let (h, l) = super::high_low_bits(x);
+//             // round trip modulo Q
+//             let recomposed = (h * ALPHA + l) % Q;
+//             assert_eq!(mod_q(x), mod_q(recomposed));
+//             // l in (-ALPHA/2, ALPHA/2]
+//             assert!(l <= ALPHA / 2 && l > -ALPHA / 2, "l={} out of range", l);
+//         }
+//     }
+
+//     #[test]
+//     fn poly_high_low_roundtrip() {
+//         // build an arbitrary polynomial with values across range
+//         let mut a = [0i64; N];
+//         a[0] = -Q - 5;
+//         a[1] = -1;
+//         a[2] = 0;
+//         a[3] = 1;
+//         a[4] = Q - 1;
+//         a[5] = Q + 7;
+//         let p: Polynomial<'static, FieldElement> = a.into();
+
+//         let (hi, lo) = super::poly_high_low(&p);
+//         // hi*ALPHA + lo == p (mod q) coefficientwise
+//         for (h, l, orig) in izip::izip!(hi.coefficients(), lo.coefficients(), p.coefficients()) {
+//             let rec = ((*h as i64) * ALPHA + (*l as i64)) % Q;
+//             assert_eq!(mod_q(*orig as i64), mod_q(rec));
+//         }
+//     }
+
+//     #[test]
+//     fn derive_challenge_has_tau_nonzeros_and_is_deterministic() {
+//         let msg = b"derive_challenge";
+//         // prepare a small w1 pack: just zeros of correct size
+//         let zero: Polynomial<'static, FieldElement> = [0i64; N].into();
+//         let w1 = [zero.clone(), zero.clone(), zero.clone(), zero.clone()];
+//         let pack = super::pack_w1_for_hash(&w1);
+//         let c1 = super::derive_challenge::<FieldElement>(msg, &pack);
+//         let c2 = super::derive_challenge::<FieldElement>(msg, &pack);
+//         assert_eq!(c1, c2);
+
+//         // exactly TAU non-zeros, and each is ±1
+//         let mut nz = 0;
+//         for v in c1.coefficients().iter() {
+//             let iv: i64 = (*v).into();
+//             if iv != 0 {
+//                 nz += 1;
+//                 assert!(iv == 1 || iv == -1);
+//             }
+//         }
+//         assert_eq!(nz, TAU);
+//     }
+
+//     #[test]
+//     fn sample_y_range_and_reproducibility() {
+//         let seed = b"seed";
+//         let y1 = super::sample_y::<FieldElement>(seed, 0);
+//         let y2 = super::sample_y::<FieldElement>(seed, 0);
+//         assert_eq!(y1, y2);
+
+//         // all coeffs are in [-GAMMA1, GAMMA1]
+//         for p in &y1 {
+//             for v in p.coefficients() {
+//                 let vi: i64 = (*v).into();
+//                 assert!(-GAMMA1 <= vi && vi <= GAMMA1);
+//             }
+//         }
+
+//         // counter changes sequence
+//         let y3 = super::sample_y::<FieldElement>(seed, 1);
+//         assert_ne!(y1, y3);
+//     }
+
+//     #[test]
+//     fn verify_fails_if_z_is_tampered() {
+//         // deterministic keypair for stable test
+//         let rho = [1u8; 32];
+//         let s1 = [2u8; 32];
+//         let s2 = [3u8; 32];
+//         let (pk, sk) = keygen_with_seeds::<FieldElement>(rho, s1, s2);
+
+//         let msg = b"tamper z";
+//         let mut sig = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+
+//         // Flip one z coeff
+//         let z0 = sig.z[0].coefficients()[0];
+//         let mut flip = [0i64; N];
+//         flip[0] = 1;
+//         let add1: Polynomial<'static, FieldElement> = flip.into();
+//         sig.z[0] = sig.z[0].clone() + add1;
+
+//         assert!(!super::verify::<FieldElement>(&pk.a, &pk.t, msg, &sig));
+//     }
+
+//     #[test]
+//     fn verify_fails_if_c_is_tampered() {
+//         let rho = [11u8; 32];
+//         let s1 = [12u8; 32];
+//         let s2 = [13u8; 32];
+//         let (pk, sk) = keygen_with_seeds::<FieldElement>(rho, s1, s2);
+
+//         let msg = b"tamper c";
+//         let mut sig = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+
+//         // flip a challenge coefficient (still within {-1,0,1})
+//         let mut c = [0i64; N];
+//         c[0] = 1;
+//         sig.c = c.into();
+
+//         assert!(!super::verify::<FieldElement>(&pk.a, &pk.t, msg, &sig));
+//     }
+// }
+
 // #[cfg(test)]
 // mod tests {
 //     use crate::keypair::keygen;

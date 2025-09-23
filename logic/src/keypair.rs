@@ -177,13 +177,6 @@ mod tests {
         assert_eq!(sk.s1.len(), L);
         assert_eq!(sk.s2.len(), K);
 
-        // // Secret coeff bounds
-        // for j in 0..L {
-        //     assert!(sk.s1[j].coefficients().iter().all(|&x| x.abs() <= ETA));
-        // }
-        // for i in 0..K {
-        //     assert!(sk.s2[i].c.iter().all(|&x| x.abs() <= ETA));
-        // }
     }
 
     #[test]
