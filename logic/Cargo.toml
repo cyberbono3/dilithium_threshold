@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+math = { path = "../math"}
 sha3 = "0.10"      # SHAKE128/SHAKE256
 rand = "0.8"       # RNG for seeds
 rand_core = "0.6"
+num-traits = "0.2"

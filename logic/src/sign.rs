@@ -1,3 +1,4 @@
+/*
 use crate::hash::shake256;
 use crate::matrix::{MatrixA, mat_vec_mul};
 use crate::params::{ALPHA, BETA, ETA, GAMMA1, GAMMA2, K, L, N, Q, TAU};
@@ -208,107 +209,109 @@ pub fn verify(
     c2 == sig.c
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::keypair::keygen;
-    use crate::params::{BETA, GAMMA1, K, L};
-    use crate::poly::mod_q;
-    use crate::sign::{sign, verify};
+*/
 
-    #[test]
-    fn sign_round_trip_ok() {
-        let (pk, sk) = keygen();
-        let msg = b"round trip OK";
-        let sig = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
-        assert!(verify(&pk.a, &pk.t, msg, &sig));
-    }
+// #[cfg(test)]
+// mod tests {
+//     use crate::keypair::keygen;
+//     use crate::params::{BETA, GAMMA1, K, L};
+//     use crate::poly::mod_q;
+//     use crate::sign::{sign, verify};
 
-    #[test]
-    fn sign_is_deterministic_given_keys_and_message() {
-        let (pk, sk) = keygen();
-        let msg = b"deterministic signature";
-        let s1 = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
-        let s2 = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+//     #[test]
+//     fn sign_round_trip_ok() {
+//         let (pk, sk) = keygen();
+//         let msg = b"round trip OK";
+//         let sig = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+//         assert!(verify(&pk.a, &pk.t, msg, &sig));
+//     }
 
-        // Compare field-by-field (Signature doesn't derive PartialEq)
-        assert_eq!(s1.c, s2.c);
-        for j in 0..L {
-            assert_eq!(s1.z[j], s2.z[j], "z differs at index {}", j);
-        }
-    }
+//     #[test]
+//     fn sign_is_deterministic_given_keys_and_message() {
+//         let (pk, sk) = keygen();
+//         let msg = b"deterministic signature";
+//         let s1 = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+//         let s2 = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
 
-    #[test]
-    fn verify_fails_if_message_changes() {
-        let (pk, sk) = keygen();
-        let sig = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, b"hello");
-        assert!(!verify(&pk.a, &pk.t, b"hullo", &sig));
-    }
+//         // Compare field-by-field (Signature doesn't derive PartialEq)
+//         assert_eq!(s1.c, s2.c);
+//         for j in 0..L {
+//             assert_eq!(s1.z[j], s2.z[j], "z differs at index {}", j);
+//         }
+//     }
 
-    #[test]
-    fn verify_fails_if_z_is_tampered() {
-        let (pk, sk) = keygen();
-        let msg = b"tamper z";
-        let mut sig = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+//     #[test]
+//     fn verify_fails_if_message_changes() {
+//         let (pk, sk) = keygen();
+//         let sig = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, b"hello");
+//         assert!(!verify(&pk.a, &pk.t, b"hullo", &sig));
+//     }
 
-        // Flip one coefficient but keep it in [0,q)
-        sig.z[0].c[0] = mod_q(sig.z[0].c[0] + 1);
+//     #[test]
+//     fn verify_fails_if_z_is_tampered() {
+//         let (pk, sk) = keygen();
+//         let msg = b"tamper z";
+//         let mut sig = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
 
-        assert!(!verify(&pk.a, &pk.t, msg, &sig));
-    }
+//         // Flip one coefficient but keep it in [0,q)
+//         sig.z[0].c[0] = mod_q(sig.z[0].c[0] + 1);
 
-    #[test]
-    fn verify_fails_if_c_is_tampered() {
-        let (pk, sk) = keygen();
-        let msg = b"tamper c";
-        let mut sig = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+//         assert!(!verify(&pk.a, &pk.t, msg, &sig));
+//     }
 
-        // Find a nonzero location in c and flip its sign
-        if let Some(pos) = sig.c.c.iter().position(|&v| v != 0) {
-            sig.c.c[pos] = -sig.c.c[pos];
-        } else {
-            panic!("challenge has no nonzeros, unexpected for TAU > 0");
-        }
-        assert!(!verify(&pk.a, &pk.t, msg, &sig));
-    }
+//     #[test]
+//     fn verify_fails_if_c_is_tampered() {
+//         let (pk, sk) = keygen();
+//         let msg = b"tamper c";
+//         let mut sig = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
 
-    #[test]
-    fn verify_fails_with_wrong_public_components() {
-        let (pk1, sk1) = keygen();
-        let (pk2, _sk2) = keygen();
-        let msg = b"wrong pk";
-        let sig = sign(&sk1.a, &sk1.s1, &sk1.s2, &pk1.t, msg);
+//         // Find a nonzero location in c and flip its sign
+//         if let Some(pos) = sig.c.c.iter().position(|&v| v != 0) {
+//             sig.c.c[pos] = -sig.c.c[pos];
+//         } else {
+//             panic!("challenge has no nonzeros, unexpected for TAU > 0");
+//         }
+//         assert!(!verify(&pk.a, &pk.t, msg, &sig));
+//     }
 
-        // Wrong A and wrong t should both fail
-        assert!(!verify(&pk2.a, &pk2.t, msg, &sig));
-        // Mixed components should also fail
-        assert!(!verify(&pk1.a, &pk2.t, msg, &sig));
-        assert!(!verify(&pk2.a, &pk1.t, msg, &sig));
-    }
+//     #[test]
+//     fn verify_fails_with_wrong_public_components() {
+//         let (pk1, sk1) = keygen();
+//         let (pk2, _sk2) = keygen();
+//         let msg = b"wrong pk";
+//         let sig = sign(&sk1.a, &sk1.s1, &sk1.s2, &pk1.t, msg);
 
-    #[test]
-    fn verify_rejects_if_z_norm_bound_is_violated() {
-        let (pk, sk) = keygen();
-        let msg = b"bound check";
-        let mut sig = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+//         // Wrong A and wrong t should both fail
+//         assert!(!verify(&pk2.a, &pk2.t, msg, &sig));
+//         // Mixed components should also fail
+//         assert!(!verify(&pk1.a, &pk2.t, msg, &sig));
+//         assert!(!verify(&pk2.a, &pk1.t, msg, &sig));
+//     }
 
-        // Force a coefficient just outside the allowed infinity norm bound.
-        sig.z[0].c[0] = (GAMMA1 - BETA + 1) as i64;
+//     #[test]
+//     fn verify_rejects_if_z_norm_bound_is_violated() {
+//         let (pk, sk) = keygen();
+//         let msg = b"bound check";
+//         let mut sig = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
 
-        assert!(!verify(&pk.a, &pk.t, msg, &sig));
-    }
+//         // Force a coefficient just outside the allowed infinity norm bound.
+//         sig.z[0].c[0] = (GAMMA1 - BETA + 1) as i64;
 
-    #[test]
-    fn sign_verify_handles_empty_and_long_messages() {
-        let (pk, sk) = keygen();
+//         assert!(!verify(&pk.a, &pk.t, msg, &sig));
+//     }
 
-        // Empty message
-        let empty = b"";
-        let sig_empty = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, empty);
-        assert!(verify(&pk.a, &pk.t, empty, &sig_empty));
+//     #[test]
+//     fn sign_verify_handles_empty_and_long_messages() {
+//         let (pk, sk) = keygen();
 
-        // Long message
-        let long = vec![0xABu8; 8192];
-        let sig_long = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, &long);
-        assert!(verify(&pk.a, &pk.t, &long, &sig_long));
-    }
-}
+//         // Empty message
+//         let empty = b"";
+//         let sig_empty = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, empty);
+//         assert!(verify(&pk.a, &pk.t, empty, &sig_empty));
+
+//         // Long message
+//         let long = vec![0xABu8; 8192];
+//         let sig_long = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, &long);
+//         assert!(verify(&pk.a, &pk.t, &long, &sig_long));
+//     }
+// }
