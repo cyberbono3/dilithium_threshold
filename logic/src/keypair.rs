@@ -1,23 +1,19 @@
 use std::convert::From;
 
-
 use crate::hash::shake256;
 
 use crate::matrix::{MatrixA, expand_a_from_rho, mat_vec_mul};
 use crate::params::{ETA, K, L, N};
-use math::{
-    poly::Polynomial,
-    traits::FiniteField
-};
+use math::{poly::Polynomial, traits::FiniteField};
 
 use num_traits::Zero;
 use rand::RngCore;
 
 #[derive(Clone, Debug)]
-pub struct PublicKey<'a, FF: FiniteField>  {
-    pub a: MatrixA<'a, FF>,    // uncompressed: include A directly
-    pub t: [Polynomial<'a, FF>; K],  // t = A*s1 + s2
-    pub rho: [u8; 32], // seed used for A (kept for provenance)
+pub struct PublicKey<'a, FF: FiniteField> {
+    pub a: MatrixA<'a, FF>, // uncompressed: include A directly
+    pub t: [Polynomial<'a, FF>; K], // t = A*s1 + s2
+    pub rho: [u8; 32],      // seed used for A (kept for provenance)
 }
 
 #[derive(Clone, Debug)]
@@ -28,7 +24,9 @@ pub struct SecretKey<'a, FF: FiniteField> {
 }
 
 /// CBD for η=2 from an XOF stream
-fn cbd_eta2<FF: FiniteField + From<i64>> (stream: &[u8]) -> Polynomial<'static, FF> {
+fn cbd_eta2<FF: FiniteField + From<i64>>(
+    stream: &[u8],
+) -> Polynomial<'static, FF> {
     // Each coefficient uses 4 bits: (b0 + b1) - (b2 + b3)
     let mut out = [0i64; N];
     let mut bitpos = 0usize;
@@ -47,7 +45,8 @@ fn cbd_eta2<FF: FiniteField + From<i64>> (stream: &[u8]) -> Polynomial<'static, 
     out.into()
 }
 
-pub fn keygen<FF:FiniteField + From<i64>>() -> (PublicKey<'static, FF>, SecretKey<'static, FF>) {
+pub fn keygen<FF: FiniteField + From<i64>>()
+-> (PublicKey<'static, FF>, SecretKey<'static, FF>) {
     // Generate rho (seed for A), and seeds for s1, s2
     let mut rng = rand::thread_rng();
     let mut rho = [0u8; 32];
@@ -66,8 +65,18 @@ pub fn keygen<FF:FiniteField + From<i64>>() -> (PublicKey<'static, FF>, SecretKe
         tmp
     };
 
-    let mut s1 = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
-    let mut s2 = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
+    let mut s1 = [
+        Polynomial::zero(),
+        Polynomial::zero(),
+        Polynomial::zero(),
+        Polynomial::zero(),
+    ];
+    let mut s2 = [
+        Polynomial::zero(),
+        Polynomial::zero(),
+        Polynomial::zero(),
+        Polynomial::zero(),
+    ];
 
     // TODO defien standadlone function
     for j in 0..L {
@@ -78,23 +87,28 @@ pub fn keygen<FF:FiniteField + From<i64>>() -> (PublicKey<'static, FF>, SecretKe
         s1[j] = cbd_eta2(&stream);
         // ensure coefficients in [-ETA, ETA]
         // TODO fix it
-       // debug_assert!(s1[j].c.iter().all(|&x| x.abs() <= ETA));
+        // debug_assert!(s1[j].c.iter().all(|&x| x.abs() <= ETA));
     }
-     // TODO defien standadlone function
+    // TODO defien standadlone function
     for i in 0..K {
         let mut inbuf = Vec::with_capacity(33);
         inbuf.extend_from_slice(&s2_seed);
         inbuf.push((i as u8) ^ 0xA5);
         let stream = shake256(2 * N, &inbuf);
         s2[i] = cbd_eta2(&stream);
-         // TODO fix it
+        // TODO fix it
         // debug_assert!(s2[i].c.iter().all(|&x| x.abs() <= ETA));
     }
 
     // t = A*s1 + s2
     let y = s1.clone(); // reuse shape
     let t_vec = mat_vec_mul(&a, &y).map(|p| p); // A*s1
-    let mut t = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
+    let mut t = [
+        Polynomial::zero(),
+        Polynomial::zero(),
+        Polynomial::zero(),
+        Polynomial::zero(),
+    ];
     for i in 0..K {
         let mut sum = t_vec[i].clone();
         sum += s2[i].clone();
@@ -116,8 +130,8 @@ mod tests {
     use crate::matrix::expand_a_from_rho;
     use crate::matrix::mat_vec_mul;
     use crate::params::{ETA, K, L};
-    use math::poly::Polynomial;
     use math::field_element::FieldElement;
+    use math::poly::Polynomial;
 
     #[test]
     fn keygen_shapes_and_secret_bounds() {
@@ -174,9 +188,13 @@ mod tests {
         let (pk, sk) = keygen::<FieldElement>();
 
         let as1 = mat_vec_mul(&sk.a, &sk.s1);
-        let mut expected_t =
-            [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
-       //expected_t[..K].clone_from_slice(&as1[..K]);
+        let mut expected_t = [
+            Polynomial::zero(),
+            Polynomial::zero(),
+            Polynomial::zero(),
+            Polynomial::zero(),
+        ];
+        //expected_t[..K].clone_from_slice(&as1[..K]);
         for i in 0..K {
             expected_t[i] = as1[i].clone();
             expected_t[i] += sk.s2[i].clone();

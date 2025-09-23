@@ -1,19 +1,18 @@
 use crate::hash::shake128;
 use crate::params::{K, L, N, Q};
 use crate::poly::{Poly, mod_q};
-use math::{
-    poly::Polynomial,
-    traits::FiniteField
-};
+use math::{poly::Polynomial, traits::FiniteField};
 use num_traits::Zero;
 
 #[derive(Clone, Debug)]
-pub struct MatrixA<'a,FF: FiniteField>  {
+pub struct MatrixA<'a, FF: FiniteField> {
     pub a: Vec<Vec<Polynomial<'a, FF>>>, // K x L
 }
 
 /// Expand A from rho using SHAKE128 as XOF (educational: uses modulo reduction).
-pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(rho: [u8; 32]) -> MatrixA<'static, FF> {
+pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(
+    rho: [u8; 32],
+) -> MatrixA<'static, FF> {
     let mut mat = Vec::with_capacity(K);
     for i in 0..K {
         let mut row = Vec::with_capacity(L);
@@ -28,7 +27,7 @@ pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(rho: [u8; 32
             for t in 0..N {
                 let b = &stream[4 * t..4 * t + 4];
                 let v = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
-                coeffs[t] = v; 
+                coeffs[t] = v;
             }
             row.push(Polynomial::from(coeffs));
         }
@@ -37,8 +36,16 @@ pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(rho: [u8; 32
     MatrixA { a: mat }
 }
 
-pub fn mat_vec_mul<FF: FiniteField>(a: &MatrixA<FF>, y: &[Polynomial<FF>; L]) -> [Polynomial<'static, FF>; K] {
-    let mut out = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
+pub fn mat_vec_mul<FF: FiniteField>(
+    a: &MatrixA<FF>,
+    y: &[Polynomial<FF>; L],
+) -> [Polynomial<'static, FF>; K] {
+    let mut out = [
+        Polynomial::zero(),
+        Polynomial::zero(),
+        Polynomial::zero(),
+        Polynomial::zero(),
+    ];
     for i in 0..K {
         let mut acc = Polynomial::zero();
         for j in 0..L {
@@ -55,12 +62,9 @@ pub fn mat_vec_mul<FF: FiniteField>(a: &MatrixA<FF>, y: &[Polynomial<FF>; L]) ->
 mod tests {
     use crate::matrix::{expand_a_from_rho, mat_vec_mul};
     use crate::params::{K, L, N, Q};
-   //use crate::poly::{Poly, mod_q};
+    //use crate::poly::{Poly, mod_q};
     use math::poly::Polynomial;
     use num_traits::Zero;
-
-
-
 
     use math::field_element::FieldElement;
     use math::traits::FiniteField;
@@ -73,7 +77,12 @@ mod tests {
     // }
 
     fn zero_y<FF: FiniteField>() -> [Polynomial<'static, FF>; L] {
-        [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()]
+        [
+            Polynomial::zero(),
+            Polynomial::zero(),
+            Polynomial::zero(),
+            Polynomial::zero(),
+        ]
     }
 
     #[test]

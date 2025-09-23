@@ -471,6 +471,7 @@ impl From<&FieldElement> for i32 {
     }
 }
 
+
 const fn fe_to_i32(fe: &FieldElement) -> i32 {
     let v = fe.canonical_representation();
     if v <= i32::MAX as u32 {

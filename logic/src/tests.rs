@@ -1,28 +1,25 @@
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::keypair::keygen;
-//     use crate::sign::{sign, verify};
 
-//     use math::field_element::FieldElement;
+use crate::keypair::keygen;
+use crate::sign::{sign, verify};
 
-//     #[test]
-//     fn round_trip_sign_verify() {
-//         let (pk, sk) = keygen::<FieldElement>();
+use math::field_element::FieldElement;
 
-//         let msg = b"The lattice rocks: Dilithium / ML-DSA demo!";
-//         let sig = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+#[test]
+fn round_trip_sign_verify() {
+    let (pk, sk) = keygen::<FieldElement>();
 
-//         assert!(verify(&pk.a, &pk.t, msg, &sig));
-//     }
+    let msg = b"The lattice rocks: Dilithium / ML-DSA demo!";
+    let sig = sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
 
-//     #[test]
-//     fn negative_case_wrong_message() {
-//         let (pk, sk) = keygen();
-//         let msg = b"hello world";
-//         let sig = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+    assert!(verify::<FieldElement>(&pk.a, &pk.t, msg, &sig));
+}
 
-//         let wrong = b"hello wurld";
-//         assert!(!verify(&pk.a, &pk.t, wrong, &sig));
-//     }
-// }
+#[test]
+fn negative_case_wrong_message() {
+    let (pk, sk) = keygen::<FieldElement>();
+    let msg = b"hello world";
+    let sig = sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+
+    let wrong = b"hello wurld";
+    assert!(!verify::<FieldElement>(&pk.a, &pk.t, wrong, &sig));
+}

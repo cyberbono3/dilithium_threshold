@@ -1,20 +1,15 @@
-use std::convert::{From, Into};
-
+use core::convert::Into;
+use std::convert::From;
 
 use crate::hash::shake256;
 use crate::matrix::{MatrixA, mat_vec_mul};
 use crate::params::{ALPHA, BETA, ETA, GAMMA1, GAMMA2, K, L, N, Q, TAU};
 use crate::poly::mod_q;
-use math::{
-    poly::Polynomial,
-    traits::FiniteField,
-};
+use math::prelude::FieldElement;
+use math::{poly::Polynomial, traits::FiniteField};
 
-
-
-use rand::RngCore;
 use num_traits::Zero;
-
+use rand::RngCore;
 
 #[derive(Clone, Debug)]
 pub struct Signature<'a, FF: FiniteField> {
@@ -24,7 +19,7 @@ pub struct Signature<'a, FF: FiniteField> {
 
 fn high_low_bits(x: i64) -> (i64, i64) {
     // Input x is taken modulo q
-    //TODO mod_q does not needed, address it 
+    //TODO mod_q does not needed, address it
     let x0 = mod_q(x);
     // w1 = floor(x / ALPHA), w0 = x - w1*ALPHA adjusted to centered (-ALPHA/2, ALPHA/2]
     let w1 = x0 / ALPHA;
@@ -35,7 +30,12 @@ fn high_low_bits(x: i64) -> (i64, i64) {
     (w1, w0)
 }
 
-fn poly_high_low<FF: FiniteField + From<FF> + From<i64>  >(p: &Polynomial<'_, FF>) -> (Polynomial<'static, FF>, Polynomial<'static, FF>) where i64: From<FF>  {
+fn poly_high_low<FF: FiniteField + From<FF> + From<i64>>(
+    p: &Polynomial<'_, FF>,
+) -> (Polynomial<'static, FF>, Polynomial<'static, FF>)
+where
+    i64: From<FF>,
+{
     let mut hi = [0i64; N];
     let mut lo = [0i64; N];
     for i in 0..N {
@@ -48,30 +48,51 @@ fn poly_high_low<FF: FiniteField + From<FF> + From<i64>  >(p: &Polynomial<'_, FF
     (hi.into(), lo.into())
 }
 
-fn poly_high<FF: FiniteField + From<FF> + From<i64>>(p: &Polynomial<'_, FF>) -> Polynomial<'static, FF> where i64: From<FF> {
+fn poly_high<FF: FiniteField + From<FF> + From<i64>>(
+    p: &Polynomial<'_, FF>,
+) -> Polynomial<'static, FF>
+where
+    i64: From<FF>,
+{
     poly_high_low(p).0
 }
 
-fn poly_low<FF: FiniteField + From<i64>>(p: &Polynomial<'_, FF>) -> Polynomial<'static, FF> where i64: From<FF>  {
+fn poly_low<FF: FiniteField + From<i64>>(
+    p: &Polynomial<'_, FF>,
+) -> Polynomial<'static, FF>
+where
+    i64: From<FF>,
+{
     poly_high_low(p).1
 }
 
 /// Pack w1 (k polys of small integers) into bytes for hashing.
 /// For ML-DSA-44, w1 coeffs are in 0..=43 (6 bits). We'll store as u16 for simplicity.
-fn pack_w1_for_hash<FF: FiniteField + Into<u16> >(w1: &[Polynomial<'_, FF>; K]) -> Vec<u8> {
+fn pack_w1_for_hash<FF: FiniteField + Into<[u8; FieldElement::BYTES]>>(
+    w1: &[Polynomial<'_, FF>; K],
+) -> Vec<u8> {
     let mut out = Vec::with_capacity(K * N * 2);
     for i in 0..K {
         for v in w1[i].coefficients() {
-            let u: u16 = (*v).into();
-            out.extend_from_slice(&u.to_le_bytes());
+            //let u: u16 = (*v).try_into()?;
+            let arr: [u8; FieldElement::BYTES] = (*v).into();
+            out.extend_from_slice(&arr);
         }
     }
     out
 }
 
 /// Sample masking y in [-GAMMA1, GAMMA1] deterministically from a seed.
-fn sample_y<FF: FiniteField + From<i64>>(seed: &[u8], ctr: u32) -> [Polynomial<'static, FF>; L] {
-    let mut out = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
+fn sample_y<FF: FiniteField + From<i64>>(
+    seed: &[u8],
+    ctr: u32,
+) -> [Polynomial<'static, FF>; L] {
+    let mut out = [
+        Polynomial::zero(),
+        Polynomial::zero(),
+        Polynomial::zero(),
+        Polynomial::zero(),
+    ];
     for j in 0..L {
         let mut inp = Vec::new();
         inp.extend_from_slice(seed);
@@ -96,7 +117,10 @@ fn sample_y<FF: FiniteField + From<i64>>(seed: &[u8], ctr: u32) -> [Polynomial<'
 
 /// Build a sparse ternary polynomial c with TAU nonzeros in {-1, +1},
 /// derived from H(M || w1_pack). Uses SHAKE256 as a PRF.
-fn derive_challenge<FF: FiniteField + From<i64> >(m: &[u8], w1_pack: &[u8]) -> Polynomial<'static, FF> {
+fn derive_challenge<FF: FiniteField + From<i64>>(
+    m: &[u8],
+    w1_pack: &[u8],
+) -> Polynomial<'static, FF> {
     let mut seed = Vec::with_capacity(m.len() + w1_pack.len());
     seed.extend_from_slice(m);
     seed.extend_from_slice(w1_pack);
@@ -128,13 +152,16 @@ fn derive_challenge<FF: FiniteField + From<i64> >(m: &[u8], w1_pack: &[u8]) -> P
 
 /// Sign according to the (uncompressed) template in Fig. 1 of the spec/paper.
 /// z = y + c*s1; checks: ||z||_∞ < GAMMA1 - BETA,  ||LowBits(Ay - c*s2)||_∞ < GAMMA2 - BETA
-pub fn sign<FF: FiniteField + Into<u16> + From<i64> >(
+pub fn sign<FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64>>(
     sk_a: &MatrixA<'_, FF>,
     s1: &[Polynomial<'_, FF>; L],
     s2: &[Polynomial<'_, FF>; K],
     t: &[Polynomial<'_, FF>; K],
     msg: &[u8],
-) -> Signature<'static, FF> where i64: From<FF>  {
+) -> Signature<'static, FF>
+where
+    i64: From<FF>,
+{
     // Hedged/deterministic seed (simple approach: H(msg) as seed for y)
     let y_seed = shake256(32, msg);
 
@@ -154,7 +181,12 @@ pub fn sign<FF: FiniteField + Into<u16> + From<i64> >(
         let c = derive_challenge(msg, &w1_pack);
 
         // z = y + c*s1 (component-wise in Rq)
-        let mut z = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
+        let mut z = [
+            Polynomial::zero(),
+            Polynomial::zero(),
+            Polynomial::zero(),
+            Polynomial::zero(),
+        ];
         for j in 0..L {
             // TODO remove remove by immplementing new traits for Polynomial
             let cj_s1 = c.clone() * s1[j].clone();
@@ -164,20 +196,29 @@ pub fn sign<FF: FiniteField + Into<u16> + From<i64> >(
         }
 
         // First reject check: ||z||_∞ < GAMMA1 - BETA
-        let ok1 = z.iter().all(|p|(p.norm_infinity() as i64) < (GAMMA1 - BETA));
+        let ok1 = z
+            .iter()
+            .all(|p| (p.norm_infinity() as i64) < (GAMMA1 - BETA));
 
         // Second reject check: ||LowBits(Ay - c*s2, 2*GAMMA2)||_∞ < GAMMA2 - BETA
-        let mut cs2 = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
+        let mut cs2 = [
+            Polynomial::zero(),
+            Polynomial::zero(),
+            Polynomial::zero(),
+            Polynomial::zero(),
+        ];
         for i in 0..K {
             cs2[i] = c.clone() * s2[i].clone();
         }
         let mut ay_minus_cs2 = w.clone();
         for i in 0..K {
-            // TODO implemenet SubAssign for 
+            // TODO implemenet SubAssign for
             ay_minus_cs2[i] = ay_minus_cs2[i].clone() - cs2[i].clone();
         }
         let w0 = ay_minus_cs2.map(|p| poly_low(&p));
-        let ok2 = w0.iter().all(|p| (p.norm_infinity() as i64)  < (GAMMA2 - BETA));
+        let ok2 = w0
+            .iter()
+            .all(|p| (p.norm_infinity() as i64) < (GAMMA2 - BETA));
 
         if ok1 && ok2 {
             return Signature { z, c };
@@ -191,14 +232,28 @@ pub fn sign<FF: FiniteField + Into<u16> + From<i64> >(
 /// 1) compute w1' = HighBits(Az - c t, 2*GAMMA2)
 /// 2) check ||z||_∞ < GAMMA1 - BETA
 /// 3) check c == H(M || pack(w1'))
-pub fn verify<FF: FiniteField + From<i64> + Into<u16> + From<FF> + Into<i64> + 'static >(
+pub fn verify<
+    FF: FiniteField
+        + From<i64>
+        + Into<[u8; FieldElement::BYTES]>
+        + From<FF>
+        + Into<i64>
+        + 'static,
+>(
     pk_a: &MatrixA<'_, FF>,
     t: &[Polynomial<'_, FF>; K],
     msg: &[u8],
     sig: &Signature<'_, FF>,
-) -> bool where i64: From<FF>{
+) -> bool
+where
+    i64: From<FF>,
+{
     // ||z||_∞ < GAMMA1 - BETA
-    if !sig.z.iter().all(|p| (p.norm_infinity() as i64)  < (GAMMA1 - BETA)) {
+    if !sig
+        .z
+        .iter()
+        .all(|p| (p.norm_infinity() as i64) < (GAMMA1 - BETA))
+    {
         return false;
     }
 
@@ -206,7 +261,12 @@ pub fn verify<FF: FiniteField + From<i64> + Into<u16> + From<FF> + Into<i64> + '
     let az = mat_vec_mul(pk_a, &sig.z);
 
     // Compute c*t (k polys), subtract: Az - c*t
-    let mut c_t = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
+    let mut c_t = [
+        Polynomial::zero(),
+        Polynomial::zero(),
+        Polynomial::zero(),
+        Polynomial::zero(),
+    ];
     for i in 0..K {
         // TODO make trait for mul &
         c_t[i] = sig.c.clone() * t[i].clone();
@@ -225,7 +285,6 @@ pub fn verify<FF: FiniteField + From<i64> + Into<u16> + From<FF> + Into<i64> + '
 
     c2 == sig.c
 }
-
 
 // #[cfg(test)]
 // mod tests {
