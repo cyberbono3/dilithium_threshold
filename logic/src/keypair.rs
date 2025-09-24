@@ -9,9 +9,6 @@ use crate::params::{ETA, K, L, N};
 use crate::utils::random_bytes;
 use math::{poly::Polynomial, traits::FiniteField};
 
-
-
-
 #[derive(Clone, Debug)]
 pub struct PublicKey<'a, FF: FiniteField> {
     pub a: MatrixA<'a, FF>, // uncompressed: include A directly
@@ -117,7 +114,6 @@ pub fn keygen<FF: FiniteField + From<i64>>()
     (pk, sk)
 }
 
-
 pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
     rho: [u8; 32],
     s1_seed: [u8; 32],
@@ -144,9 +140,15 @@ pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
         sum += s2[i].clone();
         sum
     });
-    (PublicKey { a: a.clone(), t, rho }, SecretKey { a, s1, s2 })
+    (
+        PublicKey {
+            a: a.clone(),
+            t,
+            rho,
+        },
+        SecretKey { a, s1, s2 },
+    )
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -169,7 +171,6 @@ mod tests {
         assert_eq!(pk.t.len(), K);
         assert_eq!(sk.s1.len(), L);
         assert_eq!(sk.s2.len(), K);
-
     }
 
     #[test]

@@ -34,4 +34,3 @@ fn empty_and_long_messages_round_trip() {
     let sig_long = sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, &long);
     assert!(verify::<FieldElement>(&pk.a, &pk.t, &long, &sig_long));
 }
-

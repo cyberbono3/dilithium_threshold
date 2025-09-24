@@ -11,6 +11,8 @@ use math::{poly::Polynomial, traits::FiniteField};
 use num_traits::Zero;
 use rand::RngCore;
 
+const REJECTION_LIMIT: u32 = 10000;
+
 #[derive(Clone, Debug)]
 pub struct Signature<'a, FF: FiniteField> {
     pub z: [Polynomial<'a, FF>; L],
@@ -150,75 +152,153 @@ fn derive_challenge<FF: FiniteField + From<i64>>(
     c.into()
 }
 
+#[inline]
+fn polyvec_add_scaled_in_place<FF: FiniteField + 'static, const LEN: usize>(
+    dest: &mut [Polynomial<'_, FF>; LEN],
+    base: &[Polynomial<'static, FF>; LEN],
+    scale: &Polynomial<'static, FF>,
+    mult: &[Polynomial<'static, FF>; LEN],
+) {
+    for i in 0..LEN {
+        let mut tmp = base[i].clone();
+        tmp += scale.clone() * mult[i].clone();
+        dest[i] = tmp;
+    }
+}
+
+#[inline]
+fn polyvec_sub_scaled_in_place<FF: FiniteField + 'static, const LEN: usize>(
+    dest: &mut [Polynomial<'_, FF>; LEN],
+    base: &[Polynomial<'_, FF>; LEN],
+    scale: &Polynomial<'_, FF>,
+    mult: &[Polynomial<'_, FF>; LEN],
+) {
+    for i in 0..LEN {
+        dest[i] = base[i].clone() - scale.clone() * mult[i].clone();
+    }
+}
+
+#[inline]
+fn all_infty_norm_below<FF: FiniteField, const LEN: usize>(
+    polys: &[Polynomial<'_, FF>; LEN],
+    bound: i64,
+) -> bool
+where
+    i64: From<FF>,
+{
+    polys.iter().all(|p| (p.norm_infinity() as i64) < bound)
+}
+
+
 /// Sign according to the (uncompressed) template in Fig. 1 of the spec/paper.
 /// z = y + c*s1; checks: ||z||_∞ < GAMMA1 - BETA,  ||LowBits(Ay - c*s2)||_∞ < GAMMA2 - BETA
+// pub fn sign<FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64>>(
+//     sk_a: &MatrixA<'_, FF>,
+//     s1: &[Polynomial<'_, FF>; L],
+//     s2: &[Polynomial<'_, FF>; K],
+//     t: &[Polynomial<'_, FF>; K],
+//     msg: &[u8],
+// ) -> Signature<'static, FF>
+// where
+//     i64: From<FF>,
+// {
+//     // Hedged/deterministic seed (simple approach: H(msg) as seed for y)
+//     let y_seed = shake256(32, msg);
+
+//     // Rejection loop
+//     for ctr in 0u32..10_000 {
+//         // bound to avoid infinite loop in a demo
+//         let y = sample_y(&y_seed, ctr);
+
+//         // w = A*y
+//         let w = mat_vec_mul(sk_a, &y);
+
+//         // w1 = HighBits(w, 2*GAMMA2)
+//         let w1 = w.clone().map(|p| poly_high(&p));
+//         let w1_pack = pack_w1_for_hash(&w1);
+
+//         // challenge c from H(M || w1)
+//         let c = derive_challenge(msg, &w1_pack);
+
+//         // z = y + c*s1 (component-wise in Rq)
+//         let mut z = [
+//             Polynomial::zero(),
+//             Polynomial::zero(),
+//             Polynomial::zero(),
+//             Polynomial::zero(),
+//         ];
+//         for j in 0..L {
+//             // TODO remove remove by immplementing new traits for Polynomial
+//             let cj_s1 = c.clone() * s1[j].clone();
+//             let mut z_j = y[j].clone();
+//             z_j += cj_s1.clone();
+//             z[j] = z_j;
+//         }
+
+//         // First reject check: ||z||_∞ < GAMMA1 - BETA
+//         let ok1 = z
+//             .iter()
+//             .all(|p| (p.norm_infinity() as i64) < (GAMMA1 - BETA));
+
+//         // Second reject check: ||LowBits(Ay - c*s2, 2*GAMMA2)||_∞ < GAMMA2 - BETA
+//         let mut cs2 = [
+//             Polynomial::zero(),
+//             Polynomial::zero(),
+//             Polynomial::zero(),
+//             Polynomial::zero(),
+//         ];
+//         for i in 0..K {
+//             cs2[i] = c.clone() * s2[i].clone();
+//         }
+//         let mut ay_minus_cs2 = w.clone();
+//         for i in 0..K {
+//             // TODO implemenet SubAssign for
+//             ay_minus_cs2[i] = ay_minus_cs2[i].clone() - cs2[i].clone();
+//         }
+//         let w0 = ay_minus_cs2.map(|p| poly_low(&p));
+//         let ok2 = w0
+//             .iter()
+//             .all(|p| (p.norm_infinity() as i64) < (GAMMA2 - BETA));
+
+//         if ok1 && ok2 {
+//             return Signature { z, c };
+//         }
+//     }
+
+//     panic!("sign: rejection sampling failed to converge (demo limit)");
+// }
+
+
+
 pub fn sign<FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64>>(
     sk_a: &MatrixA<'_, FF>,
-    s1: &[Polynomial<'_, FF>; L],
+    s1: &[Polynomial<'static, FF>; L],
     s2: &[Polynomial<'_, FF>; K],
-    t: &[Polynomial<'_, FF>; K],
+    _t: &[Polynomial<'_, FF>; K], // kept for API parity
     msg: &[u8],
 ) -> Signature<'static, FF>
 where
     i64: From<FF>,
 {
-    // Hedged/deterministic seed (simple approach: H(msg) as seed for y)
     let y_seed = shake256(32, msg);
 
-    // Rejection loop
-    for ctr in 0u32..10_000 {
-        // bound to avoid infinite loop in a demo
+    for ctr in 0u32..REJECTION_LIMIT {
         let y = sample_y(&y_seed, ctr);
-
-        // w = A*y
         let w = mat_vec_mul(sk_a, &y);
 
-        // w1 = HighBits(w, 2*GAMMA2)
         let w1 = w.clone().map(|p| poly_high(&p));
         let w1_pack = pack_w1_for_hash(&w1);
-
-        // challenge c from H(M || w1)
         let c = derive_challenge(msg, &w1_pack);
 
-        // z = y + c*s1 (component-wise in Rq)
-        let mut z = [
-            Polynomial::zero(),
-            Polynomial::zero(),
-            Polynomial::zero(),
-            Polynomial::zero(),
-        ];
-        for j in 0..L {
-            // TODO remove remove by immplementing new traits for Polynomial
-            let cj_s1 = c.clone() * s1[j].clone();
-            let mut z_j = y[j].clone();
-            z_j += cj_s1.clone();
-            z[j] = z_j;
-        }
+        let mut z = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
+        polyvec_add_scaled_in_place::<FF, L>(&mut z, &y, &c, s1);
 
-        // First reject check: ||z||_∞ < GAMMA1 - BETA
-        let ok1 = z
-            .iter()
-            .all(|p| (p.norm_infinity() as i64) < (GAMMA1 - BETA));
+        let ok1 = all_infty_norm_below::<FF, L>(&z, (GAMMA1 - BETA) as i64);
 
-        // Second reject check: ||LowBits(Ay - c*s2, 2*GAMMA2)||_∞ < GAMMA2 - BETA
-        let mut cs2 = [
-            Polynomial::zero(),
-            Polynomial::zero(),
-            Polynomial::zero(),
-            Polynomial::zero(),
-        ];
-        for i in 0..K {
-            cs2[i] = c.clone() * s2[i].clone();
-        }
-        let mut ay_minus_cs2 = w.clone();
-        for i in 0..K {
-            // TODO implemenet SubAssign for
-            ay_minus_cs2[i] = ay_minus_cs2[i].clone() - cs2[i].clone();
-        }
+        let mut ay_minus_cs2 = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
+        polyvec_sub_scaled_in_place::<FF, K>(&mut ay_minus_cs2, &w, &c, s2);
         let w0 = ay_minus_cs2.map(|p| poly_low(&p));
-        let ok2 = w0
-            .iter()
-            .all(|p| (p.norm_infinity() as i64) < (GAMMA2 - BETA));
+        let ok2 = all_infty_norm_below::<FF, K>(&w0, (GAMMA2 - BETA) as i64);
 
         if ok1 && ok2 {
             return Signature { z, c };
@@ -228,17 +308,17 @@ where
     panic!("sign: rejection sampling failed to converge (demo limit)");
 }
 
+
 /// Verify (uncompressed template):
 /// 1) compute w1' = HighBits(Az - c t, 2*GAMMA2)
 /// 2) check ||z||_∞ < GAMMA1 - BETA
 /// 3) check c == H(M || pack(w1'))
+// 
+
+
+
 pub fn verify<
-    FF: FiniteField
-        + From<i64>
-        + Into<[u8; FieldElement::BYTES]>
-        + From<FF>
-        + Into<i64>
-        + 'static,
+    FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64> + 'static,
 >(
     pk_a: &MatrixA<'_, FF>,
     t: &[Polynomial<'_, FF>; K],
@@ -248,43 +328,23 @@ pub fn verify<
 where
     i64: From<FF>,
 {
-    // ||z||_∞ < GAMMA1 - BETA
-    if !sig
-        .z
-        .iter()
-        .all(|p| (p.norm_infinity() as i64) < (GAMMA1 - BETA))
-    {
+    if !all_infty_norm_below::<FF, L>(&sig.z, (GAMMA1 - BETA) as i64) {
         return false;
     }
 
-    // Compute Az
     let az = mat_vec_mul(pk_a, &sig.z);
+    let mut az_minus_ct = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
+    polyvec_sub_scaled_in_place::<FF, K>(&mut az_minus_ct, &az, &sig.c, t);
 
-    // Compute c*t (k polys), subtract: Az - c*t
-    let mut c_t = [
-        Polynomial::zero(),
-        Polynomial::zero(),
-        Polynomial::zero(),
-        Polynomial::zero(),
-    ];
-    for i in 0..K {
-        // TODO make trait for mul &
-        c_t[i] = sig.c.clone() * t[i].clone();
-    }
-    let mut az_minus_ct = az.clone();
-    for i in 0..K {
-        az_minus_ct[i] = az_minus_ct[i].clone() - c_t[i].clone();
-    }
-
-    // w1' high bits
     let w1p = az_minus_ct.map(|p| poly_high(&p));
-    let w1p_pack = super::sign::pack_w1_for_hash(&w1p);
+    let w1p_pack = pack_w1_for_hash(&w1p);
 
-    // recompute challenge
     let c2 = derive_challenge(msg, &w1p_pack);
-
     c2 == sig.c
 }
+
+
+
 
 
 // mod tests {
