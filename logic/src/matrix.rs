@@ -1,6 +1,5 @@
 use crate::hash::shake128;
-use crate::params::{K, L, N, Q};
-use crate::poly::{Poly, mod_q};
+use crate::params::{K, L, N};
 use math::{poly::Polynomial, traits::FiniteField};
 use num_traits::Zero;
 

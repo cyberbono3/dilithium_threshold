@@ -5,7 +5,7 @@ use rand::RngCore;
 
 use crate::hash::shake256;
 use crate::matrix::{MatrixA, expand_a_from_rho, mat_vec_mul};
-use crate::params::{ETA, K, L, N};
+use crate::params::{K, L, N};
 use crate::utils::random_bytes;
 use math::{poly::Polynomial, traits::FiniteField};
 
@@ -212,11 +212,13 @@ mod tests {
             Polynomial::zero(),
             Polynomial::zero(),
         ];
-        //expected_t[..K].clone_from_slice(&as1[..K]);
+
         for i in 0..K {
             expected_t[i] = as1[i].clone();
             expected_t[i] += sk.s2[i].clone();
         }
+        // expected_t[..K].clone_from_slice(&as1[..K]);
+        // expected_t[..K].clone_from_slice(&sk.s2[..K]);
         for i in 0..K {
             assert_eq!(pk.t[i], expected_t[i], "t mismatch at row {}", i);
         }

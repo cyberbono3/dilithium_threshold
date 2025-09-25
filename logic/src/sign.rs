@@ -3,13 +3,13 @@ use std::convert::From;
 
 use crate::hash::shake256;
 use crate::matrix::{MatrixA, mat_vec_mul};
-use crate::params::{ALPHA, BETA, ETA, GAMMA1, GAMMA2, K, L, N, Q, TAU};
-use crate::poly::mod_q;
+use crate::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N, TAU};
+
 use math::prelude::FieldElement;
 use math::{poly::Polynomial, traits::FiniteField};
 
 use num_traits::Zero;
-use rand::RngCore;
+
 
 const REJECTION_LIMIT: u32 = 10000;
 
@@ -21,11 +21,10 @@ pub struct Signature<'a, FF: FiniteField> {
 
 fn high_low_bits(x: i64) -> (i64, i64) {
     // Input x is taken modulo q
-    //TODO mod_q does not needed, address it
-    let x0 = mod_q(x);
+
     // w1 = floor(x / ALPHA), w0 = x - w1*ALPHA adjusted to centered (-ALPHA/2, ALPHA/2]
-    let w1 = x0 / ALPHA;
-    let mut w0 = x0 - w1 * ALPHA;
+    let w1 = x / ALPHA;
+    let mut w0 = x - w1 * ALPHA;
     if w0 > ALPHA / 2 {
         w0 -= ALPHA;
     }
@@ -189,7 +188,6 @@ where
     polys.iter().all(|p| (p.norm_infinity() as i64) < bound)
 }
 
-
 /// Sign according to the (uncompressed) template in Fig. 1 of the spec/paper.
 /// z = y + c*s1; checks: ||z||_∞ < GAMMA1 - BETA,  ||LowBits(Ay - c*s2)||_∞ < GAMMA2 - BETA
 // pub fn sign<FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64>>(
@@ -268,8 +266,6 @@ where
 //     panic!("sign: rejection sampling failed to converge (demo limit)");
 // }
 
-
-
 pub fn sign<FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64>>(
     sk_a: &MatrixA<'_, FF>,
     s1: &[Polynomial<'static, FF>; L],
@@ -290,12 +286,22 @@ where
         let w1_pack = pack_w1_for_hash(&w1);
         let c = derive_challenge(msg, &w1_pack);
 
-        let mut z = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
+        let mut z = [
+            Polynomial::zero(),
+            Polynomial::zero(),
+            Polynomial::zero(),
+            Polynomial::zero(),
+        ];
         polyvec_add_scaled_in_place::<FF, L>(&mut z, &y, &c, s1);
 
         let ok1 = all_infty_norm_below::<FF, L>(&z, (GAMMA1 - BETA) as i64);
 
-        let mut ay_minus_cs2 = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
+        let mut ay_minus_cs2 = [
+            Polynomial::zero(),
+            Polynomial::zero(),
+            Polynomial::zero(),
+            Polynomial::zero(),
+        ];
         polyvec_sub_scaled_in_place::<FF, K>(&mut ay_minus_cs2, &w, &c, s2);
         let w0 = ay_minus_cs2.map(|p| poly_low(&p));
         let ok2 = all_infty_norm_below::<FF, K>(&w0, (GAMMA2 - BETA) as i64);
@@ -308,14 +314,11 @@ where
     panic!("sign: rejection sampling failed to converge (demo limit)");
 }
 
-
 /// Verify (uncompressed template):
 /// 1) compute w1' = HighBits(Az - c t, 2*GAMMA2)
 /// 2) check ||z||_∞ < GAMMA1 - BETA
 /// 3) check c == H(M || pack(w1'))
-// 
-
-
+//
 
 pub fn verify<
     FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64> + 'static,
@@ -333,7 +336,12 @@ where
     }
 
     let az = mat_vec_mul(pk_a, &sig.z);
-    let mut az_minus_ct = [Polynomial::zero(), Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
+    let mut az_minus_ct = [
+        Polynomial::zero(),
+        Polynomial::zero(),
+        Polynomial::zero(),
+        Polynomial::zero(),
+    ];
     polyvec_sub_scaled_in_place::<FF, K>(&mut az_minus_ct, &az, &sig.c, t);
 
     let w1p = az_minus_ct.map(|p| poly_high(&p));
@@ -342,10 +350,6 @@ where
     let c2 = derive_challenge(msg, &w1p_pack);
     c2 == sig.c
 }
-
-
-
-
 
 // mod tests {
 //     use super::*;
@@ -475,22 +479,18 @@ where
 
 // #[cfg(test)]
 // mod tests {
+//     use math::prelude::FieldElement;
+
 //     use crate::keypair::keygen;
 //     use crate::params::{BETA, GAMMA1, K, L};
 //     use crate::poly::mod_q;
 //     use crate::sign::{sign, verify};
 
-//     #[test]
-//     fn sign_round_trip_ok() {
-//         let (pk, sk) = keygen();
-//         let msg = b"round trip OK";
-//         let sig = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
-//         assert!(verify(&pk.a, &pk.t, msg, &sig));
-//     }
+
 
 //     #[test]
 //     fn sign_is_deterministic_given_keys_and_message() {
-//         let (pk, sk) = keygen();
+//         let (pk, sk) = keygen::<FieldElement>();
 //         let msg = b"deterministic signature";
 //         let s1 = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
 //         let s2 = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
@@ -504,26 +504,26 @@ where
 
 //     #[test]
 //     fn verify_fails_if_message_changes() {
-//         let (pk, sk) = keygen();
+//         let (pk, sk) = keygen::<FieldElement>();
 //         let sig = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, b"hello");
 //         assert!(!verify(&pk.a, &pk.t, b"hullo", &sig));
 //     }
 
 //     #[test]
 //     fn verify_fails_if_z_is_tampered() {
-//         let (pk, sk) = keygen();
+//         let (pk, sk) = keygen::<FieldElement>();
 //         let msg = b"tamper z";
 //         let mut sig = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
 
 //         // Flip one coefficient but keep it in [0,q)
-//         sig.z[0].c[0] = mod_q(sig.z[0].c[0] + 1);
+//         sig.z[0].leading_coefficient() = mod_q(sig.z[0].c[0] + 1);
 
 //         assert!(!verify(&pk.a, &pk.t, msg, &sig));
 //     }
 
 //     #[test]
 //     fn verify_fails_if_c_is_tampered() {
-//         let (pk, sk) = keygen();
+//         let (pk, sk) = keygen::<FieldElement>();
 //         let msg = b"tamper c";
 //         let mut sig = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
 
@@ -566,14 +566,14 @@ where
 //     fn sign_verify_handles_empty_and_long_messages() {
 //         let (pk, sk) = keygen();
 
-//         // Empty message
-//         let empty = b"";
-//         let sig_empty = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, empty);
+//         Empty message
+//          let empty = b"";
+//          let sig_empty = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, empty);
 //         assert!(verify(&pk.a, &pk.t, empty, &sig_empty));
 
-//         // Long message
+//          // Long message
 //         let long = vec![0xABu8; 8192];
 //         let sig_long = sign(&sk.a, &sk.s1, &sk.s2, &pk.t, &long);
 //         assert!(verify(&pk.a, &pk.t, &long, &sig_long));
 //     }
-// }
+//  }
