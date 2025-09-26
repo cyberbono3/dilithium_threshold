@@ -45,6 +45,36 @@ fn cbd_eta2<FF: FiniteField + From<i64>>(
     out.into()
 }
 
+// Put this near the top of the file (or in a utils module) so `keygen` can call it.
+
+/// Fill `out` with polynomials sampled as:
+///   poly_i = cbd_eta2( SHAKE256(2*N, seed || tag(i)) )
+///
+/// - `out`: destination slice of polynomials (e.g., s1 or s2)
+/// - `seed`: 32‑byte seed (or any length; we only append one tag byte)
+/// - `make_tag`: computes the last byte appended to the seed for index `i`
+fn fill_secret_polys<F, FF: FiniteField + From<i64>>(
+    out: &mut [Polynomial<'static, FF>],
+    seed: &[u8],
+    make_tag: F,
+) where
+    F: Fn(usize) -> u8,
+{
+    // Build "seed || tag" once; mutate the last byte per iteration.
+    let mut inbuf = Vec::with_capacity(seed.len() + 1);
+    inbuf.extend_from_slice(seed);
+    inbuf.push(0u8); // placeholder tag; overwritten below
+
+    for (i, dst) in out.iter_mut().enumerate() {
+        // Set the per-index tag byte.
+        *inbuf.last_mut().expect("tag byte exists") = make_tag(i);
+
+        // Expand and sample.
+        let stream = shake256(2 * N, &inbuf);
+        *dst = cbd_eta2(&stream);
+    }
+}
+
 pub fn keygen<FF: FiniteField + From<i64>>()
 -> (PublicKey<'static, FF>, SecretKey<'static, FF>) {
     // Generate rho (seed for A), and seeds for s1, s2
@@ -70,26 +100,13 @@ pub fn keygen<FF: FiniteField + From<i64>>()
         Polynomial::zero(),
     ];
 
-    // TODO defien standadlone function
-    for j in 0..L {
-        let mut inbuf = Vec::with_capacity(33);
-        inbuf.extend_from_slice(&s1_seed);
-        inbuf.push(j as u8);
-        let stream = shake256(2 * N, &inbuf);
-        s1[j] = cbd_eta2(&stream);
-        // ensure coefficients in [-ETA, ETA]
-        // TODO fix it
-        // debug_assert!(s1[j].c.iter().all(|&x| x.abs() <= ETA));
-    }
-    // TODO defien standadlone function
-    for i in 0..K {
-        let mut inbuf = Vec::with_capacity(33);
-        inbuf.extend_from_slice(&s2_seed);
-        inbuf.push((i as u8) ^ 0xA5);
-        let stream = shake256(2 * N, &inbuf);
-        s2[i] = cbd_eta2(&stream);
-    }
+    // s1: tag = j as u8
+    fill_secret_polys(&mut s1, &s1_seed, |j| j as u8);
 
+    // s2: tag = (i as u8) ^ 0xA5
+    fill_secret_polys(&mut s2, &s2_seed, |i| (i as u8) ^ 0xA5);
+
+    
     // t = A*s1 + s2
     let y = s1.clone(); // reuse shape
     let t_vec = mat_vec_mul(&a, &y).map(|p| p); // A*s1
@@ -155,7 +172,7 @@ mod tests {
     use super::*;
     use crate::matrix::expand_a_from_rho;
     use crate::matrix::mat_vec_mul;
-    use crate::params::{ETA, K, L};
+    use crate::params::{K, L};
     use math::field_element::FieldElement;
     use math::poly::Polynomial;
 

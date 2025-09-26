@@ -10,7 +10,6 @@ use math::{poly::Polynomial, traits::FiniteField};
 
 use num_traits::Zero;
 
-
 const REJECTION_LIMIT: u32 = 10000;
 
 #[derive(Clone, Debug)]
@@ -485,8 +484,6 @@ where
 //     use crate::params::{BETA, GAMMA1, K, L};
 //     use crate::poly::mod_q;
 //     use crate::sign::{sign, verify};
-
-
 
 //     #[test]
 //     fn sign_is_deterministic_given_keys_and_message() {
