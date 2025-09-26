@@ -39,19 +39,16 @@ pub fn mat_vec_mul<FF: FiniteField>(
     a: &MatrixA<FF>,
     y: &[Polynomial<FF>; L],
 ) -> [Polynomial<'static, FF>; K] {
-    let mut out: [Polynomial<'static, FF>; K] =
-        std::array::from_fn(|_| Polynomial::zero());
 
-    for i in 0..K {
-        let mut acc = Polynomial::zero();
-        for j in 0..L {
-            let prod = a.a[i][j].clone() * y[j].clone();
-            acc += prod;
-        }
-        out[i] = acc;
-    }
-
-    out
+    std::array::from_fn(|i| {
+        a.a[i]
+        .iter()
+        .zip(y.iter())
+        .fold(Polynomial::zero(), |mut acc, (aij, yj)|{
+            acc += aij.clone() * yj.clone();
+            acc
+        })
+    })
 }
 
 // TODO add more tests
