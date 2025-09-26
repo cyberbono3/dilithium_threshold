@@ -19,9 +19,6 @@ pub struct Signature<'a, FF: FiniteField> {
 }
 
 fn high_low_bits(x: i64) -> (i64, i64) {
-    // Input x is taken modulo q
-
-    // w1 = floor(x / ALPHA), w0 = x - w1*ALPHA adjusted to centered (-ALPHA/2, ALPHA/2]
     let w1 = x / ALPHA;
     let mut w0 = x - w1 * ALPHA;
     if w0 > ALPHA / 2 {

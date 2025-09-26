@@ -16,11 +16,35 @@ pub struct PublicKey<'a, FF: FiniteField> {
     pub rho: [u8; 32],      // seed used for A (kept for provenance)
 }
 
+impl<'a, FF: FiniteField> PublicKey<'a, FF> {
+    /// Construct a public key from its parts.
+    /// Note: this does not verify that `t == A*s1 + s2`—it just packages fields.
+    pub fn new(
+        a: MatrixA<'a, FF>,
+        t: [Polynomial<'a, FF>; K],
+        rho: [u8; 32],
+    ) -> Self {
+        Self { a, t, rho }
+    }
+}
+
+
 #[derive(Clone, Debug)]
 pub struct SecretKey<'a, FF: FiniteField> {
     pub a: MatrixA<'a, FF>, // include A here for convenience
     pub s1: [Polynomial<'a, FF>; L],
     pub s2: [Polynomial<'a, FF>; K],
+}
+
+impl<'a, FF: FiniteField> SecretKey<'a, FF> {
+    /// Construct a secret key from its parts.
+    pub fn new(
+        a: MatrixA<'a, FF>,
+        s1: [Polynomial<'a, FF>; L],
+        s2: [Polynomial<'a, FF>; K],
+    ) -> Self {
+        Self { a, s1, s2 }
+    }
 }
 
 /// CBD for η=2 from an XOF stream
@@ -122,13 +146,8 @@ pub fn keygen<FF: FiniteField + From<i64>>()
         t[i] = sum;
     }
 
-    let pk = PublicKey {
-        a: a.clone(),
-        t,
-        rho,
-    };
-    let sk = SecretKey { a, s1, s2 };
-    (pk, sk)
+    (PublicKey::new(a.clone(),t, rho), SecretKey::new( a, s1, s2 ))
+
 }
 
 pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
@@ -158,12 +177,8 @@ pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
         sum
     });
     (
-        PublicKey {
-            a: a.clone(),
-            t,
-            rho,
-        },
-        SecretKey { a, s1, s2 },
+        PublicKey::new(a.clone(),t,rho),
+        SecretKey::new(a, s1, s2 ),
     )
 }
 
