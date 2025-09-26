@@ -62,13 +62,6 @@ mod tests {
     use math::field_element::FieldElement;
     use math::traits::FiniteField;
 
-    // TODO fix it
-    // fn unit_poly_at<FF: FiniteField>(idx: usize, val: i64) -> Polynomial<'static, FF> {
-    //     let mut p = Polynomial::zero();
-    //     p.c[idx] = mod_q(val);
-    //     p
-    // }
-
     fn zero_y<FF: FiniteField>() -> [Polynomial<'static, FF>; L] {
         [
             Polynomial::zero(),
