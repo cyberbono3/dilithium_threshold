@@ -192,12 +192,8 @@ pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
     });
 
     (
-        PublicKey {
-            a: a.clone(),
-            t,
-            rho,
-        },
-        SecretKey { a, s1, s2 },
+        PublicKey::new(a.clone(),t,rho),
+        SecretKey::new(a, s1, s2 ),
     )
 }
 
