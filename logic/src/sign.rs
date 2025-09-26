@@ -270,6 +270,151 @@ where
     c2 == sig.c
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*; // brings sign/verify + private helpers into scope
+    use crate::keypair::*;
+    use crate::params::{BETA, GAMMA1, L, N};
+    use math::field_element::FieldElement;
+
+    // Deterministic fixtures for reproducible tests
+    fn keypair_fixture_1<FF:FiniteField + From<i64>>() -> (PublicKey<'static, FF>, SecretKey<'static, FF>, ) {
+        let rho = [0x42u8; 32];
+        let s1 = [0x24u8; 32];
+        let s2 = [0x18u8; 32];
+        keygen_with_seeds::<FF>(rho, s1, s2)
+    }
+
+    fn keypair_fixture_2<FF:FiniteField + From<i64>>() -> (PublicKey<'static, FF>, SecretKey<'static, FF>, ) {
+        let rho = [0xA5u8; 32];
+        let s1 = [0x5Au8; 32];
+        let s2 = [0x33u8; 32];
+        keygen_with_seeds::<FF>(rho, s1, s2)
+    }
+
+    #[test]
+    fn sign_and_verify_roundtrip() {
+        let (pk, sk) = keypair_fixture_1();
+        let msg = b"hello, sign+verify!";
+        let sig = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+        assert!(super::verify::<FieldElement>(&pk.a, &pk.t, msg, &sig));
+    }
+
+    #[test]
+    fn verify_rejects_modified_message() {
+        let (pk, sk) = keypair_fixture_1();
+        let msg = b"immutable message";
+        let sig = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+
+        // Verify against a different message
+        let other = b"immutable message (edited)";
+        assert!(
+            !super::verify::<FieldElement>(&pk.a, &pk.t, other, &sig),
+            "verification must fail if the message changes"
+        );
+    }
+
+    #[test]
+    fn verify_rejects_tampered_z() {
+        let (pk, sk) = keypair_fixture_1();
+        let msg = b"tamper z";
+        let mut sig = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+
+        // Flip one coefficient in z[0]
+        let mut plus_one = [0i64; N];
+        plus_one[0] = 1;
+        let add1: Polynomial<'static, FieldElement> = plus_one.into();
+        sig.z[0] = sig.z[0].clone() + add1;
+
+        assert!(
+            !super::verify::<FieldElement>(&pk.a, &pk.t, msg, &sig),
+            "verification must fail when z is altered"
+        );
+    }
+
+    #[test]
+    fn verify_rejects_tampered_c() {
+        let (pk, sk) = keypair_fixture_1();
+        let msg = b"tamper c";
+        let mut sig = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+
+        // Replace the challenge with a sparse poly that's *not* the derived one
+        let mut c = [0i64; N];
+        c[0] = 1;
+        sig.c = c.into();
+
+        assert!(
+            !super::verify::<FieldElement>(&pk.a, &pk.t, msg, &sig),
+            "verification must fail when c is altered"
+        );
+    }
+
+    #[test]
+    fn verify_fails_with_wrong_public_key() {
+        let (pk1, sk1) = keypair_fixture_1();
+        let (pk2, _sk2) = keypair_fixture_2();
+
+        let msg = b"use the right key, please";
+        let sig = super::sign::<FieldElement>(&sk1.a, &sk1.s1, &sk1.s2, &pk1.t, msg);
+
+        assert!(super::verify::<FieldElement>(&pk1.a, &pk1.t, msg, &sig));
+        assert!(
+            !super::verify::<FieldElement>(&pk2.a, &pk2.t, msg, &sig),
+            "verification must fail under a different public key"
+        );
+    }
+
+    #[test]
+    fn signatures_are_deterministic_for_same_message() {
+        // With the current design (y derived from msg via SHAKE256), signing is deterministic.
+        let (pk, sk) = keypair_fixture_1();
+        let msg = b"deterministic";
+
+        let sig1 = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+        let sig2 = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+
+        // Compare c and each z[i] (Signature doesn't implement PartialEq)
+        assert_eq!(sig1.c, sig2.c);
+        for i in 0..L {
+            assert_eq!(sig1.z[i], sig2.z[i], "z[{}] differs", i);
+        }
+    }
+
+    #[test]
+    fn handles_empty_and_long_messages() {
+        let (pk, sk) = keypair_fixture_1();
+
+        // Empty message
+        let empty = b"";
+        let sig_empty = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, empty);
+        assert!(super::verify::<FieldElement>(&pk.a, &pk.t, empty, &sig_empty));
+
+        // Long message
+        let long = vec![0xABu8; 8192];
+        let sig_long = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, &long);
+        assert!(super::verify::<FieldElement>(&pk.a, &pk.t, &long, &sig_long));
+    }
+
+    #[test]
+    fn z_infinity_norm_is_within_bound() {
+        let (pk, sk) = keypair_fixture_1();
+        let msg = b"bounds check";
+        let sig = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+
+        for (i, poly) in sig.z.iter().enumerate() {
+            let norm = poly.norm_infinity() as i64;
+            assert!(
+                norm < (GAMMA1 - BETA) as i64,
+                "z[{}] ||.||_inf = {} exceeds GAMMA1 - BETA",
+                i,
+                norm
+            );
+        }
+    }
+}
+
+
 // mod tests {
 //     use super::*;
 //     use crate::keypair::{keygen_with_seeds, PublicKey, SecretKey};
