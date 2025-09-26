@@ -140,10 +140,12 @@ pub fn keygen<FF: FiniteField + From<i64>>()
         Polynomial::zero(),
         Polynomial::zero(),
     ];
-    for i in 0..K {
-        let mut sum = t_vec[i].clone();
-        sum += s2[i].clone();
-        t[i] = sum;
+  
+    for ((out, a), b) in t.iter_mut().zip(&t_vec).zip(&s2){
+        *out = std::iter::once(b.clone()).fold(a.clone(), |mut acc, x| {
+            acc += x;
+            acc
+        })
     }
 
     (PublicKey::new(a.clone(),t, rho), SecretKey::new( a, s1, s2 ))
