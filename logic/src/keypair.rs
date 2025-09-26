@@ -150,37 +150,85 @@ pub fn keygen<FF: FiniteField + From<i64>>()
 
 }
 
+// pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
+//     rho: [u8; 32],
+//     s1_seed: [u8; 32],
+//     s2_seed: [u8; 32],
+// ) -> (PublicKey<'static, FF>, SecretKey<'static, FF>) {
+//     let a = expand_a_from_rho(rho);
+//     let s1: [Polynomial<'static, FF>; L] = std::array::from_fn(|j| {
+//         let mut inp = Vec::new();
+//         inp.extend_from_slice(&s1_seed);
+//         inp.extend_from_slice(&(j as u16).to_le_bytes());
+//         let bs1 = shake256(2 * N, &inp);
+//         cbd_eta2::<FF>(&bs1)
+//     });
+//     let s2: [Polynomial<'static, FF>; K] = std::array::from_fn(|j| {
+//         let mut inp = Vec::new();
+//         inp.extend_from_slice(&s2_seed);
+//         inp.extend_from_slice(&(j as u16).to_le_bytes());
+//         let bs2 = shake256(2 * N, &inp);
+//         cbd_eta2::<FF>(&bs2)
+//     });
+//     let t_vec = mat_vec_mul(&a, &s1);
+//     let t: [Polynomial<'static, FF>; K] = std::array::from_fn(|i| {
+//         let mut sum = t_vec[i].clone();
+//         sum += s2[i].clone();
+//         sum
+//     });
+//     (
+//         PublicKey::new(a.clone(),t,rho),
+//         SecretKey::new(a, s1, s2 ),
+//     )
+// }
+
+#[inline]
+fn expand_secret_array<const LEN: usize, FF>(
+    seed: impl AsRef<[u8]>,
+) -> [math::poly::Polynomial<'static, FF>; LEN]
+where
+    FF: math::traits::FiniteField + From<i64>,
+{
+    use std::array::from_fn;
+    let seed = seed.as_ref();
+
+    from_fn(|j| {
+        let mut inp = Vec::with_capacity(seed.len() + 2);
+        inp.extend_from_slice(seed);
+        // match keygen_with_seeds: index encoded as little-endian u16
+        inp.extend_from_slice(&(j as u16).to_le_bytes());
+        let bytes = crate::hash::shake256(2 * crate::params::N, &inp);
+        cbd_eta2::<FF>(&bytes)
+    })
+}
+
+
 pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
     rho: [u8; 32],
     s1_seed: [u8; 32],
     s2_seed: [u8; 32],
 ) -> (PublicKey<'static, FF>, SecretKey<'static, FF>) {
     let a = expand_a_from_rho(rho);
-    let s1: [Polynomial<'static, FF>; L] = std::array::from_fn(|j| {
-        let mut inp = Vec::new();
-        inp.extend_from_slice(&s1_seed);
-        inp.extend_from_slice(&(j as u16).to_le_bytes());
-        let bs1 = shake256(2 * N, &inp);
-        cbd_eta2::<FF>(&bs1)
-    });
-    let s2: [Polynomial<'static, FF>; K] = std::array::from_fn(|j| {
-        let mut inp = Vec::new();
-        inp.extend_from_slice(&s2_seed);
-        inp.extend_from_slice(&(j as u16).to_le_bytes());
-        let bs2 = shake256(2 * N, &inp);
-        cbd_eta2::<FF>(&bs2)
-    });
+
+    let s1: [Polynomial<'static, FF>; L] =
+        expand_secret_array::<L, FF>(&s1_seed);
+
+    let s2: [Polynomial<'static, FF>; K] =
+        expand_secret_array::<K, FF>(&s2_seed);
+
     let t_vec = mat_vec_mul(&a, &s1);
     let t: [Polynomial<'static, FF>; K] = std::array::from_fn(|i| {
         let mut sum = t_vec[i].clone();
         sum += s2[i].clone();
         sum
     });
+
     (
-        PublicKey::new(a.clone(),t,rho),
-        SecretKey::new(a, s1, s2 ),
+        PublicKey { a: a.clone(), t, rho },
+        SecretKey { a, s1, s2 },
     )
 }
+
 
 #[cfg(test)]
 mod tests {
