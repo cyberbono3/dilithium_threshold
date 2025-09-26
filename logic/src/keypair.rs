@@ -28,7 +28,6 @@ impl<'a, FF: FiniteField> PublicKey<'a, FF> {
     }
 }
 
-
 #[derive(Clone, Debug)]
 pub struct SecretKey<'a, FF: FiniteField> {
     pub a: MatrixA<'a, FF>, // include A here for convenience
@@ -130,7 +129,6 @@ pub fn keygen<FF: FiniteField + From<i64>>()
     // s2: tag = (i as u8) ^ 0xA5
     fill_secret_polys(&mut s2, &s2_seed, |i| (i as u8) ^ 0xA5);
 
-    
     // t = A*s1 + s2
     let y = s1.clone(); // reuse shape
     let t_vec = mat_vec_mul(&a, &y).map(|p| p); // A*s1
@@ -140,16 +138,15 @@ pub fn keygen<FF: FiniteField + From<i64>>()
         Polynomial::zero(),
         Polynomial::zero(),
     ];
-  
-    for ((out, a), b) in t.iter_mut().zip(&t_vec).zip(&s2){
+
+    for ((out, a), b) in t.iter_mut().zip(&t_vec).zip(&s2) {
         *out = std::iter::once(b.clone()).fold(a.clone(), |mut acc, x| {
             acc += x;
             acc
         })
     }
 
-    (PublicKey::new(a.clone(),t, rho), SecretKey::new( a, s1, s2 ))
-
+    (PublicKey::new(a.clone(), t, rho), SecretKey::new(a, s1, s2))
 }
 
 // pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
@@ -204,7 +201,6 @@ where
     })
 }
 
-
 pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
     rho: [u8; 32],
     s1_seed: [u8; 32],
@@ -226,11 +222,14 @@ pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
     });
 
     (
-        PublicKey { a: a.clone(), t, rho },
+        PublicKey {
+            a: a.clone(),
+            t,
+            rho,
+        },
         SecretKey { a, s1, s2 },
     )
 }
-
 
 #[cfg(test)]
 mod tests {

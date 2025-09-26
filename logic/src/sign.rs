@@ -300,7 +300,7 @@ where
         ];
         polyvec_sub_scaled_in_place::<FF, K>(&mut ay_minus_cs2, &w, &c, s2);
         let w0 = ay_minus_cs2.map(|p| poly_low(&p));
-        let ok2 = all_infty_norm_below::<FF, K>(&w0, (GAMMA2 - BETA) as i64);
+        let ok2 = all_infty_norm_below::<FF, K>(&w0, GAMMA2 - BETA);
 
         if ok1 && ok2 {
             return Signature { z, c };
@@ -327,7 +327,7 @@ pub fn verify<
 where
     i64: From<FF>,
 {
-    if !all_infty_norm_below::<FF, L>(&sig.z, (GAMMA1 - BETA) as i64) {
+    if !all_infty_norm_below::<FF, L>(&sig.z, GAMMA1 - BETA) {
         return false;
     }
 
