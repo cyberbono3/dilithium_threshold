@@ -73,19 +73,25 @@ fn cbd_eta2<FF: FiniteField + From<i64>>(
 /// Fill `out` with polynomials sampled as:
 ///   poly_i = cbd_eta2( SHAKE256(2*N, seed || tag(i)) )
 ///
-/// - `out`: destination slice of polynomials (e.g., s1 or s2)
-/// - `seed`: 32‑byte seed (or any length; we only append one tag byte)
 /// - `make_tag`: computes the last byte appended to the seed for index `i`
-fn fill_secret_polys<F, FF: FiniteField + From<i64>>(
-    out: &mut [Polynomial<'static, FF>],
-    seed: &[u8],
+fn sample_s<F, FF: FiniteField + From<i64>>(
+    // seed: &[u8],
     make_tag: F,
-) where
+) -> [Polynomial<'static, FF>; 4]
+where
     F: Fn(usize) -> u8,
 {
+    let seed = random_bytes();
+    let mut out: [Polynomial<'static, FF>; 4] = [
+        Polynomial::zero(),
+        Polynomial::zero(),
+        Polynomial::zero(),
+        Polynomial::zero(),
+    ];
+
     // Build "seed || tag" once; mutate the last byte per iteration.
     let mut inbuf = Vec::with_capacity(seed.len() + 1);
-    inbuf.extend_from_slice(seed);
+    inbuf.extend_from_slice(&seed);
     inbuf.push(0u8); // placeholder tag; overwritten below
 
     for (i, dst) in out.iter_mut().enumerate() {
@@ -96,42 +102,18 @@ fn fill_secret_polys<F, FF: FiniteField + From<i64>>(
         let stream = shake256(2 * N, &inbuf);
         *dst = cbd_eta2(&stream);
     }
+
+    out
 }
 
-pub fn keygen<FF: FiniteField + From<i64>>()
--> (PublicKey<'static, FF>, SecretKey<'static, FF>) {
-    // Generate rho (seed for A), and seeds for s1, s2
-    let mut rng = rand::thread_rng();
-    let mut rho = [0u8; 32];
-    rng.fill_bytes(&mut rho);
-    let a = expand_a_from_rho(rho);
+ // Com[ute t = A*s1 + s2
+ // TODO figoure out if it is idiomatic to pass s1 and s2 as arrays in function argument instead of slices
+fn compute_t<FF: FiniteField + From<i64>>(a: &MatrixA<'static, FF>, s1: [Polynomial<'static, FF>; 4], s2: [Polynomial<'static, FF>; 4]) ->
+[Polynomial<'static, FF>; 4]{
+    //let y = s1.clone(); // reuse shape
+    let t_vec = mat_vec_mul(a, &s1).map(|p| p); // A*s1
 
-    // Expand s1, s2 with SHAKE256 streams (deterministic from seeds)
-    let s1_seed = random_bytes();
-    let s2_seed = random_bytes();
-
-    let mut s1 = [
-        Polynomial::zero(),
-        Polynomial::zero(),
-        Polynomial::zero(),
-        Polynomial::zero(),
-    ];
-    let mut s2 = [
-        Polynomial::zero(),
-        Polynomial::zero(),
-        Polynomial::zero(),
-        Polynomial::zero(),
-    ];
-
-    // s1: tag = j as u8
-    fill_secret_polys(&mut s1, &s1_seed, |j| j as u8);
-
-    // s2: tag = (i as u8) ^ 0xA5
-    fill_secret_polys(&mut s2, &s2_seed, |i| (i as u8) ^ 0xA5);
-
-    // t = A*s1 + s2
-    let y = s1.clone(); // reuse shape
-    let t_vec = mat_vec_mul(&a, &y).map(|p| p); // A*s1
+    // TODO introduce macro that generate array of polynomials of predetermined length 
     let mut t = [
         Polynomial::zero(),
         Polynomial::zero(),
@@ -139,17 +121,66 @@ pub fn keygen<FF: FiniteField + From<i64>>()
         Polynomial::zero(),
     ];
 
-    for ((out, a), b) in t.iter_mut().zip(&t_vec).zip(&s2) {
+    for ((out, a), b) in t.iter_mut().zip(&t_vec).zip(s2) {
         *out = std::iter::once(b.clone()).fold(a.clone(), |mut acc, x| {
             acc += x;
             acc
         })
     }
 
-    (PublicKey::new(a.clone(), t, rho), SecretKey::new(a, s1, s2))
+    t
 }
 
+pub fn keygen<FF: FiniteField + From<i64>>()
+-> (PublicKey<'static, FF>, SecretKey<'static, FF>) {
+    // Generate rho (seed for A), and seeds for s1, s2
+    let rho = random_bytes();
+    let a = expand_a_from_rho(rho);
 
+    // Expand s1, s2 with SHAKE256 streams (deterministic from seeds)
+    //let s1_seed = random_bytes();
+    // let s2_seed = random_bytes();
+
+    // let mut s1 = [
+    //     Polynomial::zero(),
+    //     Polynomial::zero(),
+    //     Polynomial::zero(),
+    //     Polynomial::zero(),
+    // ];
+    // let mut s2 = [
+    //     Polynomial::zero(),
+    //     Polynomial::zero(),
+    //     Polynomial::zero(),
+    //     Polynomial::zero(),
+    // ];
+
+    // s1: tag = j as u8
+    let s1 = sample_s(|j| j as u8);
+
+    // s2: tag = (i as u8) ^ 0xA5
+    let s2 = sample_s(|i| (i as u8) ^ 0xA5);
+
+    // t = A*s1 + s2
+    // let y = s1.clone(); // reuse shape
+    // let t_vec = mat_vec_mul(&a, &y).map(|p| p); // A*s1
+    // let mut t = [
+    //     Polynomial::zero(),
+    //     Polynomial::zero(),
+    //     Polynomial::zero(),
+    //     Polynomial::zero(),
+    // ];
+
+    // for ((out, a), b) in t.iter_mut().zip(&t_vec).zip(&s2) {
+    //     *out = std::iter::once(b.clone()).fold(a.clone(), |mut acc, x| {
+    //         acc += x;
+    //         acc
+    //     })
+    // }
+    let t = compute_t(&a, s1.clone(), s2.clone());
+    
+
+    (PublicKey::new(a.clone(), t, rho), SecretKey::new(a, s1, s2))
+}
 
 #[inline]
 fn expand_secret_array<const LEN: usize, FF>(
@@ -191,10 +222,7 @@ pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
         sum
     });
 
-    (
-        PublicKey::new(a.clone(),t,rho),
-        SecretKey::new(a, s1, s2 ),
-    )
+    (PublicKey::new(a.clone(), t, rho), SecretKey::new(a, s1, s2))
 }
 
 #[cfg(test)]
