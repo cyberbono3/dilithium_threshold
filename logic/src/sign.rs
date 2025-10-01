@@ -4,6 +4,7 @@ use std::convert::From;
 use crate::hash::shake256;
 use crate::matrix::{MatrixA, mat_vec_mul};
 use crate::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N, TAU};
+use crate::keypair::{PrivateKey, PublicKey};
 
 use math::prelude::FieldElement;
 use math::{poly::Polynomial, traits::FiniteField};
@@ -184,11 +185,8 @@ where
     polys.iter().all(|p| (p.norm_infinity() as i64) < bound)
 }
 
-
 pub fn sign<FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64>>(
-    sk_a: &MatrixA<'_, FF>,
-    s1: &[Polynomial<'static, FF>; L],
-    s2: &[Polynomial<'_, FF>; K],
+    priv_key: &PrivateKey<'static, FF>,
     _t: &[Polynomial<'_, FF>; K], // kept for API parity
     msg: &[u8],
 ) -> Signature<'static, FF>
@@ -199,7 +197,7 @@ where
 
     for ctr in 0u32..REJECTION_LIMIT {
         let y = sample_y(&y_seed, ctr);
-        let w = mat_vec_mul(sk_a, &y);
+        let w = mat_vec_mul(&priv_key.a, &y);
 
         let w1 = w.clone().map(|p| poly_high(&p));
         let w1_pack = pack_w1_for_hash(&w1);
@@ -211,7 +209,7 @@ where
             Polynomial::zero(),
             Polynomial::zero(),
         ];
-        polyvec_add_scaled_in_place::<FF, L>(&mut z, &y, &c, s1);
+        polyvec_add_scaled_in_place::<FF, L>(&mut z, &y, &c, &priv_key.s1);
 
         let ok1 = all_infty_norm_below::<FF, L>(&z, (GAMMA1 - BETA) as i64);
 
@@ -221,7 +219,7 @@ where
             Polynomial::zero(),
             Polynomial::zero(),
         ];
-        polyvec_sub_scaled_in_place::<FF, K>(&mut ay_minus_cs2, &w, &c, s2);
+        polyvec_sub_scaled_in_place::<FF, K>(&mut ay_minus_cs2, &w, &c, &priv_key.s2);
         let w0 = ay_minus_cs2.map(|p| poly_low(&p));
         let ok2 = all_infty_norm_below::<FF, K>(&w0, GAMMA2 - BETA);
 
@@ -242,8 +240,7 @@ where
 pub fn verify<
     FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64> + 'static,
 >(
-    pk_a: &MatrixA<'_, FF>,
-    t: &[Polynomial<'_, FF>; K],
+    pub_key: &PublicKey<'static, FF>,
     msg: &[u8],
     sig: &Signature<'_, FF>,
 ) -> bool
@@ -254,14 +251,14 @@ where
         return false;
     }
 
-    let az = mat_vec_mul(pk_a, &sig.z);
+    let az = mat_vec_mul(&pub_key.a, &sig.z);
     let mut az_minus_ct = [
         Polynomial::zero(),
         Polynomial::zero(),
         Polynomial::zero(),
         Polynomial::zero(),
     ];
-    polyvec_sub_scaled_in_place::<FF, K>(&mut az_minus_ct, &az, &sig.c, t);
+    polyvec_sub_scaled_in_place::<FF, K>(&mut az_minus_ct, &az, &sig.c, &pub_key.t);
 
     let w1p = az_minus_ct.map(|p| poly_high(&p));
     let w1p_pack = pack_w1_for_hash(&w1p);
@@ -269,7 +266,6 @@ where
     let c2 = derive_challenge(msg, &w1p_pack);
     c2 == sig.c
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -279,14 +275,16 @@ mod tests {
     use math::field_element::FieldElement;
 
     // Deterministic fixtures for reproducible tests
-    fn keypair_fixture_1<FF:FiniteField + From<i64>>() -> (PublicKey<'static, FF>, SecretKey<'static, FF>, ) {
+    fn keypair_fixture_1<FF: FiniteField + From<i64>>()
+    -> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
         let rho = [0x42u8; 32];
         let s1 = [0x24u8; 32];
         let s2 = [0x18u8; 32];
         keygen_with_seeds::<FF>(rho, s1, s2)
     }
 
-    fn keypair_fixture_2<FF:FiniteField + From<i64>>() -> (PublicKey<'static, FF>, SecretKey<'static, FF>, ) {
+    fn keypair_fixture_2<FF: FiniteField + From<i64>>()
+    -> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
         let rho = [0xA5u8; 32];
         let s1 = [0x5Au8; 32];
         let s2 = [0x33u8; 32];
@@ -295,31 +293,34 @@ mod tests {
 
     #[test]
     fn sign_and_verify_roundtrip() {
-        let (pk, sk) = keypair_fixture_1();
+        let (pub_key, priv_key) = keypair_fixture_1();
         let msg = b"hello, sign+verify!";
-        let sig = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
-        assert!(super::verify::<FieldElement>(&pk.a, &pk.t, msg, &sig));
+        let sig =
+            super::sign::<FieldElement>(&priv_key, &pub_key.t, msg);
+        assert!(super::verify::<FieldElement>(&pub_key, msg, &sig));
     }
 
     #[test]
     fn verify_rejects_modified_message() {
-        let (pk, sk) = keypair_fixture_1();
+         let (pub_key, priv_key) = keypair_fixture_1();
         let msg = b"immutable message";
-        let sig = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+         let sig =
+            super::sign::<FieldElement>(&priv_key, &pub_key.t, msg);
 
         // Verify against a different message
         let other = b"immutable message (edited)";
         assert!(
-            !super::verify::<FieldElement>(&pk.a, &pk.t, other, &sig),
+            !super::verify::<FieldElement>(&pub_key, other, &sig),
             "verification must fail if the message changes"
         );
     }
 
     #[test]
     fn verify_rejects_tampered_z() {
-        let (pk, sk) = keypair_fixture_1();
+        let (pub_key, priv_key) = keypair_fixture_1();
         let msg = b"tamper z";
-        let mut sig = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+        let mut sig =
+            super::sign::<FieldElement>(&priv_key, &pub_key.t, msg);
 
         // Flip one coefficient in z[0]
         let mut plus_one = [0i64; N];
@@ -328,16 +329,17 @@ mod tests {
         sig.z[0] = sig.z[0].clone() + add1;
 
         assert!(
-            !super::verify::<FieldElement>(&pk.a, &pk.t, msg, &sig),
+            !super::verify::<FieldElement>(&pub_key, msg, &sig),
             "verification must fail when z is altered"
         );
     }
 
     #[test]
     fn verify_rejects_tampered_c() {
-        let (pk, sk) = keypair_fixture_1();
+        let (pub_key, priv_key) = keypair_fixture_1();
         let msg = b"tamper c";
-        let mut sig = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+        let mut sig =
+            super::sign::<FieldElement>(&priv_key, &pub_key.t, msg);
 
         // Replace the challenge with a sparse poly that's *not* the derived one
         let mut c = [0i64; N];
@@ -345,22 +347,24 @@ mod tests {
         sig.c = c.into();
 
         assert!(
-            !super::verify::<FieldElement>(&pk.a, &pk.t, msg, &sig),
+            !super::verify::<FieldElement>(&pub_key, msg, &sig),
             "verification must fail when c is altered"
         );
     }
 
     #[test]
     fn verify_fails_with_wrong_public_key() {
-        let (pk1, sk1) = keypair_fixture_1();
-        let (pk2, _sk2) = keypair_fixture_2();
+        let (pub_key1, priv_key1) = keypair_fixture_1();
+         let (pub_key2, _) = keypair_fixture_2();
+        
 
         let msg = b"use the right key, please";
-        let sig = super::sign::<FieldElement>(&sk1.a, &sk1.s1, &sk1.s2, &pk1.t, msg);
+        let sig =
+            super::sign::<FieldElement>(&priv_key1, &pub_key1.t, msg);
 
-        assert!(super::verify::<FieldElement>(&pk1.a, &pk1.t, msg, &sig));
+        assert!(super::verify::<FieldElement>(&pub_key1, msg, &sig));
         assert!(
-            !super::verify::<FieldElement>(&pk2.a, &pk2.t, msg, &sig),
+            !super::verify::<FieldElement>(&pub_key2, msg, &sig),
             "verification must fail under a different public key"
         );
     }
@@ -368,11 +372,13 @@ mod tests {
     #[test]
     fn signatures_are_deterministic_for_same_message() {
         // With the current design (y derived from msg via SHAKE256), signing is deterministic.
-        let (pk, sk) = keypair_fixture_1();
+         let (pub_key1, priv_key1) = keypair_fixture_1();
         let msg = b"deterministic";
 
-        let sig1 = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
-        let sig2 = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+        let sig1 =
+            super::sign::<FieldElement>(&priv_key1, &pub_key1.t, msg);
+        let sig2 =
+            super::sign::<FieldElement>(&priv_key1, &pub_key1.t, msg);
 
         // Compare c and each z[i] (Signature doesn't implement PartialEq)
         assert_eq!(sig1.c, sig2.c);
@@ -383,24 +389,31 @@ mod tests {
 
     #[test]
     fn handles_empty_and_long_messages() {
-        let (pk, sk) = keypair_fixture_1();
+        let (pub_key1, priv_key1) = keypair_fixture_1();
 
         // Empty message
         let empty = b"";
-        let sig_empty = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, empty);
-        assert!(super::verify::<FieldElement>(&pk.a, &pk.t, empty, &sig_empty));
+        let sig_empty =
+            super::sign::<FieldElement>(&priv_key1, &pub_key1.t, empty);
+        assert!(super::verify::<FieldElement>(
+            &pub_key1, empty, &sig_empty
+        ));
 
         // Long message
         let long = vec![0xABu8; 8192];
-        let sig_long = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, &long);
-        assert!(super::verify::<FieldElement>(&pk.a, &pk.t, &long, &sig_long));
+        let sig_long =
+            super::sign::<FieldElement>(&priv_key1, &pub_key1.t, &long);
+        assert!(super::verify::<FieldElement>(
+            &pub_key1, &long, &sig_long
+        ));
     }
 
     #[test]
     fn z_infinity_norm_is_within_bound() {
-        let (pk, sk) = keypair_fixture_1();
+        let (pub_key1, priv_key1) = keypair_fixture_1();
         let msg = b"bounds check";
-        let sig = super::sign::<FieldElement>(&sk.a, &sk.s1, &sk.s2, &pk.t, msg);
+        let sig =
+            super::sign::<FieldElement>(&priv_key1, &pub_key1.t, msg);
 
         for (i, poly) in sig.z.iter().enumerate() {
             let norm = poly.norm_infinity() as i64;
