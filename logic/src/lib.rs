@@ -8,3 +8,5 @@ pub mod sign;
 pub mod tests;
 pub mod error;
 pub mod utils;
+pub mod shamir;
+pub mod points;
