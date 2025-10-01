@@ -9,6 +9,11 @@ use sha3::{
 };
 
 
+use crate::error::{Result, ThresholdError};
+use crate::points::PointSource;
+use math::{prelude::*, traits::FiniteField};
+
+
 // Fill byte array of length 32 by random bytes
 pub fn random_bytes() -> [u8; 32] {
     let mut rng = rand::thread_rng();
@@ -49,7 +54,7 @@ pub fn hash_message(message: &[u8]) -> Vec<u8> {
 pub fn reconstruct_vector_from_points<FF, S>(
     items: &[S],
     poly_indices: &[usize],
-) -> Result<PolynomialVector<'static, FF>>
+) -> Result<Vec<Polynomial<'static, FF>>>
 where
     FF: FiniteField,
     S: PointSource<FF>,
@@ -100,5 +105,17 @@ where
         reconstructed.push(Polynomial::from(coeffs));
     }
 
-    Ok(poly_vec!(reconstructed))
+    Ok(reconstructed)
+}
+
+/// Lagrange interpolate over (xs, ys) and return f(0).
+pub fn interpolate_constant_at_zero<FF: FiniteField + Copy + 'static>(
+    xs: &[FF],
+    ys: &[FF],
+) -> FF {
+    let f = Polynomial::lagrange_interpolate(xs, ys);
+    f.batch_evaluate(&[FF::ZERO])
+        .first()
+        .copied()
+        .expect("interpolation requires at least one (x, y) pair")
 }
