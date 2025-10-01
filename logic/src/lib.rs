@@ -6,4 +6,5 @@ pub mod params;
 pub mod sign;
 #[cfg(test)]
 pub mod tests;
+pub mod error;
 pub mod utils;

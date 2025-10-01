@@ -9,7 +9,7 @@ use crate::params::{K, L, N};
 use crate::utils::random_bytes;
 use math::{poly::Polynomial, traits::FiniteField};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PublicKey<'a, FF: FiniteField> {
     pub a: MatrixA<'a, FF>, // uncompressed: include A directly
     pub t: [Polynomial<'a, FF>; K], // t = A*s1 + s2
@@ -29,13 +29,13 @@ impl<'a, FF: FiniteField> PublicKey<'a, FF> {
 }
 
 #[derive(Clone, Debug)]
-pub struct SecretKey<'a, FF: FiniteField> {
+pub struct PrivateKey<'a, FF: FiniteField> {
     pub a: MatrixA<'a, FF>, // include A here for convenience
     pub s1: [Polynomial<'a, FF>; L],
     pub s2: [Polynomial<'a, FF>; K],
 }
 
-impl<'a, FF: FiniteField> SecretKey<'a, FF> {
+impl<'a, FF: FiniteField> PrivateKey<'a, FF> {
     /// Construct a secret key from its parts.
     pub fn new(
         a: MatrixA<'a, FF>,
@@ -74,6 +74,8 @@ fn cbd_eta2<FF: FiniteField + From<i64>>(
 ///   poly_i = cbd_eta2( SHAKE256(2*N, seed || tag(i)) )
 ///
 /// - `make_tag`: computes the last byte appended to the seed for index `i`
+// TODO return [Polynomial<'static, FF>; L] in s1 case and [Polynomial<'static, FF>; K] in
+// apply const LEN: usize,
 fn sample_s<F, FF: FiniteField + From<i64>>(
     // seed: &[u8],
     make_tag: F,
@@ -106,14 +108,17 @@ where
     out
 }
 
- // Com[ute t = A*s1 + s2
- // TODO figoure out if it is idiomatic to pass s1 and s2 as arrays in function argument instead of slices
-fn compute_t<FF: FiniteField + From<i64>>(a: &MatrixA<'static, FF>, s1: [Polynomial<'static, FF>; 4], s2: [Polynomial<'static, FF>; 4]) ->
-[Polynomial<'static, FF>; 4]{
+// Com[ute t = A*s1 + s2
+// TODO figoure out if it is idiomatic to pass s1 and s2 as arrays in function argument instead of slices
+fn compute_t<FF: FiniteField + From<i64>>(
+    a: &MatrixA<'static, FF>,
+    s1: [Polynomial<'static, FF>; 4],
+    s2: [Polynomial<'static, FF>; 4],
+) -> [Polynomial<'static, FF>; 4] {
     //let y = s1.clone(); // reuse shape
     let t_vec = mat_vec_mul(a, &s1).map(|p| p); // A*s1
 
-    // TODO introduce macro that generate array of polynomials of predetermined length 
+    // TODO introduce macro that generate array of polynomials of predetermined length
     let mut t = [
         Polynomial::zero(),
         Polynomial::zero(),
@@ -132,7 +137,7 @@ fn compute_t<FF: FiniteField + From<i64>>(a: &MatrixA<'static, FF>, s1: [Polynom
 }
 
 pub fn keygen<FF: FiniteField + From<i64>>()
--> (PublicKey<'static, FF>, SecretKey<'static, FF>) {
+-> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
     // Generate rho (seed for A), and seeds for s1, s2
     let rho = random_bytes();
     let a = expand_a_from_rho(rho);
@@ -177,15 +182,17 @@ pub fn keygen<FF: FiniteField + From<i64>>()
     //     })
     // }
     let t = compute_t(&a, s1.clone(), s2.clone());
-    
 
-    (PublicKey::new(a.clone(), t, rho), SecretKey::new(a, s1, s2))
+    (
+        PublicKey::new(a.clone(), t, rho),
+        PrivateKey::new(a, s1, s2),
+    )
 }
 
 #[inline]
 fn expand_secret_array<const LEN: usize, FF>(
     seed: impl AsRef<[u8]>,
-) -> [math::poly::Polynomial<'static, FF>; LEN]
+) -> [Polynomial<'static, FF>; LEN]
 where
     FF: math::traits::FiniteField + From<i64>,
 {
@@ -206,7 +213,7 @@ pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
     rho: [u8; 32],
     s1_seed: [u8; 32],
     s2_seed: [u8; 32],
-) -> (PublicKey<'static, FF>, SecretKey<'static, FF>) {
+) -> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
     let a = expand_a_from_rho(rho);
 
     let s1: [Polynomial<'static, FF>; L] =
@@ -222,7 +229,10 @@ pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
         sum
     });
 
-    (PublicKey::new(a.clone(), t, rho), SecretKey::new(a, s1, s2))
+    (
+        PublicKey::new(a.clone(), t, rho),
+        PrivateKey::new(a, s1, s2),
+    )
 }
 
 #[cfg(test)]

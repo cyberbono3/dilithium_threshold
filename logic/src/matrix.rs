@@ -3,7 +3,7 @@ use crate::params::{K, L, N};
 use math::{poly::Polynomial, traits::FiniteField};
 use num_traits::Zero;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MatrixA<'a, FF: FiniteField> {
     pub a: Vec<Vec<Polynomial<'a, FF>>>, // K x L
 }
