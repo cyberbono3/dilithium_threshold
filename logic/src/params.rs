@@ -47,26 +47,26 @@ impl DilithiumConfig {
     pub fn new(security_level: usize) -> Self {
         match security_level {
             2 => Self::default(),
-            3 => Self {
-                k: 6,
-                l: 5,
-                eta: 4,
-                tau: 49,
-                beta: 196,
-                gamma1: 524288,
-                gamma2: 261888,
-                d: 13,
-            },
-            5 => Self {
-                k: 8,
-                l: 7,
-                eta: 2,
-                tau: 60,
-                beta: 120,
-                gamma1: 524288,
-                gamma2: 261888,
-                d: 13,
-            },
+            // 3 => Self {
+            //     k: 6,
+            //     l: 5,
+            //     eta: 4,
+            //     tau: 49,
+            //     beta: 196,
+            //     gamma1: 524288,
+            //     gamma2: 261888,
+            //     d: 13,
+            // },
+            // 5 => Self {
+            //     k: 8,
+            //     l: 7,
+            //     eta: 2,
+            //     tau: 60,
+            //     beta: 120,
+            //     gamma1: 524288,
+            //     gamma2: 261888,
+            //     d: 13,
+            // },
             _ => panic!("Invalid security level"),
         }
     }
