@@ -635,29 +635,28 @@ mod tests {
             assert!(!partial_sig.commitment.is_empty());
         }
 
-        // TODO fix it
-        // #[test]
-        // fn test_partial_sign_deterministic() {
-        //     let threshold_sig = ThresholdSignature::new(2, 3, None).unwrap();
-        //     let shares = threshold_sig
-        //         .distributed_keygen(Some(&create_test_seed(1)))
-        //         .unwrap();
-        //     let message = create_test_message("Deterministic test");
-        //     let randomness = create_test_seed(42);
+ 
+        #[test]
+        fn test_partial_sign_deterministic() {
+            let threshold_sig = ThresholdSignature::new(2, 3).unwrap();
+            let shares = threshold_sig
+                .distributed_keygen::<FieldElement>()
+                .unwrap();
+            let message = "Determenistic test".as_bytes();
+            let randomness = create_test_seed(42);
 
-        //     // Same inputs should produce same partial signature
-        //     let partial1 = threshold_sig
-        //         .partial_sign(&message, &shares[0], Some(&randomness))
-        //         .unwrap();
+            // Same inputs should produce same partial signature
+            let partial1 = threshold_sig
+                .partial_sign(message, &shares[0], Some(&randomness))
+                .unwrap();
 
-        //     let partial2 = threshold_sig
-        //         .partial_sign(&message, &shares[0], Some(&randomness))
-        //         .unwrap();
+            let partial2 = threshold_sig
+                .partial_sign(message, &shares[0], Some(&randomness))
+                .unwrap();
 
-        //     assert_eq!(partial1.participant_id, partial2.participant_id);
-        //     assert_eq!(partial1.challenge, partial2.challenge);
-        //     // Note: z_partial comparison might need special handling
-        // }
+            assert_eq!(partial1.participant_id, partial2.participant_id);
+            assert_eq!(partial1.challenge, partial2.challenge);
+        }
 
         // // TODO fix it
         // #[test]
