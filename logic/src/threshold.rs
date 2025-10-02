@@ -615,48 +615,25 @@ mod tests {
             }
         }
 
-        // TODO fix it
-        // #[test]
-        // fn test_distributed_keygen_reproducibility() {
-        //     let threshold_sig = ThresholdSignature::new(2, 3, None).unwrap();
-        //     let seed = create_test_seed(123);
 
-        //     let shares1 =
-        //         threshold_sig.distributed_keygen::<FieldElement>::(Some(&seed)).unwrap();
-        //     let shares2 =
-        //         threshold_sig.distributed_keygen(Some(&seed)).unwrap();
+      //  TODO fix it
+        #[test]
+        fn test_partial_sign_basic() {
+            let threshold_sig = ThresholdSignature::new(3, 5).unwrap();
+            let shares = threshold_sig
+                .distributed_keygen::<FieldElement>()
+                .unwrap();
+            let message = "Test message".as_bytes();
 
-        //     // Same seed should produce same shares
-        //     assert_eq!(shares1.len(), shares2.len());
-        //     for i in 0..shares1.len() {
-        //         assert_eq!(
-        //             shares1[i].participant_id,
-        //             shares2[i].participant_id
-        //         );
-        //         // Note: Direct comparison of shares might not work due to internal randomness
-        //         // but public keys should match
-        //         assert_eq!(shares1[i].public_key, shares2[i].public_key);
-        //     }
-        // }
+            // Create partial signature with first share
+            let partial_sig = threshold_sig
+                .partial_sign(message, &shares[0], Some(&create_test_seed(2)))
+                .unwrap();
 
-        // TODO fix it
-        // #[test]
-        // fn test_partial_sign_basic() {
-        //     let threshold_sig = ThresholdSignature::new(3, 5, None).unwrap();
-        //     let shares = threshold_sig
-        //         .distributed_keygen(Some(&create_test_seed(1)))
-        //         .unwrap();
-        //     let message = create_test_message("Test message");
-
-        //     // Create partial signature with first share
-        //     let partial_sig = threshold_sig
-        //         .partial_sign(&message, &shares[0], Some(&create_test_seed(2)))
-        //         .unwrap();
-
-        //     assert_eq!(partial_sig.participant_id, 1);
-        //     assert!(!partial_sig.z_partial.is_empty());
-        //     assert!(!partial_sig.commitment.is_empty());
-        // }
+            assert_eq!(partial_sig.participant_id, 1);
+            assert!(!partial_sig.z_partial.is_empty());
+            assert!(!partial_sig.commitment.is_empty());
+        }
 
         // TODO fix it
         // #[test]
