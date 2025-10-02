@@ -129,8 +129,7 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
             "All matrix rows must have the same length"
         );
 
-        self
-            .rows
+        self.rows
             .iter()
             .map(|row| {
                 row.iter().zip(v).fold(
@@ -145,7 +144,6 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
             .collect()
     }
 }
-
 
 /// Expand A from rho using SHAKE128 as XOF (educational: uses modulo reduction).
 pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(
@@ -171,7 +169,7 @@ pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(
         }
         rows.push(row);
     }
-    MatrixA { rows}
+    MatrixA { rows }
 }
 
 // TODO declare the trait
@@ -190,7 +188,6 @@ pub fn mat_vec_mul<FF: FiniteField>(
     })
 }
 
-
 // impl<FF: FiniteField> Mul<&Polynomial<'static, FF>> for Vec<Polynomial<'static, FF>> {
 //     type Output = Self;
 
@@ -207,8 +204,6 @@ pub fn mat_vec_mul<FF: FiniteField>(
 
 //     }
 // }
-
-
 
 // TODO add more tests
 #[cfg(test)]

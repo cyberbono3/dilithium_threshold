@@ -9,8 +9,8 @@ use sha3::{
 };
 
 use crate::error::{Result, ThresholdError};
-use crate::points::PointSource;
 use crate::params::L;
+use crate::points::PointSource;
 use math::{prelude::*, traits::FiniteField};
 
 // Fill byte array of length 32 by random bytes
@@ -101,7 +101,7 @@ where
             *c = interpolate_constant_at_zero(&xs, &ys);
         }
 
-       reconstructed.push(Polynomial::from(coeffs));
+        reconstructed.push(Polynomial::from(coeffs));
     }
     // let arr: [Polynomial<'static, FF>; L]  = reconstructed.try_into()
     //     .unwrap_or_else(|v: Vec<Polynomial<'static, FF>>| panic!("Expected a Vec of length {} but it was {}", N, v.len()));

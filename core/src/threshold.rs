@@ -277,6 +277,8 @@ impl ThresholdSignature {
         Ok(DilithiumSignature::new(z, h, challenge))
     }
 
+  
+
     /// Verify a partial signature.
     pub fn verify_partial_signature<FF: FiniteField>(
         &self,
@@ -293,9 +295,9 @@ impl ThresholdSignature {
             return false;
         }
 
-        // Verify partial signature bounds
-        self.check_partial_bounds(partial_sig)
-    }
+    //     // // Verify partial signature bounds
+    //     // self.check_partial_bounds(partial_sig)
+    // }
 
     /// Derive participant-specific randomness.
     fn derive_participant_randomness(
