@@ -17,7 +17,7 @@ fn round_trip_sign_verify() {
 fn negative_case_wrong_message() {
     let (pub_key, priv_key) = keygen::<FieldElement>();
     let msg = b"hello world";
-     let sig = sign::<FieldElement>(&priv_key, &pub_key.t, msg);
+    let sig = sign::<FieldElement>(&priv_key, &pub_key.t, msg);
 
     let wrong = b"hello wurld";
     assert!(!verify::<FieldElement>(&pub_key, wrong, &sig));

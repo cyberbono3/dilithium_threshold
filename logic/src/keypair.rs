@@ -1,7 +1,6 @@
 use std::convert::From;
 
 use num_traits::Zero;
-use rand::RngCore;
 
 use crate::hash::shake256;
 use crate::matrix::{MatrixA, expand_a_from_rho, mat_vec_mul};
@@ -249,9 +248,9 @@ mod tests {
         let (pk, sk) = keygen::<FieldElement>();
 
         // Shapes
-        assert_eq!(pk.a.a.len(), K);
+        assert_eq!(pk.a.rows.len(), K);
         for i in 0..K {
-            assert_eq!(pk.a.a[i].len(), L);
+            assert_eq!(pk.a.rows[i].len(), L);
         }
         assert_eq!(pk.t.len(), K);
         assert_eq!(sk.s1.len(), L);
@@ -267,7 +266,7 @@ mod tests {
         for i in 0..K {
             for j in 0..L {
                 assert_eq!(
-                    pk.a.a[i][j], a_from_rho.a[i][j],
+                    pk.a.rows[i][j], a_from_rho.rows[i][j],
                     "A mismatch at {},{}",
                     i, j
                 );
@@ -278,7 +277,7 @@ mod tests {
         for i in 0..K {
             for j in 0..L {
                 assert_eq!(
-                    pk.a.a[i][j], sk.a.a[i][j],
+                    pk.a.rows[i][j], sk.a.rows[i][j],
                     "A(pk) != A(sk) at {},{}",
                     i, j
                 );
@@ -318,7 +317,7 @@ mod tests {
         let (pk2, sk2) = keygen_with_seeds::<FieldElement>(rho, s1, s2);
 
         // Matrices and secrets identical
-        assert_eq!(pk1.a.a, pk2.a.a);
+        assert_eq!(pk1.a.rows, pk2.a.rows);
         for i in 0..K {
             assert_eq!(sk1.s2[i], sk2.s2[i]);
         }

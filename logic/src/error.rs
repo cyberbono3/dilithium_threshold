@@ -29,8 +29,11 @@ impl fmt::Display for ThresholdError {
                 threshold,
                 participant_number,
             } => {
-                write!(f, "Invalid threshold configuration: threshold {} > participant_number {}", 
-                    threshold, participant_number)
+                write!(
+                    f,
+                    "Invalid threshold configuration: threshold {} > participant_number {}",
+                    threshold, participant_number
+                )
             }
             ThresholdError::InsufficientShares { required, provided } => {
                 write!(

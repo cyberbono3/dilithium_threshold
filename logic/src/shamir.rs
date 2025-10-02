@@ -2,7 +2,7 @@ use math::{prelude::*, traits::FiniteField};
 
 use crate::{
     error::{Result, ThresholdError},
-    params::{validate_threshold_config},
+    params::validate_threshold_config,
     points::PointSource,
     utils::reconstruct_vector_from_points,
 };
@@ -13,8 +13,8 @@ use rand::Rng;
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShamirShare<'a, FF: FiniteField> {
     pub participant_id: usize,
-   // pub share_vector: PolynomialVector<'a, FF>,
-   pub share_vector: Vec<Polynomial<'a, FF>>
+    // pub share_vector: PolynomialVector<'a, FF>,
+    pub share_vector: Vec<Polynomial<'a, FF>>,
 }
 
 impl<FF: FiniteField> ShamirShare<'static, FF> {
@@ -221,7 +221,6 @@ impl AdaptedShamirSSS {
             let poly_vec: Vec<Polynomial<'static, FF>> =
                 share_coeffs.into_iter().map(Polynomial::from).collect();
 
-
             shares.push(ShamirShare::new(pid, poly_vec)?);
         }
 
@@ -294,7 +293,7 @@ mod tests {
         fn test_share_creation() {
             let poly1: Polynomial<'_, FieldElement> = poly![1, 2, 3, 4, 5];
             let poly2: Polynomial<'_, FieldElement> = poly![6, 7, 8, 9, 10];
-            let share_vector = vec!(poly1, poly2);
+            let share_vector = vec![poly1, poly2];
             let share = ShamirShare::new(1, share_vector.clone()).unwrap();
 
             assert_eq!(share.participant_id, 1);
@@ -419,7 +418,7 @@ mod tests {
                 poly![1, 2, 3, 4, 5];
             let secret_poly2: Polynomial<'_, FieldElement> =
                 poly![10, 20, 30, 40, 50];
-            let secret_vector = vec!(secret_poly1, secret_poly2);
+            let secret_vector = vec![secret_poly1, secret_poly2];
 
             // Split secret
             let shares = shamir.split_secret(&secret_vector).unwrap();
@@ -525,7 +524,7 @@ mod tests {
             let poly1: Polynomial<'_, FieldElement> = poly![1, 2, 3];
             let poly2: Polynomial<'_, FieldElement> = poly![10, 20, 30];
             let poly3: Polynomial<'_, FieldElement> = poly![100, 200, 300];
-            let long_vector = vec!(poly1, poly2, poly3);
+            let long_vector = vec![poly1, poly2, poly3];
             let shares2 = shamir.split_secret(&long_vector).unwrap();
             let reconstructed2 =
                 shamir.reconstruct_secret(&shares2[..threshold]).unwrap();
@@ -540,21 +539,23 @@ mod tests {
             // Create zero polynomial
             let zero_poly: Polynomial<'_, FieldElement> =
                 poly![FieldElement::default(); N];
-            let zero_vector =
-                vec![zero_poly];
+            let zero_vector = vec![zero_poly];
 
             let shares: Vec<ShamirShare<'static, FieldElement>> =
                 shamir.split_secret(&zero_vector).unwrap();
-            let reconstructed  = shamir.reconstruct_secret(&shares[..threshold]).unwrap();
+            let reconstructed =
+                shamir.reconstruct_secret(&shares[..threshold]).unwrap();
 
             assert_eq!(reconstructed, zero_vector);
 
             // Check all coefficients are zero
             let reconstructed_poly = reconstructed.get(0).cloned().unwrap();
-            assert!(reconstructed_poly
-                .coefficients()
-                .iter()
-                .all(|fe| fe.is_zero()));
+            assert!(
+                reconstructed_poly
+                    .coefficients()
+                    .iter()
+                    .all(|fe| fe.is_zero())
+            );
         }
 
         #[test]

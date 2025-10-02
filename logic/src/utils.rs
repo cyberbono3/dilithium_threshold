@@ -4,15 +4,14 @@ use rand::RngCore;
 
 use sha2::digest::core_api::XofReaderCoreWrapper;
 use sha3::{
-    digest::{ExtendableOutput, Update, XofReader},
     Shake256, Shake256ReaderCore,
+    digest::{ExtendableOutput, Update, XofReader},
 };
-
 
 use crate::error::{Result, ThresholdError};
 use crate::points::PointSource;
+use crate::params::L;
 use math::{prelude::*, traits::FiniteField};
-
 
 // Fill byte array of length 32 by random bytes
 pub fn random_bytes() -> [u8; 32] {
@@ -49,7 +48,6 @@ pub fn hash_message(message: &[u8]) -> Vec<u8> {
     output
 }
 
-
 // Generic reconstruction from any point providers (removes duplication).
 pub fn reconstruct_vector_from_points<FF, S>(
     items: &[S],
@@ -66,6 +64,7 @@ where
         });
     }
 
+    assert_eq!(L, poly_indices.len());
     let mut reconstructed = Vec::with_capacity(poly_indices.len());
     let vector_len = items[0].poly_count();
 
@@ -102,9 +101,10 @@ where
             *c = interpolate_constant_at_zero(&xs, &ys);
         }
 
-        reconstructed.push(Polynomial::from(coeffs));
+       reconstructed.push(Polynomial::from(coeffs));
     }
-
+    // let arr: [Polynomial<'static, FF>; L]  = reconstructed.try_into()
+    //     .unwrap_or_else(|v: Vec<Polynomial<'static, FF>>| panic!("Expected a Vec of length {} but it was {}", N, v.len()));
     Ok(reconstructed)
 }
 
