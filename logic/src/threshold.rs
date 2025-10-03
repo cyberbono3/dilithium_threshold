@@ -662,7 +662,7 @@ mod tests {
             let message = "verified_test".as_bytes();
 
             let partial_sig = threshold_sig
-                .partial_sign(message, &shares[0], Some(&create_test_seed(2)))
+                .partial_sign(message, &shares[0], Some(&create_test_seed(1)))
                 .unwrap();
 
             // Verify the partial signature
@@ -672,26 +672,26 @@ mod tests {
             assert!(is_valid);
         }
 
-        // TODO fix it
-        // #[test]
-        // fn test_verify_partial_signature_wrong_message() {
-        //     let threshold_sig = ThresholdSignature::new(3, 5, None).unwrap();
-        //     let shares = threshold_sig
-        //         .distributed_keygen(Some(&create_test_seed(1)))
-        //         .unwrap();
-        //     let message = create_test_message("Original message");
-        //     let wrong_message = create_test_message("Wrong message");
+  
+        #[test]
+        fn test_verify_partial_signature_wrong_message() {
+            let threshold_sig = ThresholdSignature::new(3, 5).unwrap();
+            let shares = threshold_sig
+                .distributed_keygen::<FieldElement>()
+                .unwrap();
+            let message = "Original message".as_bytes();
+            let wrong_message = "Wrong message".as_bytes();
 
-        //     let partial_sig = threshold_sig
-        //         .partial_sign(&message, &shares[0], Some(&create_test_seed(2)))
-        //         .unwrap();
+            let partial_sig = threshold_sig
+                .partial_sign(message, &shares[0], None)
+                .unwrap();
 
-        //     // Verify with wrong message should fail
-        //     let is_valid = threshold_sig
-        //         .verify_partial_signature(&wrong_message, &partial_sig);
+            // Verify with wrong message should fail
+            let is_valid = threshold_sig
+                .verify_partial_signature(wrong_message, &partial_sig);
 
-        //     assert!(!is_valid);
-        // }
+            assert!(!is_valid);
+        }
 
         // TODO fix it
         // #[test]
