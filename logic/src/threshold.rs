@@ -778,37 +778,35 @@ mod tests {
             assert_eq!(combined_sig_1.c, combined_sig_2.c);
         }
 
-        // TODO fix it
-        // #[test]
-        // fn test_combine_signatures_insufficient_shares() {
-        //     let threshold = 3;
-        //     let participants = 5;
-        //     let threshold_sig =
-        //         ThresholdSignature::new(threshold, participants, None).unwrap();
-        //     let shares = threshold_sig
-        //         .distributed_keygen(Some(&create_test_seed(1)))
-        //         .unwrap();
-        //     let message = create_test_message("Insufficient test");
 
-        //     // Create only threshold-1 partial signatures
-        //     let mut partial_sigs = Vec::new();
-        //     for i in 0..(threshold - 1) {
-        //         let partial = threshold_sig
-        //             .partial_sign(
-        //                 &message,
-        //                 &shares[i],
-        //                 Some(&create_test_seed((i + 10) as u8)),
-        //             )
-        //             .unwrap();
-        //         partial_sigs.push(partial);
-        //     }
+        #[test]
+        fn test_combine_signatures_insufficient_shares() {
+              let threshold_sig =
+                ThresholdSignature::default();
+            let shares = threshold_sig
+                .distributed_keygen::<FieldElement>()
+                .unwrap();
+            let message = "Insufficient test".as_bytes();
 
-        //     // Should fail with insufficient shares
-        //     let result = threshold_sig
-        //         .combine_signatures(&partial_sigs, &shares[0].public_key);
+            // Create only threshold-1 partial signatures
+            let mut partial_sigs = Vec::new();
+           //for i in 0..(threshold_sig.threshold - 1) {
+           for (i, share) in shares.iter().enumerate().take(threshold_sig.threshold - 1) {
+                let partial = threshold_sig
+                    .partial_sign(
+                        message,
+                        share,
+                        Some(&create_test_seed((i + 10) as u8)),
+                    )
+                    .unwrap();
+                partial_sigs.push(partial);
+            }
+            // Should fail with insufficient shares
+            let result = threshold_sig
+                .combine_signatures(&partial_sigs, &shares[0].public_key);
 
-        //     assert!(result.is_err());
-        // }
+            assert!(result.is_err());
+        }
 
         // TODO fix it
         // #[test]
