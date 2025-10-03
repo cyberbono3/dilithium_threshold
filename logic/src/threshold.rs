@@ -220,7 +220,7 @@ impl ThresholdSignature {
         //let z_partial = y_partial + c_s1;
         let z_partial: Vec<Polynomial<'static, FF>> = y_partial
             .into_iter()
-            .zip(c_s1.into_iter())
+            .zip(c_s1)
             .map(|(p1, p2)| p1 + p2)
             .collect();
 
@@ -445,6 +445,13 @@ impl ThresholdSignature {
     }
 }
 
+#[cfg(test)]
+impl Default for ThresholdSignature {
+    fn default() -> Self {
+        Self::new(3,5).unwrap()
+    }
+}
+
 impl<FF: FiniteField> PointSource<FF> for PartialSignature<'static, FF> {
     fn x(&self) -> FF {
         (self.participant_id as u64).into()
@@ -561,7 +568,7 @@ mod tests {
 
         #[test]
         fn test_threshold_signature_creation() {
-            let threshold_sig = ThresholdSignature::new(3, 5).unwrap();
+            let threshold_sig = ThresholdSignature::default();
             let info = threshold_sig.get_threshold_info();
 
             assert_eq!(info.get("threshold"), Some(&3));
@@ -592,7 +599,7 @@ mod tests {
         // TODO fix it
         #[test]
         fn test_distributed_keygen() {
-            let threshold_sig = ThresholdSignature::new(3, 5).unwrap();
+            let threshold_sig = ThresholdSignature::default();
 
             // Test with deterministic seed
             let shares =
@@ -617,7 +624,7 @@ mod tests {
         //  TODO fix it
         #[test]
         fn test_partial_sign_basic() {
-            let threshold_sig = ThresholdSignature::new(3, 5).unwrap();
+            let threshold_sig = ThresholdSignature::default();
             let shares =
                 threshold_sig.distributed_keygen::<FieldElement>().unwrap();
             let message = "Test message".as_bytes();
@@ -693,85 +700,83 @@ mod tests {
             assert!(!is_valid);
         }
 
-        // TODO fix it
-        // #[test]
-        // fn test_full_threshold_signing_workflow() {
-        //     let threshold = 3;
-        //     let participants = 5;
-        //     let threshold_sig =
-        //         ThresholdSignature::new(threshold, participants, None).unwrap();
 
-        //     // 1. Distributed key generation
-        //     let shares = threshold_sig
-        //         .distributed_keygen(Some(&create_test_seed(1)))
-        //         .unwrap();
-        //     let public_key = &shares[0].public_key;
+        #[test]
+        fn test_full_threshold_signing_workflow() {
+            let threshold_sig =
+                ThresholdSignature::default();
 
-        //     // 2. Message to sign
-        //     let message = create_test_message("Full workflow test message");
+            // 1. Distributed key generation
+            let shares = threshold_sig
+                .distributed_keygen::<FieldElement>()
+                .unwrap();
+            let public_key = &shares[0].public_key;
 
-        //     // 3. Create partial signatures from different subsets
-        //     // Test with first threshold participants
-        //     let mut partial_sigs_1 = Vec::new();
-        //     for i in 0..threshold {
-        //         let partial = threshold_sig
-        //             .partial_sign(
-        //                 &message,
-        //                 &shares[i],
-        //                 Some(&create_test_seed((i + 100) as u8)),
-        //             )
-        //             .unwrap();
-        //         partial_sigs_1.push(partial);
-        //     }
+            // 2. Message to sign
+            let message = "Full workflow test message".as_bytes();
 
-        //     // Test with last threshold participants
-        //     let mut partial_sigs_2 = Vec::new();
-        //     for i in (participants - threshold)..participants {
-        //         let partial = threshold_sig
-        //             .partial_sign(
-        //                 &message,
-        //                 &shares[i],
-        //                 Some(&create_test_seed((i + 200) as u8)),
-        //             )
-        //             .unwrap();
-        //         partial_sigs_2.push(partial);
-        //     }
+            // 3. Create partial signatures from different subsets
+            // Test with first threshold participants
+            let mut partial_sigs_1 = Vec::new();
+            for i in 0..threshold_sig.threshold {
+                let partial = threshold_sig
+                    .partial_sign(
+                        &message,
+                        &shares[i],
+                        Some(&create_test_seed((i + 100) as u8)),
+                    )
+                    .unwrap();
+                partial_sigs_1.push(partial);
+            }
 
-        //     // 4. Combine signatures from different subsets
-        //     let combined_sig_1 = threshold_sig
-        //         .combine_signatures(&partial_sigs_1, public_key)
-        //         .unwrap();
+            // Test with last threshold participants
+            let mut partial_sigs_2 = Vec::new();
+            for i in (threshold_sig.participants - threshold_sig.threshold)..threshold_sig.participants {
+                let partial = threshold_sig
+                    .partial_sign(
+                        &message,
+                        &shares[i],
+                        Some(&create_test_seed((i + 200) as u8)),
+                    )
+                    .unwrap();
+                partial_sigs_2.push(partial);
+            }
 
-        //     let combined_sig_2 = threshold_sig
-        //         .combine_signatures(&partial_sigs_2, public_key)
-        //         .unwrap();
+            // 4. Combine signatures from different subsets
+            let combined_sig_1 = threshold_sig
+                .combine_signatures(&partial_sigs_1, public_key)
+                .unwrap();
 
-        //     // Both combined signatures should be valid
-        //     // Verify using the 'c' field which is the challenge
-        //     assert_eq!(combined_sig_1.c, partial_sigs_1[0].challenge);
-        //     assert_eq!(combined_sig_2.c, partial_sigs_2[0].challenge);
+            let combined_sig_2 = threshold_sig
+                .combine_signatures(&partial_sigs_2, public_key)
+                .unwrap();
 
-        //     // Verify structure of both signatures
-        //     assert_eq!(
-        //         combined_sig_1.z.len(),
-        //         threshold_sig.dilithium.config.l
-        //     );
-        //     assert_eq!(
-        //         combined_sig_1.h.len(),
-        //         threshold_sig.dilithium.config.k
-        //     );
-        //     assert_eq!(
-        //         combined_sig_2.z.len(),
-        //         threshold_sig.dilithium.config.l
-        //     );
-        //     assert_eq!(
-        //         combined_sig_2.h.len(),
-        //         threshold_sig.dilithium.config.k
-        //     );
+            // Both combined signatures should be valid
+            // Verify using the 'c' field which is the challenge
+            assert_eq!(combined_sig_1.c, partial_sigs_1[0].challenge);
+            assert_eq!(combined_sig_2.c, partial_sigs_2[0].challenge);
 
-        //     // Since both signatures are for the same message, they should have the same challenge
-        //     assert_eq!(combined_sig_1.c, combined_sig_2.c);
-        // }
+            // Verify structure of both signatures
+            assert_eq!(
+                combined_sig_1.z.len(),
+                L
+            );
+            assert_eq!(
+                combined_sig_1.h.len(),
+                K,
+            );
+            assert_eq!(
+                combined_sig_2.z.len(),
+                L
+            );
+            assert_eq!(
+                combined_sig_2.h.len(),
+                K
+            );
+
+            // Since both signatures are for the same message, they should have the same challenge
+            assert_eq!(combined_sig_1.c, combined_sig_2.c);
+        }
 
         // TODO fix it
         // #[test]
