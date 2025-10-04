@@ -92,7 +92,9 @@ where
 
     for (i, dst) in out.iter_mut().enumerate() {
         // Set the per-index tag byte.
-        *inbuf.last_mut().expect("tag byte exists") = make_tag(i);
+        //*inbuf.last_mut().expect("tag byte exists") = make_tag(i);
+        let tag_pos = inbuf.len() - 1;
+        inbuf[tag_pos] = make_tag(i);
 
         // Expand and sample.
         let stream = shake256(2 * N, &inbuf);

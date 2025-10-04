@@ -1,7 +1,7 @@
 //! Small helpers to keep code DRY and straightforward.
 
-use rand::RngCore;
 use num_traits::Zero;
+use rand::RngCore;
 
 use sha2::digest::core_api::XofReaderCoreWrapper;
 use sha3::{
@@ -12,9 +12,7 @@ use sha3::{
 use crate::error::{Result, ThresholdError};
 use crate::params::L;
 use crate::points::PointSource;
-use math::{prelude::*, traits::FiniteField, poly::Polynomial};
-
-
+use math::{poly::Polynomial, prelude::*, traits::FiniteField};
 
 // Fill byte array of length 32 by random bytes
 pub fn random_bytes() -> [u8; 32] {
@@ -75,7 +73,11 @@ where
         let coeff_len = items[0]
             .poly_at(poly_idx)
             .map(|p| p.coefficients().len())
-            .unwrap_or(0);
+            .ok_or(ThresholdError::InvalidIndex {
+                index: poly_idx,
+                length: vector_len,
+            })?;
+        let mut coeffs = vec![FF::ZERO; coeff_len];
 
         let mut coeffs = vec![FF::ZERO; coeff_len];
 
@@ -120,11 +122,26 @@ pub fn interpolate_constant_at_zero<FF: FiniteField + Copy + 'static>(
     f.batch_evaluate(&[FF::ZERO])
         .first()
         .copied()
-        .expect("interpolation requires at least one (x, y) pair")
+        .unwrap_or(FF::ZERO)
 }
 
 #[inline]
-pub fn zero_polyvec<const LEN: usize, FF: FiniteField>() -> [Polynomial<'static, FF>; LEN] {
+pub fn zero_polyvec<const LEN: usize, FF: FiniteField>()
+-> [Polynomial<'static, FF>; LEN] {
     std::array::from_fn(|_| Polynomial::zero())
 }
 
+/// Return the maximum \ell_\infty norm across a slice of polynomials.
+/// Useful for bound checks; returns 0 for an empty slice.
+pub fn polyvec_max_infty_norm<FF: FiniteField>(
+    polys: &[Polynomial<'_, FF>],
+) -> i64
+where
+    i64: std::convert::From<FF>,
+{
+    polys
+        .iter()
+        .map(|p| p.norm_infinity() as i64)
+        .max()
+        .unwrap_or(0)
+}

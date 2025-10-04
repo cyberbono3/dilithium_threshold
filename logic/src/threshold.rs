@@ -12,7 +12,7 @@ use crate::{
     shamir::{AdaptedShamirSSS, ShamirShare},
     sign::Signature,
     utils::{
-        get_hash_reader, get_randomness, hash_message,
+        get_hash_reader, get_randomness, hash_message, polyvec_max_infty_norm,
         reconstruct_vector_from_points,
     },
 };
@@ -394,25 +394,20 @@ impl ThresholdSignature {
         Ok(hint_polys) // K polynomials
     }
 
-    /// Check if partial signature satisfies bound requirements.
-    fn check_partial_bounds<FF: FiniteField>(
-        &self,
-        partial_sig: &PartialSignature<'static, FF>,
-    ) -> bool {
-        // let gamma1 = self.dilithium.config.gamma1;
-        // let beta = self.dilithium.config.beta;
-        //let polys = partial_sig.z_partial.clone();;
+    // /// Check if partial signature satisfies bound requirements.
+    // fn check_partial_bounds<FF: FiniteField>(
+    //     &self,
+    //     partial_sig: &PartialSignature<'static, FF>,
+    // ) -> bool  {
 
-        // TODO consider to declare a standalone function
-        let norm_infinity_val = partial_sig
-            .z_partial
-            .iter()
-            .map(|p| p.norm_infinity())
-            .max()
-            .unwrap_or(0);
+    //     // let gamma1 = self.dilithium.config.gamma1;
+    //     // let beta = self.dilithium.config.beta;
+    //     //let polys = partial_sig.z_partial.clone();;
 
-        norm_infinity_val < GAMMA1 as u32 - BETA as u32
-    }
+    //     let norm_infinity_val = polyvec_max_infty_norm(&partial_sig.z_partial) as u32;
+
+    //     norm_infinity_val < GAMMA1 as u32 - BETA as u32
+    // }
 
     /// Get information about the threshold configuration.
     pub fn get_threshold_info(&self) -> HashMap<&'static str, usize> {

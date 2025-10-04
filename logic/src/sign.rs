@@ -10,8 +10,6 @@ use crate::utils::zero_polyvec;
 use math::prelude::FieldElement;
 use math::{poly::Polynomial, traits::FiniteField};
 
-
-
 const REJECTION_LIMIT: u32 = 10000;
 
 #[derive(Clone, Debug)]
@@ -81,14 +79,13 @@ fn pack_w1_for_hash<FF: FiniteField + Into<[u8; FieldElement::BYTES]>>(
     out
 }
 
-
 /// Sample masking y in [-GAMMA1, GAMMA1] deterministically from a seed.
 fn sample_y<FF: FiniteField + From<i64>>(
     seed: &[u8],
     ctr: u32,
 ) -> [Polynomial<'static, FF>; L] {
     let mut out = zero_polyvec::<L, FF>();
-       
+
     for j in 0..L {
         let mut inp = Vec::new();
         inp.extend_from_slice(seed);
@@ -206,7 +203,7 @@ where
 
         let ok1 = all_infty_norm_below::<FF, L>(&z, GAMMA1 - BETA);
 
-        let mut ay_minus_cs2 =  zero_polyvec::<L, FF>();
+        let mut ay_minus_cs2 = zero_polyvec::<L, FF>();
         polyvec_sub_scaled_in_place::<FF, K>(
             &mut ay_minus_cs2,
             &w,
@@ -245,7 +242,7 @@ where
     }
 
     let az = mat_vec_mul(&pub_key.a, &sig.z);
-    let mut az_minus_ct =  zero_polyvec::<L, FF>();
+    let mut az_minus_ct = zero_polyvec::<L, FF>();
     polyvec_sub_scaled_in_place::<FF, K>(
         &mut az_minus_ct,
         &az,

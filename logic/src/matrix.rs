@@ -218,8 +218,6 @@ mod tests {
     use math::field_element::FieldElement;
     use math::traits::FiniteField;
 
- 
-
     #[test]
     fn expand_a_is_deterministic_and_modq() {
         let rho = [7u8; 32];
