@@ -846,96 +846,59 @@ mod tests {
             assert_eq!(rand1, rand1_again);
         }
 
-        // TODO fix it
-        // #[test]
-        // fn test_sample_gamma1() {
-        //     let threshold_sig = ThresholdSignature::new(2, 3, None).unwrap();
-        //     let seed = create_test_seed(123);
 
-        //     let coeffs = threshold_sig.sample_gamma1(&seed);
+ 
+        #[test]
+        fn test_edge_cases() {
+            // Minimum configuration (2 out of 2)
+            let threshold_sig = ThresholdSignature::new(2, 2).unwrap();
+            let shares = threshold_sig.distributed_keygen::<FieldElement>().unwrap();
+            assert_eq!(shares.len(), 2);
 
-        //     assert_eq!(coeffs.len(), N);
+            // Large threshold
+            let threshold_sig_large =
+                ThresholdSignature::new(10, 15).unwrap();
+            let shares_large =
+                threshold_sig_large.distributed_keygen::<FieldElement>().unwrap();
+            assert_eq!(shares_large.len(), 15);
+        }
 
-        //     // Check all coefficients are within bounds
-        //     for &coeff in &coeffs {
-        //         assert!((0..Q).contains(&coeff));
-        //         // Original coefficient before modular reduction would be in [-gamma1, gamma1]
-        //     }
+      
+        #[test]
+        fn test_concurrent_partial_signing() {
+            let threshold = 4;
+            let participants = 7;
+            let threshold_sig =
+                ThresholdSignature::new(threshold, participants).unwrap();
+            let shares = threshold_sig
+                .distributed_keygen::<FieldElement>()
+                .unwrap();
+            let message = "Concurrent signing test".as_bytes();
 
-        //     // Same seed should produce same coefficients
-        //     let coeffs2 = threshold_sig.sample_gamma1(&seed);
-        //     assert_eq!(coeffs, coeffs2);
-        // }
+            // Simulate concurrent signing by different participants
+            let partial_sigs: Vec<_> = (0..threshold)
+                .map(|i| {
+                    threshold_sig
+                        .partial_sign(
+                            &message,
+                            &shares[i],
+                            Some(&create_test_seed((i * 10) as u8)),
+                        )
+                        .unwrap()
+                })
+                .collect();
 
-        // TODO fix it
-        // #[test]
-        // fn test_edge_cases() {
-        //     // Minimum configuration (2 out of 2)
-        //     let threshold_sig = ThresholdSignature::new(2, 2, None).unwrap();
-        //     let shares = threshold_sig.distributed_keygen(None).unwrap();
-        //     assert_eq!(shares.len(), 2);
+            // All partial signatures should be valid
+            for partial_sig in partial_sigs.iter() {
+                assert!(threshold_sig
+                    .verify_partial_signature(message, partial_sig));
+            }
 
-        //     // Large threshold
-        //     let threshold_sig_large =
-        //         ThresholdSignature::new(10, 15, None).unwrap();
-        //     let shares_large =
-        //         threshold_sig_large.distributed_keygen(None).unwrap();
-        //     assert_eq!(shares_large.len(), 15);
-        // }
-
-        // TODO fix it
-        // #[test]
-        // fn test_different_security_levels() {
-        //     // Test with different security levels
-        //     for security_level in [2, 3, 5] {
-        //         let threshold_sig =
-        //             ThresholdSignature::new(3, 5, Some(security_level))
-        //                 .unwrap();
-        //         let info = threshold_sig.get_threshold_info();
-        //         assert_eq!(info.get("security_level"), Some(&security_level));
-
-        //         // Verify key generation works with different security levels
-        //         let shares = threshold_sig.distributed_keygen(None).unwrap();
-        //         assert_eq!(shares.len(), 5);
-        //     }
-        // }
-
-        // TODO fix it
-        // #[test]
-        // fn test_concurrent_partial_signing() {
-        //     let threshold = 4;
-        //     let participants = 7;
-        //     let threshold_sig =
-        //         ThresholdSignature::new(threshold, participants, None).unwrap();
-        //     let shares = threshold_sig
-        //         .distributed_keygen(Some(&create_test_seed(1)))
-        //         .unwrap();
-        //     let message = create_test_message("Concurrent signing test");
-
-        //     // Simulate concurrent signing by different participants
-        //     let partial_sigs: Vec<_> = (0..threshold)
-        //         .map(|i| {
-        //             threshold_sig
-        //                 .partial_sign(
-        //                     &message,
-        //                     &shares[i],
-        //                     Some(&create_test_seed((i * 10) as u8)),
-        //                 )
-        //                 .unwrap()
-        //         })
-        //         .collect();
-
-        //     // All partial signatures should be valid
-        //     for (i, partial_sig) in partial_sigs.iter().enumerate() {
-        //         assert!(threshold_sig
-        //             .verify_partial_signature(&message, partial_sig,));
-        //     }
-
-        //     // Should be able to combine them
-        //     let combined = threshold_sig
-        //         .combine_signatures(&partial_sigs, &shares[0].public_key);
-        //     assert!(combined.is_ok());
-        // }
+            // Should be able to combine them
+            let combined = threshold_sig
+                .combine_signatures(&partial_sigs, &shares[0].public_key);
+            assert!(combined.is_ok());
+        }
     }
 
     // TODO fix it
