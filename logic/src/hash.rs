@@ -23,12 +23,10 @@ pub fn shake256(out_len: usize, input: &[u8]) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     macro_rules! xof_smoke_tests {
         ($modname:ident, $f:path) => {
             mod $modname {
-                use super::*;
                 #[test]
                 fn deterministic_and_length() {
                     let m = b"determinism";

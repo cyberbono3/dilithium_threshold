@@ -867,6 +867,7 @@ where
     ///
     /// Prefer this over [`self * other`](Self::mul) since it chooses the fastest multiplication
     /// strategy.
+    // TODO test it
     #[must_use]
     pub fn multiply<FF2>(
         &self,

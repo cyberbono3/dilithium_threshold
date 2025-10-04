@@ -15,7 +15,6 @@ pub const GAMMA2: i64 = (Q - 1) / 88; // 95_232
 pub const ALPHA: i64 = 2 * GAMMA2; // 190_464
 pub const BETA: i64 = (TAU as i64) * ETA; // 78
 
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DilithiumConfig {
     pub k: usize,
@@ -83,8 +82,6 @@ pub fn validate_threshold_config(
     // Participants must be at least 2 (otherwise threshold >= 2 would be impossible)
     (2..=participants).contains(&threshold) && (2..N).contains(&participants)
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -290,4 +287,3 @@ mod tests {
         assert!(validate_threshold_config(67, 100)); // 67 of 100
     }
 }
-
