@@ -1,13 +1,11 @@
-use sha3::{
-    Shake256,
-    digest::{ExtendableOutput, Update, XofReader},
-};
+use sha3::digest::XofReader;
+
 
 use crate::{
-    params::{GAMMA1, K, L},
+    params::GAMMA1,
     utils::get_hash_reader,
 };
-use math::{matrix::Matrix, traits::FiniteField};
+use math::traits::FiniteField;
 
 use math::prelude::*;
 

@@ -294,25 +294,6 @@ impl ThresholdSignature {
         Ok(DilithiumSignature::new(z, h, challenge))
     }
 
-    // /// Verify a partial signature.
-    // pub fn verify_partial_signature<FF: FiniteField>(
-    //     &self,
-    //     message: &[u8],
-    //     partial_sig: &PartialSignature<'static, FF>,
-    // ) -> bool {
-    //     // Hash message
-    //     let mu = hash_message(message);
-
-    //     // Verify challenge consistency
-    //     let expected_challenge = self.generate_partial_challenge(&mu);
-
-    //     if partial_sig.challenge != expected_challenge {
-    //         return false;
-    //     }
-
-    //     // Verify partial signature bounds
-    //     self.check_partial_bounds(partial_sig)
-    // }
     pub fn verify_partial_signature<FF: FiniteField>(
         &self,
         message: &[u8],
