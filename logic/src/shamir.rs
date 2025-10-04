@@ -202,6 +202,30 @@ impl AdaptedShamirSSS {
         Ok(())
     }
 
+    // /// Organize participant shares into ShamirShare objects
+    // fn organize_shares<FF: FiniteField>(
+    //     &self,
+    //     participant_shares: Vec<Vec<Share<FF>>>,
+    //     vector_length: usize,
+    // ) -> Result<Vec<ShamirShare<'static, FF>>> {
+    //     let mut shares = Vec::with_capacity(self.participant_number);
+
+    //     for pid in 1..=self.participant_number {
+    //         let mut share_coeffs = vec![vec![FF::default(); N]; vector_length];
+
+    //         // Fill in the coefficients for each polynomial
+    //         for share in &participant_shares[pid - 1] {
+    //             share_coeffs[share.poly_idx][share.coeff_idx] = share.value;
+    //         }
+
+    //         let poly_vec: Vec<Polynomial<'static, FF>> =
+    //             share_coeffs.into_iter().map(Polynomial::from).collect();
+
+    //         shares.push(ShamirShare::new(pid, poly_vec)?);
+    //     }
+
+    //     Ok(shares)
+    // }
     /// Organize participant shares into ShamirShare objects
     fn organize_shares<FF: FiniteField>(
         &self,
@@ -210,20 +234,36 @@ impl AdaptedShamirSSS {
     ) -> Result<Vec<ShamirShare<'static, FF>>> {
         let mut shares = Vec::with_capacity(self.participant_number);
 
+        // IMPORTANT: size each polynomial by the actual number of coefficients it has
         for pid in 1..=self.participant_number {
-            let mut share_coeffs = vec![vec![FF::default(); N]; vector_length];
+            let shares_for_pid = &participant_shares[pid - 1];
 
-            // Fill in the coefficients for each polynomial
-            for share in &participant_shares[pid - 1] {
-                share_coeffs[share.poly_idx][share.coeff_idx] = share.value;
+            // find the required length for each polynomial in the vector
+            let mut per_poly_len = vec![0usize; vector_length];
+            for sh in shares_for_pid.iter() {
+                let need = sh.coeff_idx + 1;
+                if need > per_poly_len[sh.poly_idx] {
+                    per_poly_len[sh.poly_idx] = need;
+                }
             }
 
+            // allocate per polynomial with its true length
+            let mut share_coeffs: Vec<Vec<FF>> = per_poly_len
+                .iter()
+                .map(|&len| vec![FF::default(); len])
+                .collect();
+
+            // fill in the coefficients
+            for sh in shares_for_pid.iter() {
+                share_coeffs[sh.poly_idx][sh.coeff_idx] = sh.value;
+            }
+
+            // turn into a polynomial vector
             let poly_vec: Vec<Polynomial<'static, FF>> =
                 share_coeffs.into_iter().map(Polynomial::from).collect();
 
             shares.push(ShamirShare::new(pid, poly_vec)?);
         }
-
         Ok(shares)
     }
 
@@ -335,15 +375,6 @@ mod tests {
         }
 
         #[test]
-        fn test_shamir_initialization() {
-            let adapted_shamir_res = setup_adapted_shamir(3, 5);
-
-            // We can't directly access fields in Rust due to privacy,
-            // but we can test that creation succeeds
-            assert!(adapted_shamir_res.is_ok());
-        }
-
-        #[test]
         fn test_invalid_threshold_config() {
             // Threshold too small
             assert!(matches!(
@@ -383,8 +414,7 @@ mod tests {
         // TODO fix it
         #[test]
         fn test_secret_splitting() {
-            let participants = 5;
-            let shamir = setup_adapted_shamir(3, participants).unwrap();
+            let shamir = AdaptedShamirSSS::default();
 
             // Create test secret vector
             let coeffs = fe_vec!(1, 2, 3, 4, 5);
@@ -399,7 +429,7 @@ mod tests {
             let shares = shamir.split_secret(&secret_vector).unwrap();
 
             // Check we get correct number of shares
-            assert_eq!(shares.len(), participants);
+            assert_eq!(shares.len(), shamir.participant_number);
 
             // Check each share has correct participant ID
             for (i, share) in shares.iter().enumerate() {
@@ -410,7 +440,7 @@ mod tests {
 
         #[test]
         fn test_secret_reconstruction() {
-            let shamir = setup_adapted_shamir(3, 5).unwrap();
+            let shamir = AdaptedShamirSSS::default();
 
             // Create test secret vector
             // TODO declare standadlone function

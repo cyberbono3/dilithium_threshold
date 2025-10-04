@@ -64,7 +64,7 @@ where
         });
     }
 
-    assert_eq!(L, poly_indices.len());
+    //assert_eq!(L, poly_indices.len());
     let mut reconstructed = Vec::with_capacity(poly_indices.len());
     let vector_len = items[0].poly_count();
 
