@@ -880,7 +880,7 @@ mod tests {
                 .map(|i| {
                     threshold_sig
                         .partial_sign(
-                            &message,
+                            message,
                             &shares[i],
                             Some(&create_test_seed((i * 10) as u8)),
                         )
@@ -901,76 +901,44 @@ mod tests {
         }
     }
 
-    // TODO fix it
-    // // Integration tests combining threshold signatures with Dilithium
-    // mod integration_tests {
-    //     use crate::dilithium::DilithiumKeyPair;
 
-    //     use super::*;
+    // Integration tests combining threshold signatures with Dilithium
+    mod integration_tests {
+    
+        use super::*;
 
-    //     #[test]
-    //     fn test_threshold_vs_regular_dilithium() {
-    //         let security_level = 2;
-    //         let threshold = 3;
-    //         let participants = 5;
 
-    //         // Create threshold signature scheme
-    //         let threshold_sig = ThresholdSignature::new(
-    //             threshold,
-    //             participants,
-    //             Some(security_level),
-    //         )
-    //         .unwrap();
+        #[test]
+        fn test_reconstruct_vs_original_key() {
+            let threshold = 2;
+            let participants = 3;
+            let threshold_sig =
+                ThresholdSignature::new(threshold, participants).unwrap();
 
-    //         // Create regular Dilithium for comparison
-    //         let dilithium = Dilithium::new(security_level);
+            // Generate shares
+            let shares = threshold_sig
+                .distributed_keygen::<FieldElement>()
+                .unwrap();
 
-    //         // Generate keys
-    //         let seed = create_test_seed(42);
-    //         let threshold_shares = threshold_sig
-    //             .distributed_keygen(Some(&seed))
-    //             .unwrap();
-    //         let regular_keypair: DilithiumKeyPair<'_, _> =
-    //             dilithium.keygen(Some(&seed));
+            // Reconstruct s1 and s2 using Shamir reconstruction
+            let s1_shares: Vec<_> =
+                shares.iter().map(|s| s.s1_share.clone()).collect();
+            let s2_shares: Vec<_> =
+                shares.iter().map(|s| s.s2_share.clone()).collect();
 
-    //         // Public keys should match since we used same seed
-    //         assert_eq!(
-    //             threshold_shares[0].public_key,
-    //             regular_keypair.public_key
-    //         );
-    //     }
+            let shamir_s1 =
+                AdaptedShamirSSS::new(threshold, participants).unwrap();
+            let shamir_s2 =
+                AdaptedShamirSSS::new(threshold, participants).unwrap();
 
-    //     #[test]
-    //     fn test_reconstruct_vs_original_key() {
-    //         let threshold = 2;
-    //         let participants = 3;
-    //         let threshold_sig =
-    //             ThresholdSignature::new(threshold, participants, None).unwrap();
+            // Reconstruct should work with threshold shares
+            let reconstructed_s1 =
+                shamir_s1.reconstruct_secret(&s1_shares[..threshold]);
+            let reconstructed_s2 =
+                shamir_s2.reconstruct_secret(&s2_shares[..threshold]);
 
-    //         // Generate shares
-    //         let shares = threshold_sig
-    //             .distributed_keygen(Some(&create_test_seed(1)))
-    //             .unwrap();
-
-    //         // Reconstruct s1 and s2 using Shamir reconstruction
-    //         let s1_shares: Vec<_> =
-    //             shares.iter().map(|s| s.s1_share.clone()).collect();
-    //         let s2_shares: Vec<_> =
-    //             shares.iter().map(|s| s.s2_share.clone()).collect();
-
-    //         let shamir_s1 =
-    //             AdaptedShamirSSS::new(threshold, participants).unwrap();
-    //         let shamir_s2 =
-    //             AdaptedShamirSSS::new(threshold, participants).unwrap();
-
-    //         // Reconstruct should work with threshold shares
-    //         let reconstructed_s1 =
-    //             shamir_s1.reconstruct_secret(&s1_shares[..threshold]);
-    //         let reconstructed_s2 =
-    //             shamir_s2.reconstruct_secret(&s2_shares[..threshold]);
-
-    //         assert!(reconstructed_s1.is_ok());
-    //         assert!(reconstructed_s2.is_ok());
-    //     }
-    // }
+            assert!(reconstructed_s1.is_ok());
+            assert!(reconstructed_s2.is_ok());
+        }
+    }
 }
