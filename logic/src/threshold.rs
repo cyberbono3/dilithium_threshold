@@ -824,31 +824,7 @@ mod tests {
             assert!(result.is_err());
         }
 
-        // #[test]
-        // fn test_modular_arithmetic() {
-        //     let threshold_sig = ThresholdSignature::new(2, 3, None).unwrap();
-
-        //     // Test mod_pow
-        //     let base = 3;
-        //     let exp = 4;
-        //     let result = mod_pow(base, exp);
-        //     assert_eq!(result, 81); // 3^4 = 81
-
-        //     // Test mod_mul
-        //     let a = Q - 1;
-        //     let b = 2;
-        //     let result = threshold_sig.mod_mul(a, b);
-        //     assert_eq!(result, (((Q - 1) as i64 * 2) % Q as i64) as i32);
-
-        //     // Test mod_mul_three
-        //     let a = 1000;
-        //     let b = 2000;
-        //     let c = 3;
-        //     let result = threshold_sig.mod_mul_three(a, b, c);
-        //     let expected = ((1000i64 * 2000 * 3) % Q as i64) as i32;
-        //     assert_eq!(result, expected);
-        // }
-
+       
         #[test]
         fn test_derive_participant_randomness() {
             let threshold_sig = ThresholdSignature::new(2, 3).unwrap();
