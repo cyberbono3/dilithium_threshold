@@ -5,7 +5,7 @@ use num_traits::Zero;
 use crate::hash::shake256;
 use crate::matrix::{MatrixA, expand_a_from_rho, mat_vec_mul};
 use crate::params::{K, L, N};
-use crate::utils::random_bytes;
+use crate::utils::{random_bytes, zero_polyvec};
 use math::{poly::Polynomial, traits::FiniteField};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -83,12 +83,7 @@ where
     F: Fn(usize) -> u8,
 {
     let seed = random_bytes();
-    let mut out: [Polynomial<'static, FF>; 4] = [
-        Polynomial::zero(),
-        Polynomial::zero(),
-        Polynomial::zero(),
-        Polynomial::zero(),
-    ];
+    let mut out: [Polynomial<'static, FF>; 4] = zero_polyvec::<L, FF>();
 
     // Build "seed || tag" once; mutate the last byte per iteration.
     let mut inbuf = Vec::with_capacity(seed.len() + 1);
@@ -118,12 +113,7 @@ fn compute_t<FF: FiniteField + From<i64>>(
     let t_vec = mat_vec_mul(a, &s1).map(|p| p); // A*s1
 
     // TODO introduce macro that generate array of polynomials of predetermined length
-    let mut t = [
-        Polynomial::zero(),
-        Polynomial::zero(),
-        Polynomial::zero(),
-        Polynomial::zero(),
-    ];
+    let mut t = zero_polyvec::<L, FF>();
 
     for ((out, a), b) in t.iter_mut().zip(&t_vec).zip(s2) {
         *out = std::iter::once(b.clone()).fold(a.clone(), |mut acc, x| {
@@ -290,12 +280,7 @@ mod tests {
         let (pk, sk) = keygen::<FieldElement>();
 
         let as1 = mat_vec_mul(&sk.a, &sk.s1);
-        let mut expected_t = [
-            Polynomial::zero(),
-            Polynomial::zero(),
-            Polynomial::zero(),
-            Polynomial::zero(),
-        ];
+        let mut expected_t = zero_polyvec::<L, FieldElement>();
 
         for i in 0..K {
             expected_t[i] = as1[i].clone();

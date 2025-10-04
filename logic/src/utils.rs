@@ -1,6 +1,7 @@
 //! Small helpers to keep code DRY and straightforward.
 
 use rand::RngCore;
+use num_traits::Zero;
 
 use sha2::digest::core_api::XofReaderCoreWrapper;
 use sha3::{
@@ -11,7 +12,9 @@ use sha3::{
 use crate::error::{Result, ThresholdError};
 use crate::params::L;
 use crate::points::PointSource;
-use math::{prelude::*, traits::FiniteField};
+use math::{prelude::*, traits::FiniteField, poly::Polynomial};
+
+
 
 // Fill byte array of length 32 by random bytes
 pub fn random_bytes() -> [u8; 32] {
@@ -119,3 +122,9 @@ pub fn interpolate_constant_at_zero<FF: FiniteField + Copy + 'static>(
         .copied()
         .expect("interpolation requires at least one (x, y) pair")
 }
+
+#[inline]
+pub fn zero_polyvec<const LEN: usize, FF: FiniteField>() -> [Polynomial<'static, FF>; LEN] {
+    std::array::from_fn(|_| Polynomial::zero())
+}
+

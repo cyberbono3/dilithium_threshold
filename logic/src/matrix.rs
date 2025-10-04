@@ -210,6 +210,7 @@ pub fn mat_vec_mul<FF: FiniteField>(
 mod tests {
     use crate::matrix::{expand_a_from_rho, mat_vec_mul};
     use crate::params::{K, L, N, Q};
+    use crate::utils::zero_polyvec;
     //use crate::poly::{Poly, mod_q};
     use math::poly::Polynomial;
     use num_traits::Zero;
@@ -217,14 +218,7 @@ mod tests {
     use math::field_element::FieldElement;
     use math::traits::FiniteField;
 
-    fn zero_y<FF: FiniteField>() -> [Polynomial<'static, FF>; L] {
-        [
-            Polynomial::zero(),
-            Polynomial::zero(),
-            Polynomial::zero(),
-            Polynomial::zero(),
-        ]
-    }
+ 
 
     #[test]
     fn expand_a_is_deterministic_and_modq() {
@@ -271,7 +265,7 @@ mod tests {
     #[test]
     fn mat_vec_mul_zero_is_zero() {
         let a = expand_a_from_rho::<FieldElement>([42u8; 32]);
-        let y = zero_y();
+        let y = zero_polyvec::<L, FieldElement>();
         let w = mat_vec_mul(&a, &y);
         for i in 0..K {
             assert_eq!(w[i], Polynomial::zero());

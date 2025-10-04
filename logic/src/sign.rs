@@ -5,11 +5,12 @@ use crate::hash::shake256;
 use crate::keypair::{PrivateKey, PublicKey};
 use crate::matrix::{MatrixA, mat_vec_mul};
 use crate::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N, TAU};
+use crate::utils::zero_polyvec;
 
 use math::prelude::FieldElement;
 use math::{poly::Polynomial, traits::FiniteField};
 
-use num_traits::Zero;
+
 
 const REJECTION_LIMIT: u32 = 10000;
 
@@ -80,10 +81,6 @@ fn pack_w1_for_hash<FF: FiniteField + Into<[u8; FieldElement::BYTES]>>(
     out
 }
 
-#[inline]
-fn zero_polyvec<const LEN: usize, FF: FiniteField>() -> [Polynomial<'static, FF>; LEN] {
-    std::array::from_fn(|_| Polynomial::zero())
-}
 
 /// Sample masking y in [-GAMMA1, GAMMA1] deterministically from a seed.
 fn sample_y<FF: FiniteField + From<i64>>(
@@ -401,7 +398,7 @@ mod tests {
         for (i, poly) in sig.z.iter().enumerate() {
             let norm = poly.norm_infinity() as i64;
             assert!(
-                norm < (GAMMA1 - BETA) as i64,
+                norm < GAMMA1 - BETA,
                 "z[{}] ||.||_inf = {} exceeds GAMMA1 - BETA",
                 i,
                 norm
