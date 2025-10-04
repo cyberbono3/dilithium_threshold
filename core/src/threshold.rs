@@ -277,8 +277,6 @@ impl ThresholdSignature {
         Ok(DilithiumSignature::new(z, h, challenge))
     }
 
-  
-
     /// Verify a partial signature.
     pub fn verify_partial_signature<FF: FiniteField>(
         &self,
@@ -291,13 +289,11 @@ impl ThresholdSignature {
         // Verify challenge consistency
         let expected_challenge = self.generate_partial_challenge(&mu);
 
-        if partial_sig.challenge != expected_challenge {
-            return false;
-        }
+        return partial_sig.challenge == expected_challenge;
 
-    //     // // Verify partial signature bounds
-    //     // self.check_partial_bounds(partial_sig)
-    // }
+        //     // // Verify partial signature bounds
+        //     // self.check_partial_bounds(partial_sig)
+    }
 
     /// Derive participant-specific randomness.
     fn derive_participant_randomness(
@@ -401,10 +397,7 @@ impl ThresholdSignature {
         &self,
         partial_sig: &PartialSignature<'static, FF>,
     ) -> bool {
-        let gamma1 = self.dilithium.config.gamma1;
-        let beta = self.dilithium.config.beta;
-
-        partial_sig.z_partial.norm_infinity() < gamma1 - beta
+        partial_sig.z_partial.norm_infinity() < GAMMA1 - BETA
     }
 
     /// Get information about the threshold configuration.
@@ -412,7 +405,6 @@ impl ThresholdSignature {
         let mut info = HashMap::new();
         info.insert("threshold", self.threshold);
         info.insert("participants", self.participants);
-        info.insert("security_level", self.security_level);
         info.insert("min_signers", self.threshold);
         info.insert("max_participants", self.participants);
         info
@@ -885,8 +877,7 @@ mod tests {
         // }
 
         #[test]
-        fn te
-        st_derive_participant_randomness() {
+        fn test_derive_participant_randomness() {
             let threshold_sig = ThresholdSignature::new(2, 3, None).unwrap();
             let base_randomness = create_test_seed(42);
 
@@ -927,7 +918,7 @@ mod tests {
             assert_eq!(coeffs, coeffs2);
         }
 
-       // TODO fix it
+        // TODO fix it
         #[test]
         fn test_edge_cases() {
             // Minimum configuration (2 out of 2)

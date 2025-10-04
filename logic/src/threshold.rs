@@ -824,7 +824,6 @@ mod tests {
             assert!(result.is_err());
         }
 
-       
         #[test]
         fn test_derive_participant_randomness() {
             let threshold_sig = ThresholdSignature::new(2, 3).unwrap();
@@ -846,33 +845,30 @@ mod tests {
             assert_eq!(rand1, rand1_again);
         }
 
-
- 
         #[test]
         fn test_edge_cases() {
             // Minimum configuration (2 out of 2)
             let threshold_sig = ThresholdSignature::new(2, 2).unwrap();
-            let shares = threshold_sig.distributed_keygen::<FieldElement>().unwrap();
+            let shares =
+                threshold_sig.distributed_keygen::<FieldElement>().unwrap();
             assert_eq!(shares.len(), 2);
 
             // Large threshold
-            let threshold_sig_large =
-                ThresholdSignature::new(10, 15).unwrap();
-            let shares_large =
-                threshold_sig_large.distributed_keygen::<FieldElement>().unwrap();
+            let threshold_sig_large = ThresholdSignature::new(10, 15).unwrap();
+            let shares_large = threshold_sig_large
+                .distributed_keygen::<FieldElement>()
+                .unwrap();
             assert_eq!(shares_large.len(), 15);
         }
 
-      
         #[test]
         fn test_concurrent_partial_signing() {
             let threshold = 4;
             let participants = 7;
             let threshold_sig =
                 ThresholdSignature::new(threshold, participants).unwrap();
-            let shares = threshold_sig
-                .distributed_keygen::<FieldElement>()
-                .unwrap();
+            let shares =
+                threshold_sig.distributed_keygen::<FieldElement>().unwrap();
             let message = "Concurrent signing test".as_bytes();
 
             // Simulate concurrent signing by different participants
@@ -890,8 +886,10 @@ mod tests {
 
             // All partial signatures should be valid
             for partial_sig in partial_sigs.iter() {
-                assert!(threshold_sig
-                    .verify_partial_signature(message, partial_sig));
+                assert!(
+                    threshold_sig
+                        .verify_partial_signature(message, partial_sig)
+                );
             }
 
             // Should be able to combine them
@@ -901,12 +899,10 @@ mod tests {
         }
     }
 
-
     // Integration tests combining threshold signatures with Dilithium
     mod integration_tests {
-    
-        use super::*;
 
+        use super::*;
 
         #[test]
         fn test_reconstruct_vs_original_key() {
@@ -916,9 +912,8 @@ mod tests {
                 ThresholdSignature::new(threshold, participants).unwrap();
 
             // Generate shares
-            let shares = threshold_sig
-                .distributed_keygen::<FieldElement>()
-                .unwrap();
+            let shares =
+                threshold_sig.distributed_keygen::<FieldElement>().unwrap();
 
             // Reconstruct s1 and s2 using Shamir reconstruction
             let s1_shares: Vec<_> =
