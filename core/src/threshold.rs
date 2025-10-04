@@ -885,7 +885,8 @@ mod tests {
         // }
 
         #[test]
-        fn test_derive_participant_randomness() {
+        fn te
+        st_derive_participant_randomness() {
             let threshold_sig = ThresholdSignature::new(2, 3, None).unwrap();
             let base_randomness = create_test_seed(42);
 
@@ -905,42 +906,42 @@ mod tests {
             assert_eq!(rand1, rand1_again);
         }
 
-        // TODO fix it
-        // #[test]
-        // fn test_sample_gamma1() {
-        //     let threshold_sig = ThresholdSignature::new(2, 3, None).unwrap();
-        //     let seed = create_test_seed(123);
+        //TODO fix it
+        #[test]
+        fn test_sample_gamma1() {
+            let threshold_sig = ThresholdSignature::new(2, 3, None).unwrap();
+            let seed = create_test_seed(123);
 
-        //     let coeffs = threshold_sig.sample_gamma1(&seed);
+            let coeffs = threshold_sig.sample_gamma1(&seed);
 
-        //     assert_eq!(coeffs.len(), N);
+            assert_eq!(coeffs.len(), N);
 
-        //     // Check all coefficients are within bounds
-        //     for &coeff in &coeffs {
-        //         assert!((0..Q).contains(&coeff));
-        //         // Original coefficient before modular reduction would be in [-gamma1, gamma1]
-        //     }
+            // Check all coefficients are within bounds
+            for &coeff in &coeffs {
+                assert!((0..Q).contains(&coeff));
+                // Original coefficient before modular reduction would be in [-gamma1, gamma1]
+            }
 
-        //     // Same seed should produce same coefficients
-        //     let coeffs2 = threshold_sig.sample_gamma1(&seed);
-        //     assert_eq!(coeffs, coeffs2);
-        // }
+            // Same seed should produce same coefficients
+            let coeffs2 = threshold_sig.sample_gamma1(&seed);
+            assert_eq!(coeffs, coeffs2);
+        }
 
-        // TODO fix it
-        // #[test]
-        // fn test_edge_cases() {
-        //     // Minimum configuration (2 out of 2)
-        //     let threshold_sig = ThresholdSignature::new(2, 2, None).unwrap();
-        //     let shares = threshold_sig.distributed_keygen(None).unwrap();
-        //     assert_eq!(shares.len(), 2);
+       // TODO fix it
+        #[test]
+        fn test_edge_cases() {
+            // Minimum configuration (2 out of 2)
+            let threshold_sig = ThresholdSignature::new(2, 2, None).unwrap();
+            let shares = threshold_sig.distributed_keygen(None).unwrap();
+            assert_eq!(shares.len(), 2);
 
-        //     // Large threshold
-        //     let threshold_sig_large =
-        //         ThresholdSignature::new(10, 15, None).unwrap();
-        //     let shares_large =
-        //         threshold_sig_large.distributed_keygen(None).unwrap();
-        //     assert_eq!(shares_large.len(), 15);
-        // }
+            // Large threshold
+            let threshold_sig_large =
+                ThresholdSignature::new(10, 15, None).unwrap();
+            let shares_large =
+                threshold_sig_large.distributed_keygen(None).unwrap();
+            assert_eq!(shares_large.len(), 15);
+        }
 
         // TODO fix it
         // #[test]

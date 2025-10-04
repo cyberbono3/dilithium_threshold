@@ -448,7 +448,7 @@ impl ThresholdSignature {
 #[cfg(test)]
 impl Default for ThresholdSignature {
     fn default() -> Self {
-        Self::new(3,5).unwrap()
+        Self::new(3, 5).unwrap()
     }
 }
 
@@ -679,13 +679,11 @@ mod tests {
             assert!(is_valid);
         }
 
-  
         #[test]
         fn test_verify_partial_signature_wrong_message() {
             let threshold_sig = ThresholdSignature::new(3, 5).unwrap();
-            let shares = threshold_sig
-                .distributed_keygen::<FieldElement>()
-                .unwrap();
+            let shares =
+                threshold_sig.distributed_keygen::<FieldElement>().unwrap();
             let message = "Original message".as_bytes();
             let wrong_message = "Wrong message".as_bytes();
 
@@ -700,16 +698,13 @@ mod tests {
             assert!(!is_valid);
         }
 
-
         #[test]
         fn test_full_threshold_signing_workflow() {
-            let threshold_sig =
-                ThresholdSignature::default();
+            let threshold_sig = ThresholdSignature::default();
 
             // 1. Distributed key generation
-            let shares = threshold_sig
-                .distributed_keygen::<FieldElement>()
-                .unwrap();
+            let shares =
+                threshold_sig.distributed_keygen::<FieldElement>().unwrap();
             let public_key = &shares[0].public_key;
 
             // 2. Message to sign
@@ -731,7 +726,9 @@ mod tests {
 
             // Test with last threshold participants
             let mut partial_sigs_2 = Vec::new();
-            for i in (threshold_sig.participants - threshold_sig.threshold)..threshold_sig.participants {
+            for i in (threshold_sig.participants - threshold_sig.threshold)
+                ..threshold_sig.participants
+            {
                 let partial = threshold_sig
                     .partial_sign(
                         &message,
@@ -757,41 +754,27 @@ mod tests {
             assert_eq!(combined_sig_2.c, partial_sigs_2[0].challenge);
 
             // Verify structure of both signatures
-            assert_eq!(
-                combined_sig_1.z.len(),
-                L
-            );
-            assert_eq!(
-                combined_sig_1.h.len(),
-                K,
-            );
-            assert_eq!(
-                combined_sig_2.z.len(),
-                L
-            );
-            assert_eq!(
-                combined_sig_2.h.len(),
-                K
-            );
+            assert_eq!(combined_sig_1.z.len(), L);
+            assert_eq!(combined_sig_1.h.len(), K,);
+            assert_eq!(combined_sig_2.z.len(), L);
+            assert_eq!(combined_sig_2.h.len(), K);
 
             // Since both signatures are for the same message, they should have the same challenge
             assert_eq!(combined_sig_1.c, combined_sig_2.c);
         }
 
-
         #[test]
         fn test_combine_signatures_insufficient_shares() {
-              let threshold_sig =
-                ThresholdSignature::default();
-            let shares = threshold_sig
-                .distributed_keygen::<FieldElement>()
-                .unwrap();
+            let threshold_sig = ThresholdSignature::default();
+            let shares =
+                threshold_sig.distributed_keygen::<FieldElement>().unwrap();
             let message = "Insufficient test".as_bytes();
 
             // Create only threshold-1 partial signatures
             let mut partial_sigs = Vec::new();
-           //for i in 0..(threshold_sig.threshold - 1) {
-           for (i, share) in shares.iter().enumerate().take(threshold_sig.threshold - 1) {
+            for (i, share) in
+                shares.iter().enumerate().take(threshold_sig.threshold - 1)
+            {
                 let partial = threshold_sig
                     .partial_sign(
                         message,
@@ -809,37 +792,37 @@ mod tests {
         }
 
         // TODO fix it
-        // #[test]
-        // fn test_combine_signatures_mismatched_challenges() {
-        //     let threshold = 3;
-        //     let participants = 5;
-        //     let threshold_sig =
-        //         ThresholdSignature::new(threshold, participants, None).unwrap();
-        //     let shares = threshold_sig
-        //         .distributed_keygen(Some(&create_test_seed(1)))
-        //         .unwrap();
+        #[test]
+        fn test_combine_signatures_mismatched_challenges() {
+            let threshold_sig = ThresholdSignature::default();
+            let shares =
+                threshold_sig.distributed_keygen::<FieldElement>().unwrap();
 
-        //     // Create partial signatures with different messages (leading to different challenges)
-        //     let mut partial_sigs = Vec::new();
+            // Create partial signatures with different messages (leading to different challenges)
+            let mut partial_sigs = Vec::new();
 
-        //     for i in 0..threshold {
-        //         let message = create_test_message(&format!("Message {}", i));
-        //         let partial = threshold_sig
-        //             .partial_sign(
-        //                 &message,
-        //                 &shares[i],
-        //                 Some(&create_test_seed((i + 10) as u8)),
-        //             )
-        //             .unwrap();
-        //         partial_sigs.push(partial);
-        //     }
+            for (i, share) in
+                shares.iter().enumerate().take(threshold_sig.threshold)
+            {
+                //  for i in 0..threshold_sig.threshold {
+                let msg = format!("Message {}", i);
+                let message = msg.as_bytes();
+                let partial = threshold_sig
+                    .partial_sign(
+                        message,
+                        share,
+                        Some(&create_test_seed((i + 10) as u8)),
+                    )
+                    .unwrap();
+                partial_sigs.push(partial);
+            }
 
-        //     // Should fail with mismatched challenges
-        //     let result = threshold_sig
-        //         .combine_signatures(&partial_sigs, &shares[0].public_key);
+            // Should fail with mismatched challenges
+            let result = threshold_sig
+                .combine_signatures(&partial_sigs, &shares[0].public_key);
 
-        //     assert!(result.is_err());
-        // }
+            assert!(result.is_err());
+        }
 
         // #[test]
         // fn test_modular_arithmetic() {
