@@ -48,20 +48,19 @@ where
 }
 
 #[inline]
-pub fn bitreverse_usize(mut n: usize, l: usize) -> usize {
-    let mut r = 0;
-    for _ in 0..l {
-        r = (r << 1) | (n & 1);
-        n >>= 1;
+pub fn bitreverse_usize(n: usize, bits: usize) -> usize {
+    if bits == 0 {
+        return 0;
     }
-    r
+    n.reverse_bits() >> (usize::BITS as usize - bits)
 }
 
 pub fn bitreverse_order<FF>(array: &mut [FF]) {
-    let mut logn = 0;
-    while (1 << logn) < array.len() {
-        logn += 1;
+    if array.is_empty() {
+        return;
     }
+    debug_assert!(array.len().is_power_of_two());
+    let logn = log2_pow2_usize(array.len());
 
     for k in 0..array.len() {
         let rk = bitreverse_usize(k, logn);
@@ -91,10 +90,7 @@ where
     let root_order = n.try_into().unwrap();
     let omega = FieldElement::primitive_root_of_unity(root_order).unwrap();
 
-    let mut logn: usize = 0;
-    while (1 << logn) < x.len() {
-        logn += 1;
-    }
+    let logn = log2_pow2_usize(n);
 
     let mut powers_of_omega_bitreversed = vec![FieldElement::ZERO; n];
     let mut omegai = FieldElement::ONE;
@@ -140,10 +136,7 @@ where
     let omega = FieldElement::primitive_root_of_unity(root_order).unwrap();
     let omega_inverse = omega.inverse();
 
-    let mut logn: usize = 0;
-    while (1 << logn) < x.len() {
-        logn += 1;
-    }
+    let logn = log2_pow2_usize(n);
 
     let mut m = 1;
     for _ in 0..logn {
@@ -170,26 +163,27 @@ where
 /// Unscale the array by multiplying every element by the
 /// inverse of the array's length. Useful for following up intt.
 pub fn unscale(array: &mut [FieldElement]) {
-    let ninv = FieldElement::new(array.len() as u32).inverse();
-    for a in array.iter_mut() {
-        *a *= ninv;
-    }
+    unscale_ffi(array, array.len());
 }
 
 #[inline]
-fn bitreverse_u32(mut n: u32, l: u32) -> u32 {
-    let mut r = 0;
-    for _ in 0..l {
-        r = (r << 1) | (n & 1);
-        n >>= 1;
+fn bitreverse_u32(n: u32, bits: u32) -> u32 {
+    if bits == 0 {
+        return 0;
     }
-    r
+    n.reverse_bits() >> (u32::BITS - bits)
 }
 
 #[inline]
 fn ilog2_pow2_u32(n: u32) -> u32 {
     debug_assert!(n.is_power_of_two());
     n.ilog2()
+}
+
+#[inline]
+fn log2_pow2_usize(n: usize) -> usize {
+    debug_assert!(n.is_power_of_two());
+    n.ilog2() as usize
 }
 
 /// Perform an in‑place NTT/INTT on a slice (fallible, no panics).

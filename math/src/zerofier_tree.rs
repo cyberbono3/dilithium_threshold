@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::ops::MulAssign;
 
 use num_traits::One;
@@ -8,36 +7,33 @@ use super::poly::Polynomial;
 use super::traits::FiniteField;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Leaf<'c, FF: FiniteField + MulAssign<FieldElement>> {
+pub struct Leaf<FF: FiniteField + MulAssign<FieldElement> + 'static> {
     pub(crate) points: Vec<FF>,
-    zerofier: Polynomial<'c, FF>,
+    zerofier: Polynomial<'static, FF>,
 }
 
-impl<FF> Leaf<'static, FF>
+impl<FF> Leaf<FF>
 where
-    FF: FiniteField + MulAssign<FieldElement>,
+    FF: FiniteField + MulAssign<FieldElement> + 'static,
 {
-    pub fn new(points: Vec<FF>) -> Leaf<'static, FF> {
+    pub fn new(points: Vec<FF>) -> Self {
         let zerofier = Polynomial::zerofier(&points);
         Self { points, zerofier }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Branch<'c, FF: FiniteField + MulAssign<FieldElement>> {
-    zerofier: Polynomial<'c, FF>,
-    pub(crate) left: ZerofierTree<'c, FF>,
-    pub(crate) right: ZerofierTree<'c, FF>,
+pub struct Branch<FF: FiniteField + MulAssign<FieldElement> + 'static> {
+    zerofier: Polynomial<'static, FF>,
+    pub(crate) left: ZerofierTree<FF>,
+    pub(crate) right: ZerofierTree<FF>,
 }
 
-impl<'c, FF> Branch<'c, FF>
+impl<FF> Branch<FF>
 where
     FF: FiniteField + MulAssign<FieldElement> + 'static,
 {
-    pub fn new(
-        left: ZerofierTree<'c, FF>,
-        right: ZerofierTree<'c, FF>,
-    ) -> Self {
+    pub fn new(left: ZerofierTree<FF>, right: ZerofierTree<FF>) -> Self {
         let zerofier = left.zerofier().multiply(&right.zerofier());
         Self {
             zerofier,
@@ -55,60 +51,52 @@ where
 /// leaf contains a chunk of points whose size is upper-bounded and more or less
 /// equal to some constant threshold.
 #[derive(Debug, Clone, PartialEq)]
-pub enum ZerofierTree<'c, FF: FiniteField + MulAssign<FieldElement>> {
-    Leaf(Leaf<'c, FF>),
-    Branch(Box<Branch<'c, FF>>),
+pub enum ZerofierTree<FF: FiniteField + MulAssign<FieldElement> + 'static> {
+    Leaf(Leaf<FF>),
+    Branch(Box<Branch<FF>>),
     Padding,
 }
 
-impl<FF: FiniteField + MulAssign<FieldElement>> ZerofierTree<'static, FF> {
+impl<FF: FiniteField + MulAssign<FieldElement> + 'static> Default
+    for ZerofierTree<FF>
+{
+    fn default() -> Self {
+        ZerofierTree::Padding
+    }
+}
+
+impl<FF: FiniteField + MulAssign<FieldElement> + 'static> ZerofierTree<FF> {
     /// Regulates the depth at which the tree is truncated. Phrased differently,
     /// regulates the number of points contained by each leaf.
     const RECURSION_CUTOFF_THRESHOLD: usize = 16;
 
     pub fn new_from_domain(domain: &[FF]) -> Self {
-        // Build initial leaves (no padding leaves).
-        let mut nodes: VecDeque<_> = domain
-            .chunks(Self::RECURSION_CUTOFF_THRESHOLD)
-            .map(|chunk| ZerofierTree::Leaf(Leaf::new(chunk.to_vec())))
-            .collect();
+        Self::build(domain)
+    }
 
-        if nodes.is_empty() {
+    fn build(domain: &[FF]) -> Self {
+        if domain.is_empty() {
             return ZerofierTree::Padding;
         }
-
-        // Pair level-by-level; carry lone nodes forward.
-        while nodes.len() > 1 {
-            let mut next = VecDeque::with_capacity(nodes.len().div_ceil(2));
-            while let Some(left) = nodes.pop_front() {
-                if let Some(right) = nodes.pop_front() {
-                    match (left, right) {
-                        (ZerofierTree::Padding, r) => next.push_back(r),
-                        (l, ZerofierTree::Padding) => next.push_back(l),
-                        (l, r) => {
-                            let node = Branch::new(l, r);
-                            next.push_back(ZerofierTree::Branch(Box::new(
-                                node,
-                            )));
-                        }
-                    }
-                } else {
-                    // Odd count: carry the last node forward unchanged.
-                    next.push_back(left);
-                }
-            }
-            nodes = next;
+        if domain.len() <= Self::RECURSION_CUTOFF_THRESHOLD {
+            return ZerofierTree::Leaf(Leaf::new(domain.to_vec()));
         }
 
-        nodes.pop_front().unwrap()
+        let mid = domain.len() / 2;
+        let left = Self::build(&domain[..mid]);
+        let right = Self::build(&domain[mid..]);
+        Self::combine(left, right)
     }
-}
 
-impl<'c, FF> ZerofierTree<'c, FF>
-where
-    FF: FiniteField + MulAssign<FieldElement> + 'static,
-{
-    pub fn zerofier(&self) -> Polynomial<'c, FF> {
+    fn combine(left: Self, right: Self) -> Self {
+        match (left, right) {
+            (ZerofierTree::Padding, r) => r,
+            (l, ZerofierTree::Padding) => l,
+            (l, r) => ZerofierTree::Branch(Box::new(Branch::new(l, r))),
+        }
+    }
+
+    pub fn zerofier(&self) -> Polynomial<'static, FF> {
         match self {
             ZerofierTree::Leaf(leaf) => leaf.zerofier.clone(),
             ZerofierTree::Branch(branch) => branch.zerofier.clone(),

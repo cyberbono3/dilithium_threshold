@@ -88,36 +88,45 @@ pub trait FiniteField:
     + Send
     + Sync
 {
-    /// Montgomery Batch Inversion
-    // Adapted from https://paulmillr.com/posts/noble-secp256k1-fast-ecc/#batch-inversion
-    fn batch_inversion(input: Vec<Self>) -> Vec<Self> {
+    /// Attempt to compute the Montgomery batch inversion of the provided elements.
+    ///
+    /// Returns `None` when any of the inputs is zero. Adapted from
+    /// <https://paulmillr.com/posts/noble-secp256k1-fast-ecc/#batch-inversion>.
+    fn try_batch_inversion(mut input: Vec<Self>) -> Option<Vec<Self>> {
         let input_length = input.len();
         if input_length == 0 {
-            return Vec::<Self>::new();
+            return Some(Vec::new());
         }
 
-        let zero = Self::zero();
         let one = Self::one();
-        let mut scratch: Vec<Self> = vec![zero; input_length];
+        let mut scratch: Vec<Self> = Vec::with_capacity(input_length);
         let mut acc = one;
-        scratch[0] = input[0];
 
-        for i in 0..input_length {
-            assert!(!input[i].is_zero(), "Cannot do batch inversion on zero");
-            scratch[i] = acc;
-            acc *= input[i];
+        for value in &input {
+            if value.is_zero() {
+                return None;
+            }
+            scratch.push(acc);
+            acc *= *value;
         }
 
         acc = acc.inverse();
 
-        let mut res = input;
-        for i in (0..input_length).rev() {
-            let tmp = acc * res[i];
-            res[i] = acc * scratch[i];
-            acc = tmp;
+        for (value, prefix) in
+            input.iter_mut().rev().zip(scratch.into_iter().rev())
+        {
+            let current = *value;
+            *value = acc * prefix;
+            acc *= current;
         }
 
-        res
+        Some(input)
+    }
+
+    /// Montgomery batch inversion, panicking if any input is zero.
+    fn batch_inversion(input: Vec<Self>) -> Vec<Self> {
+        Self::try_batch_inversion(input)
+            .expect("batch_inversion: cannot invert zero element")
     }
 
     #[inline(always)]

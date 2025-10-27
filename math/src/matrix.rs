@@ -1,7 +1,7 @@
 use std::ops::{Add, Deref, DerefMut, Index, IndexMut, Mul, Sub};
 
 use crate::{
-    error::{Error, PolynomialError, Result},
+    error::{MatrixError, Result},
     poly::Polynomial,
     poly_vector::PolynomialVector,
     traits::FiniteField,
@@ -23,14 +23,13 @@ pub struct Matrix<'coeffs, FF: FiniteField> {
 impl<FF: FiniteField> Matrix<'static, FF> {
     /// Construct a new matrix from rows. Panics if rows have differing lengths.
     pub fn new(rows: Vec<Vec<Polynomial<'static, FF>>>) -> Self {
-        if !rows.is_empty() {
-            let cols = rows[0].len();
-            assert!(
-                rows.iter().all(|r| r.len() == cols),
-                "All matrix rows must have the same length"
-            );
-        }
-        Self { rows }
+        Self::try_new(rows).expect("All matrix rows must have the same length")
+    }
+
+    /// Fallible constructor that validates the matrix shape.
+    pub fn try_new(rows: Vec<Vec<Polynomial<'static, FF>>>) -> Result<Self> {
+        Self::ensure_rectangular_rows(&rows)?;
+        Ok(Self { rows })
     }
 
     /// Borrow the underlying rows.
@@ -59,14 +58,13 @@ impl<FF: FiniteField> Matrix<'static, FF> {
 
     /// Create a zero matrix of size (rows x cols).
     pub fn zeros(rows: usize, cols: usize) -> Self {
-        let mut data = Vec::with_capacity(rows);
-        for _ in 0..rows {
-            let mut r = Vec::with_capacity(cols);
-            for _ in 0..cols {
-                r.push(Polynomial::<FF>::zero());
-            }
-            data.push(r);
-        }
+        let data = (0..rows)
+            .map(|_| {
+                (0..cols)
+                    .map(|_| Polynomial::<FF>::zero())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
         Self { rows: data }
     }
 
@@ -89,24 +87,8 @@ impl<FF: FiniteField> Matrix<'static, FF> {
         &self,
         v: &PolynomialVector<'static, FF>,
     ) -> Result<PolynomialVector<'static, FF>> {
-        // mirror the style from `poly_vector.rs`
-        if self.rows.is_empty() {
-            return Err(Error::Polynomial(
-                PolynomialError::CoefficientOutOfRange,
-            ));
-        }
-        let cols = self.cols();
-        if cols != v.len() {
-            return Err(Error::Polynomial(
-                PolynomialError::CoefficientOutOfRange,
-            ));
-        }
-        if !self.rows.iter().all(|row| row.len() == cols) {
-            return Err(Error::Polynomial(
-                PolynomialError::CoefficientOutOfRange,
-            ));
-        }
-        Ok(self.mul_vector(v))
+        self.validate_vector_multiplication(v.len())?;
+        Ok(self.mul_vector_inner(v))
     }
 
     /// Panicking matrix–vector multiplication (asserts on shape mismatch).
@@ -114,25 +96,35 @@ impl<FF: FiniteField> Matrix<'static, FF> {
         &self,
         v: &PolynomialVector<'static, FF>,
     ) -> PolynomialVector<'static, FF> {
-        // Check matrix is not empty
-        assert!(!self.rows.is_empty(), "Matrix cannot be empty");
+        self.validate_vector_multiplication(v.len())
+            .unwrap_or_else(|err| panic!("{err}"));
+        self.mul_vector_inner(v)
+    }
 
-        let cols = self.cols();
-        // Check matrix columns match vector length
-        assert_eq!(
-            cols,
-            v.len(),
-            "Matrix columns ({}) must match vector length ({})",
-            cols,
-            v.len()
-        );
+    fn validate_vector_multiplication(
+        &self,
+        vector_len: usize,
+    ) -> core::result::Result<(), MatrixError> {
+        if self.rows.is_empty() {
+            return Err(MatrixError::Empty);
+        }
 
-        // Check all rows have same length (rectangular matrix)
-        assert!(
-            self.rows.iter().all(|row| row.len() == cols),
-            "All matrix rows must have the same length"
-        );
+        let expected_cols = self.ensure_rectangular()?;
 
+        if expected_cols != vector_len {
+            return Err(MatrixError::VectorShapeMismatch {
+                matrix_cols: expected_cols,
+                vector_len,
+            });
+        }
+
+        Ok(())
+    }
+
+    fn mul_vector_inner(
+        &self,
+        v: &PolynomialVector<'static, FF>,
+    ) -> PolynomialVector<'static, FF> {
         let polys = self
             .rows
             .iter()
@@ -149,6 +141,83 @@ impl<FF: FiniteField> Matrix<'static, FF> {
             .collect();
 
         PolynomialVector::new(polys)
+    }
+}
+
+impl<FF: FiniteField> TryFrom<Vec<Vec<Polynomial<'static, FF>>>>
+    for Matrix<'static, FF>
+{
+    type Error = crate::error::Error;
+
+    fn try_from(value: Vec<Vec<Polynomial<'static, FF>>>) -> Result<Self> {
+        Self::try_new(value)
+    }
+}
+
+fn expect_same_shape(
+    left: (usize, usize),
+    right: (usize, usize),
+    context: &str,
+) {
+    assert!(
+        left == right,
+        "Matrix shapes must match for {context}: ({}, {}) vs ({}, {})",
+        left.0,
+        left.1,
+        right.0,
+        right.1
+    );
+}
+
+fn combine_rows<FF: FiniteField>(
+    lhs: Vec<Vec<Polynomial<'static, FF>>>,
+    rhs: Vec<Vec<Polynomial<'static, FF>>>,
+    mut op: impl FnMut(
+        Polynomial<'static, FF>,
+        Polynomial<'static, FF>,
+    ) -> Polynomial<'static, FF>,
+) -> Vec<Vec<Polynomial<'static, FF>>> {
+    Matrix::<FF>::ensure_rectangular_rows(&lhs).unwrap_or_else(|err| {
+        panic!("Invalid matrix for element-wise operation: {err}")
+    });
+    Matrix::<FF>::ensure_rectangular_rows(&rhs).unwrap_or_else(|err| {
+        panic!("Invalid matrix for element-wise operation: {err}")
+    });
+    lhs.into_iter()
+        .zip(rhs)
+        .map(|(row_a, row_b)| {
+            row_a
+                .into_iter()
+                .zip(row_b)
+                .map(|(a, b)| op(a, b))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+impl<FF: FiniteField> Matrix<'static, FF> {
+    fn ensure_rectangular(&self) -> core::result::Result<usize, MatrixError> {
+        Self::ensure_rectangular_rows(&self.rows)
+    }
+
+    fn ensure_rectangular_rows(
+        rows: &[Vec<Polynomial<'static, FF>>],
+    ) -> core::result::Result<usize, MatrixError> {
+        if let Some((first, rest)) = rows.split_first() {
+            let expected = first.len();
+            for (offset, row) in rest.iter().enumerate() {
+                if row.len() != expected {
+                    return Err(MatrixError::Ragged {
+                        row: offset + 1,
+                        expected,
+                        found: row.len(),
+                    });
+                }
+            }
+            Ok(expected)
+        } else {
+            Ok(0)
+        }
     }
 }
 
@@ -187,30 +256,11 @@ impl<FF: FiniteField> Add for Matrix<'static, FF> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let (r1, c1) = self.shape();
-        let (r2, c2) = rhs.shape();
-        assert!(
-            r1 == r2 && c1 == c2,
-            "Matrix shapes must match for addition: ({}, {}) vs ({}, {})",
-            r1,
-            c1,
-            r2,
-            c2
-        );
+        let left_shape = self.shape();
+        let right_shape = rhs.shape();
+        expect_same_shape(left_shape, right_shape, "addition");
 
-        let rows = self
-            .rows
-            .into_iter()
-            .zip(rhs.rows)
-            .map(|(row_a, row_b)| {
-                row_a
-                    .into_iter()
-                    .zip(row_b)
-                    .map(|(a, b)| a + b)
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-
+        let rows = combine_rows(self.rows, rhs.rows, |a, b| a + b);
         Self { rows }
     }
 }
@@ -220,30 +270,11 @@ impl<FF: FiniteField> Sub for Matrix<'static, FF> {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let (r1, c1) = self.shape();
-        let (r2, c2) = rhs.shape();
-        assert!(
-            r1 == r2 && c1 == c2,
-            "Matrix shapes  must match for subtraction: ({}, {}) vs ({}, {})",
-            r1,
-            c1,
-            r2,
-            c2
-        );
+        let left_shape = self.shape();
+        let right_shape = rhs.shape();
+        expect_same_shape(left_shape, right_shape, "subtraction");
 
-        let rows = self
-            .rows
-            .into_iter()
-            .zip(rhs.rows)
-            .map(|(row_a, row_b)| {
-                row_a
-                    .into_iter()
-                    .zip(row_b)
-                    .map(|(a, b)| a - b)
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-
+        let rows = combine_rows(self.rows, rhs.rows, |a, b| a - b);
         Self { rows }
     }
 }
@@ -307,12 +338,13 @@ pub fn matrix_vector_multiply<FF: FiniteField>(
 mod tests {
     use super::*;
     use crate::{
-        error::{Error as MathError, PolynomialError},
+        error::{Error as MathError, MatrixError},
         field_element::FieldElement,
         poly::Polynomial,
         poly_vector::PolynomialVector,
     };
     use num_traits::Zero;
+    use std::convert::TryInto;
 
     type FE = FieldElement;
     type Poly = Polynomial<'static, FE>;
@@ -351,6 +383,30 @@ mod tests {
     fn new_ragged_panics() {
         // First row has 2 entries, second row has 1 -> should panic.
         let _ = Mat::new(vec![vec![c(1), c(2)], vec![c(3)]]);
+    }
+
+    #[test]
+    fn try_new_preserves_shape_validation() {
+        let result =
+            Mat::try_new(vec![vec![c(1), c(2)], vec![c(3), c(4)]]).unwrap();
+        assert_eq!(result.shape(), (2, 2));
+
+        let err = Mat::try_new(vec![vec![c(1), c(2)], vec![c(3)]]).unwrap_err();
+        assert_eq!(
+            err,
+            MathError::Matrix(MatrixError::Ragged {
+                row: 1,
+                expected: 2,
+                found: 1
+            })
+        );
+    }
+
+    #[test]
+    fn try_new_allows_empty_matrix() {
+        let empty: Mat = Mat::try_new(Vec::new()).expect("empty matrix ok");
+        assert_eq!(empty.shape(), (0, 0));
+        assert!(empty.as_slice().is_empty());
     }
 
     #[test]
@@ -442,7 +498,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Matrix shapes  must match for subtraction")]
+    #[should_panic(expected = "Matrix shapes must match for subtraction")]
     fn elementwise_sub_mismatched_shapes_panics() {
         let a = Mat::new(vec![vec![c(1)], vec![c(2)]]);
         let b = Mat::new(vec![vec![c(1), c(2)]]);
@@ -546,10 +602,7 @@ mod tests {
         let m_empty: Mat = Mat::new(vec![]);
         let v_empty = PV::new(vec![]);
         let err = m_empty.try_mul_vector(&v_empty).unwrap_err();
-        assert_eq!(
-            err,
-            MathError::Polynomial(PolynomialError::CoefficientOutOfRange)
-        );
+        assert_eq!(err, MathError::Matrix(MatrixError::Empty));
 
         // column/length mismatch
         let m = Mat::new(vec![vec![c(1), c(2), c(3)], vec![c(4), c(5), c(6)]]);
@@ -557,7 +610,10 @@ mod tests {
         let err2 = m.try_mul_vector(&v_bad).unwrap_err();
         assert_eq!(
             err2,
-            MathError::Polynomial(PolynomialError::CoefficientOutOfRange)
+            MathError::Matrix(MatrixError::VectorShapeMismatch {
+                matrix_cols: 3,
+                vector_len: 2
+            })
         );
     }
 
@@ -577,5 +633,36 @@ mod tests {
         // fallible wrapper
         let out_ok = super::try_matrix_vector_multiply(&m, &v).unwrap();
         assert_eq!(out_ok, out_method);
+    }
+
+    #[test]
+    fn try_mul_vector_success_matches_panicking_version() {
+        let m = Mat::new(vec![vec![c(2), c(0)], vec![c(1), c(3)]]);
+        let v = pv_from_consts(&[4, 5]);
+        let ok = m.try_mul_vector(&v).expect("mul succeeds");
+        let panicking = m.mul_vector(&v);
+        assert_eq!(ok, panicking);
+    }
+
+    #[test]
+    fn try_from_vector_of_rows_matches_try_new() {
+        let rows = vec![vec![c(9), c(8)], vec![c(7), c(6)]];
+        let via_try_new = Mat::try_new(rows.clone()).expect("try_new");
+        let via_try_into: Mat = rows.try_into().expect("try_into");
+        assert_eq!(via_try_new, via_try_into);
+    }
+
+    #[test]
+    fn try_from_propagates_ragged_error() {
+        let ragged = vec![vec![c(1)], vec![c(2), c(3)]];
+        let err: Result<Mat, _> = ragged.try_into();
+        assert_eq!(
+            err.unwrap_err(),
+            MathError::Matrix(MatrixError::Ragged {
+                row: 1,
+                expected: 1,
+                found: 2
+            })
+        );
     }
 }
