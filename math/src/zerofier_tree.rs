@@ -118,9 +118,46 @@ mod test {
     use crate::prelude::Polynomial;
     use crate::zerofier_tree::ZerofierTree;
 
+    fn domain_points(range: std::ops::Range<usize>) -> Vec<FieldElement> {
+        range
+            .map(|i| FieldElement::from(i as u32))
+            .collect::<Vec<_>>()
+    }
+
     #[test]
     fn zerofier_tree_can_be_empty() {
         ZerofierTree::<FieldElement>::new_from_domain(&[]);
+    }
+
+    #[test]
+    fn new_from_domain_returns_leaf() {
+        let count = ZerofierTree::<FieldElement>::RECURSION_CUTOFF_THRESHOLD;
+        let points = domain_points(0..count);
+        match ZerofierTree::new_from_domain(&points) {
+            ZerofierTree::Leaf(leaf) => {
+                assert_eq!(leaf.points, points);
+                assert_eq!(Polynomial::zerofier(&leaf.points), leaf.zerofier);
+            }
+            _ => panic!("expected leaf"),
+        }
+    }
+
+    #[test]
+    fn new_from_domain_returns_branch() {
+        let count =
+            ZerofierTree::<FieldElement>::RECURSION_CUTOFF_THRESHOLD + 1;
+        let points = domain_points(0..count);
+        match ZerofierTree::new_from_domain(&points) {
+            ZerofierTree::Branch(branch) => {
+                assert_ne!(branch.left, ZerofierTree::Padding);
+                assert_ne!(branch.right, ZerofierTree::Padding);
+                assert_eq!(
+                    branch.zerofier,
+                    branch.left.zerofier().multiply(&branch.right.zerofier())
+                );
+            }
+            _ => panic!("expected branch"),
+        }
     }
     #[proptest]
     fn zerofier_tree_root_is_multiple_of_children(

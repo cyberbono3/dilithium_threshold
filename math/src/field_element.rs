@@ -882,6 +882,25 @@ mod b_prime_field_element_test {
         prop_assert_eq!(expected, fe.value());
     }
 
+    #[test]
+    fn from_i64_handles_small_negatives() {
+        let minus_one = FieldElement::from(-1_i64);
+        assert_eq!(FieldElement::MAX, minus_one.value());
+
+        let minus_two = FieldElement::from(-2_i64);
+        assert_eq!(FieldElement::MAX - 1, minus_two.value());
+    }
+
+    #[test]
+    fn from_i64_wraps_around_full_modulus() {
+        let minus_modulus = FieldElement::from(-(FieldElement::P as i64));
+        assert_eq!(FieldElement::ZERO, minus_modulus);
+
+        let minus_modulus_plus_one =
+            FieldElement::from(-(FieldElement::P as i64) + 1);
+        assert_eq!(FieldElement::ONE, minus_modulus_plus_one);
+    }
+
     #[proptest]
     fn raw_u16_roundtrip(fe: FieldElement) {
         let chunks = fe.raw_u16s();

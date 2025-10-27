@@ -507,6 +507,24 @@ mod tests {
         let collected: Vec<_> = vec.into_iter().collect();
         assert_eq!(collected, vec![poly_from_u32s(&[5]), poly_from_u32s(&[6])]);
     }
+
+    #[test]
+    fn norm_infinity_empty_is_zero() {
+        let vec: PolynomialVector<'static, FieldElement> =
+            PolynomialVector::new(Vec::new());
+        assert_eq!(0, vec.norm_infinity());
+    }
+
+    #[test]
+    fn norm_infinity_reports_max_coeff_norm() {
+        let polys = vec![
+            poly_from_u32s(&[1, 2, 3]),    // max |coeff| = 3
+            poly_from_u32s(&[10, 20]),     // max = 20
+            poly_from_u32s(&[4, 5, 6, 7]), // max = 7
+        ];
+        let vec = PolynomialVector::from_vec(polys);
+        assert_eq!(20, vec.norm_infinity());
+    }
 }
 
 impl<FF: FiniteField> Mul<u64> for PolynomialVector<'static, FF> {
