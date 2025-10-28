@@ -4,7 +4,7 @@ use sha3::digest::XofReader;
 use std::collections::HashMap;
 
 use crate::{
-    dilithium::{DilithiumSignature, sample_gamma1},
+    dilithium::DilithiumSignature,
     error::{Result, ThresholdError},
     keypair::{PublicKey, keygen},
     params::{BETA, GAMMA1, K, L, TAU, validate_threshold_config},
@@ -13,7 +13,7 @@ use crate::{
     sign::Signature,
     utils::{
         get_hash_reader, get_randomness, hash_message, polyvec_max_infty_norm,
-        reconstruct_vector_from_points,
+        reconstruct_vector_from_points, sample_gamma1,
     },
 };
 

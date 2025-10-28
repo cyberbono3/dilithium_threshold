@@ -10,7 +10,7 @@ use sha3::{
 };
 
 use crate::error::{Result, ThresholdError};
-use crate::params::L;
+use crate::params::GAMMA1;
 use crate::points::PointSource;
 use math::{poly::Polynomial, prelude::*, traits::FiniteField};
 
@@ -47,6 +47,28 @@ pub fn hash_message(message: &[u8]) -> Vec<u8> {
     let mut output = vec![0u8; 64];
     reader.read(&mut output);
     output
+}
+
+/// Sample polynomial with coefficients centered in [-GAMMA1, GAMMA1].
+pub fn sample_gamma1<FF: FiniteField>(seed: &[u8]) -> Polynomial<'static, FF> {
+    let mut reader = get_hash_reader(seed);
+    let mut bytes = [0u8; N * 4];
+    reader.read(&mut bytes);
+
+
+    let coeffs: Vec<FF> = bytes
+        .chunks_exact(4)
+        .take(N)
+        .map(|chunk| {
+            let word =
+                u32::from_le_bytes(chunk.try_into().expect("chunk length"));
+            let sample = word % (2 * GAMMA1 as u32 + 1);
+            let centered = sample as i32 - GAMMA1 as i32;
+            <i32 as Into<FF>>::into(centered)
+        })
+        .collect();
+
+    Polynomial::from(coeffs)
 }
 
 // Generic reconstruction from any point providers (removes duplication).
@@ -144,4 +166,83 @@ where
         .map(|p| p.norm_infinity() as i64)
         .max()
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GAMMA1;
+    use super::*;
+    use math::{
+        field_element::FieldElement,
+        prelude::{N, Polynomial},
+    };
+
+    fn centered_i64(value: FieldElement) -> i64 {
+        let modulus = FieldElement::P as i64;
+        let raw = value.value() as i64;
+        if raw > modulus / 2 {
+            raw - modulus
+        } else {
+            raw
+        }
+    }
+
+    fn coefficients_as_centered_i64(
+        poly: &Polynomial<'_, FieldElement>,
+    ) -> Vec<i64> {
+        poly.coefficients()
+            .iter()
+            .map(|&coeff| centered_i64(coeff))
+            .collect()
+    }
+
+    #[test]
+    fn sample_gamma1_empty_seed_matches_known_prefix() {
+        let polynomial = sample_gamma1::<FieldElement>(b"");
+        let coeffs = coefficients_as_centered_i64(&polynomial);
+
+        assert_eq!(coeffs.len(), N);
+
+        let expected_prefix =
+            [-20913, -23768, 65620, 79162, 37547, 104412, 62380, 51601];
+        assert_eq!(&coeffs[..expected_prefix.len()], expected_prefix);
+    }
+
+    #[test]
+    fn sample_gamma1_is_deterministic_for_reused_seed() {
+        let seed = b"dilithium-deterministic-seed";
+        let first = sample_gamma1::<FieldElement>(seed);
+        let second = sample_gamma1::<FieldElement>(seed);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn sample_gamma1_coefficients_respect_gamma1_bounds() {
+        let seed = [0u8; 32];
+        let polynomial = sample_gamma1::<FieldElement>(&seed);
+
+        assert!(polynomial.coefficients().len() <= N);
+
+        let bound = GAMMA1;
+        let infinity_norm = polynomial.norm_infinity() as i64;
+        assert!(
+            infinity_norm <= bound,
+            "∞-norm {infinity_norm} exceeds bound {bound}"
+        );
+
+        for coeff in polynomial.coefficients() {
+            let value = centered_i64(*coeff);
+            assert!(
+                (-bound..=bound).contains(&value),
+                "coefficient {value} outside [-{bound}, {bound}]"
+            );
+        }
+    }
+
+    #[test]
+    fn sample_gamma1_produces_different_outputs_for_distinct_seeds() {
+        let first = sample_gamma1::<FieldElement>(b"seed-one");
+        let second = sample_gamma1::<FieldElement>(b"seed-two");
+        assert_ne!(first, second);
+    }
 }
