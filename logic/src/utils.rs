@@ -9,7 +9,7 @@ use sha3::{
     digest::{ExtendableOutput, Update, XofReader},
 };
 
-use crate::error::{Result, ThresholdError};
+use crate::error::{ThresholdError, ThresholdResult};
 use crate::params::GAMMA1;
 use crate::points::PointSource;
 use math::{poly::Polynomial, prelude::*, traits::FiniteField};
@@ -55,7 +55,6 @@ pub fn sample_gamma1<FF: FiniteField>(seed: &[u8]) -> Polynomial<'static, FF> {
     let mut bytes = [0u8; N * 4];
     reader.read(&mut bytes);
 
-
     let coeffs: Vec<FF> = bytes
         .chunks_exact(4)
         .take(N)
@@ -75,16 +74,13 @@ pub fn sample_gamma1<FF: FiniteField>(seed: &[u8]) -> Polynomial<'static, FF> {
 pub fn reconstruct_vector_from_points<FF, S>(
     items: &[S],
     poly_indices: &[usize],
-) -> Result<Vec<Polynomial<'static, FF>>>
+) -> ThresholdResult<Vec<Polynomial<'static, FF>>>
 where
     FF: FiniteField,
     S: PointSource<FF>,
 {
     if items.is_empty() {
-        return Err(ThresholdError::InsufficientShares {
-            required: 1,
-            provided: 0,
-        });
+        return Err(ThresholdError::InsufficientShares(1, 0));
     }
 
     //assert_eq!(L, poly_indices.len());
@@ -95,9 +91,8 @@ where
         let coeff_len = items[0]
             .poly_at(poly_idx)
             .map(|p| p.coefficients().len())
-            .ok_or(ThresholdError::InvalidIndex {
-                index: poly_idx,
-                length: vector_len,
+            .ok_or_else(|| {
+                ThresholdError::InvalidIndex(poly_idx, vector_len)
             })?;
         let mut coeffs = vec![FF::ZERO; coeff_len];
 
@@ -109,18 +104,18 @@ where
 
             for it in items {
                 let x = it.x();
-                let poly = it.poly_at(poly_idx).ok_or(
-                    ThresholdError::InvalidIndex {
-                        index: poly_idx,
-                        length: vector_len,
-                    },
-                )?;
-                let y = poly.coefficients().get(coeff_idx).copied().ok_or(
-                    ThresholdError::InvalidIndex {
-                        index: coeff_idx,
-                        length: poly.coefficients().len(),
-                    },
-                )?;
+                let poly = it.poly_at(poly_idx).ok_or_else(|| {
+                    ThresholdError::InvalidIndex(poly_idx, vector_len)
+                })?;
+                let y =
+                    poly.coefficients().get(coeff_idx).copied().ok_or_else(
+                        || {
+                            ThresholdError::InvalidIndex(
+                                coeff_idx,
+                                poly.coefficients().len(),
+                            )
+                        },
+                    )?;
                 xs.push(x);
                 ys.push(y);
             }

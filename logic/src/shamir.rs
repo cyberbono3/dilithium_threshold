@@ -1,7 +1,7 @@
 use math::{prelude::*, traits::FiniteField};
 
 use crate::{
-    error::{Result, ThresholdError},
+    error::{ThresholdError, ThresholdResult},
     params::validate_threshold_config,
     points::PointSource,
     utils::reconstruct_vector_from_points,
@@ -21,7 +21,7 @@ impl<FF: FiniteField> ShamirShare<'static, FF> {
     pub fn new(
         participant_id: usize,
         share_vector: Vec<Polynomial<'static, FF>>,
-    ) -> Result<Self> {
+    ) -> ThresholdResult<Self> {
         if participant_id == 0 {
             return Err(ThresholdError::InvalidParticipantId(participant_id));
         }
@@ -62,12 +62,15 @@ pub struct AdaptedShamirSSS {
 
 impl AdaptedShamirSSS {
     /// Initialize the adapted Shamir scheme.
-    pub fn new(threshold: usize, participant_number: usize) -> Result<Self> {
+    pub fn new(
+        threshold: usize,
+        participant_number: usize,
+    ) -> ThresholdResult<Self> {
         if !validate_threshold_config(threshold, participant_number) {
-            return Err(ThresholdError::InvalidThreshold {
+            return Err(ThresholdError::InvalidThreshold(
                 threshold,
                 participant_number,
-            });
+            ));
         }
 
         Ok(AdaptedShamirSSS {
@@ -80,7 +83,7 @@ impl AdaptedShamirSSS {
     pub fn split_secret<FF>(
         &self,
         secret_vector: &[Polynomial<'static, FF>],
-    ) -> Result<Vec<ShamirShare<'static, FF>>>
+    ) -> ThresholdResult<Vec<ShamirShare<'static, FF>>>
     where
         FF: FiniteField,
         rand::distributions::Standard: rand::distributions::Distribution<FF>,
@@ -95,11 +98,8 @@ impl AdaptedShamirSSS {
             let coeff_len = poly.coefficients().len();
             for coeff_idx in 0..coeff_len {
                 let secret_coeff =
-                    poly.coefficients().get(coeff_idx).copied().ok_or(
-                        ThresholdError::InvalidIndex {
-                            index: coeff_idx,
-                            length: coeff_len,
-                        },
+                    poly.coefficients().get(coeff_idx).copied().ok_or_else(
+                        || ThresholdError::InvalidIndex(coeff_idx, coeff_len),
                     )?;
                 let shamir_poly = self.create_shamir_polynomial(&secret_coeff);
 
@@ -120,12 +120,12 @@ impl AdaptedShamirSSS {
     }
 
     #[inline]
-    fn ensure_threshold(&self, provided: usize) -> Result<()> {
+    fn ensure_threshold(&self, provided: usize) -> ThresholdResult<()> {
         if self.threshold > provided {
-            return Err(ThresholdError::InvalidThreshold {
-                threshold: self.threshold,
-                participant_number: provided,
-            });
+            return Err(ThresholdError::InvalidThreshold(
+                self.threshold,
+                provided,
+            ));
         }
         Ok(())
     }
@@ -135,7 +135,7 @@ impl AdaptedShamirSSS {
     pub fn reconstruct_secret<FF: FiniteField>(
         &self,
         shares: &[ShamirShare<'static, FF>],
-    ) -> Result<Vec<Polynomial<'static, FF>>> {
+    ) -> ThresholdResult<Vec<Polynomial<'static, FF>>> {
         self.ensure_threshold(shares.len())?;
 
         let active_shares = &shares[..self.threshold];
@@ -154,7 +154,7 @@ impl AdaptedShamirSSS {
         &self,
         shares: &[ShamirShare<'static, FF>],
         poly_indices: &[usize],
-    ) -> Result<Vec<Polynomial<'static, FF>>> {
+    ) -> ThresholdResult<Vec<Polynomial<'static, FF>>> {
         self.ensure_threshold(shares.len())?;
         let active_shares = &shares[..self.threshold];
         let vector_length = active_shares[0].vector_length();
@@ -166,7 +166,7 @@ impl AdaptedShamirSSS {
         &self,
         shares: &[ShamirShare<'static, FF>],
         poly_indices: &[usize],
-    ) -> Result<Vec<Polynomial<'static, FF>>> {
+    ) -> ThresholdResult<Vec<Polynomial<'static, FF>>> {
         self.ensure_threshold(shares.len())?;
         let active = &shares[..self.threshold];
 
@@ -182,12 +182,12 @@ impl AdaptedShamirSSS {
         active_shares: &[ShamirShare<'static, FF>],
         shares: &[ShamirShare<'static, FF>],
         vector_length: usize,
-    ) -> Result<()> {
+    ) -> ThresholdResult<()> {
         if shares.len() < self.threshold {
-            return Err(ThresholdError::InsufficientShares {
-                required: self.threshold,
-                provided: shares.len(),
-            });
+            return Err(ThresholdError::InsufficientShares(
+                self.threshold,
+                shares.len(),
+            ));
         }
 
         // Check if all shares have the same vector length
@@ -231,7 +231,7 @@ impl AdaptedShamirSSS {
         &self,
         participant_shares: Vec<Vec<Share<FF>>>,
         vector_length: usize,
-    ) -> Result<Vec<ShamirShare<'static, FF>>> {
+    ) -> ThresholdResult<Vec<ShamirShare<'static, FF>>> {
         let mut shares = Vec::with_capacity(self.participant_number);
 
         // IMPORTANT: size each polynomial by the actual number of coefficients it has
@@ -370,7 +370,7 @@ mod tests {
         fn setup_adapted_shamir(
             threshold: usize,
             participants: usize,
-        ) -> Result<AdaptedShamirSSS> {
+        ) -> ThresholdResult<AdaptedShamirSSS> {
             AdaptedShamirSSS::new(threshold, participants)
         }
 
@@ -379,35 +379,23 @@ mod tests {
             // Threshold too small
             assert!(matches!(
                 setup_adapted_shamir(1, 5),
-                Err(ThresholdError::InvalidThreshold {
-                    threshold: 1,
-                    participant_number: 5
-                })
+                Err(ThresholdError::InvalidThreshold(1, 5))
             ));
             assert!(matches!(
                 setup_adapted_shamir(0, 5),
-                Err(ThresholdError::InvalidThreshold {
-                    threshold: 0,
-                    participant_number: 5
-                })
+                Err(ThresholdError::InvalidThreshold(0, 5))
             ));
 
             // Threshold larger than participants
             assert!(matches!(
                 setup_adapted_shamir(6, 5),
-                Err(ThresholdError::InvalidThreshold {
-                    threshold: 6,
-                    participant_number: 5
-                })
+                Err(ThresholdError::InvalidThreshold(6, 5))
             ));
 
             // Too many participants (assuming max is 255 based on typical limits)
             assert!(matches!(
                 setup_adapted_shamir(3, 300),
-                Err(ThresholdError::InvalidThreshold {
-                    threshold: 3,
-                    participant_number: 300
-                })
+                Err(ThresholdError::InvalidThreshold(3, 300))
             ));
         }
 
@@ -496,10 +484,9 @@ mod tests {
                 shamir.reconstruct_secret(&shares[..shamir.threshold - 1]);
             assert!(matches!(
                 result,
-                Err(ThresholdError::InvalidThreshold {
-                    threshold,
-                    participant_number
-                }) if threshold == shamir.threshold && participant_number == shamir.threshold - 1
+                Err(ThresholdError::InvalidThreshold(threshold, participant_number))
+                    if threshold == shamir.threshold
+                        && participant_number == shamir.threshold - 1
             ));
 
             // Try with empty slice

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use crate::{
     dilithium::DilithiumSignature,
-    error::{Result, ThresholdError},
+    error::{ThresholdError, ThresholdResult},
     keypair::{PublicKey, keygen},
     params::{BETA, GAMMA1, K, L, TAU, validate_threshold_config},
     points::PointSource,
@@ -112,12 +112,12 @@ impl ThresholdSignature {
         threshold: usize,
         participants: usize,
         //security_level: Option<usize>,
-    ) -> Result<Self> {
+    ) -> ThresholdResult<Self> {
         if !validate_threshold_config(threshold, participants) {
-            return Err(ThresholdError::InvalidThreshold {
+            return Err(ThresholdError::InvalidThreshold(
                 threshold,
-                participant_number: participants,
-            });
+                participants,
+            ));
         }
 
         // let security_level = security_level.unwrap_or(DEFAULT_SECURITY_LEVEL);
@@ -146,7 +146,7 @@ impl ThresholdSignature {
     pub fn distributed_keygen<FF>(
         &self,
         //seed: Option<&[u8]>,
-    ) -> Result<Vec<ThresholdKeyShare<'static, FF>>>
+    ) -> ThresholdResult<Vec<ThresholdKeyShare<'static, FF>>>
     where
         FF: FiniteField + From<i64>,
         rand::distributions::Standard: rand::distributions::Distribution<FF>,
@@ -183,7 +183,7 @@ impl ThresholdSignature {
         message: &[u8],
         key_share: &ThresholdKeyShare<'static, FF>,
         randomness: Option<&[u8]>,
-    ) -> Result<PartialSignature<'static, FF>> {
+    ) -> ThresholdResult<PartialSignature<'static, FF>> {
         let randomness = get_randomness(randomness);
 
         // Hash message
@@ -240,13 +240,13 @@ impl ThresholdSignature {
     fn verify_partial_signatures<FF: FiniteField>(
         partial_signatures: &[PartialSignature<'static, FF>],
         threshold: usize,
-    ) -> Result<()> {
+    ) -> ThresholdResult<()> {
         // Check if we have enough partial signatures
         if partial_signatures.len() < threshold {
-            return Err(ThresholdError::InsufficientShares {
-                required: threshold,
-                provided: partial_signatures.len(),
-            });
+            return Err(ThresholdError::InsufficientShares(
+                threshold,
+                partial_signatures.len(),
+            ));
         }
 
         // At this point, we know we have at least threshold signatures
@@ -273,7 +273,7 @@ impl ThresholdSignature {
         &self,
         partial_signatures: &[PartialSignature<'static, FF>],
         public_key: &PublicKey<'static, FF>,
-    ) -> Result<DilithiumSignature<'static, FF>> {
+    ) -> ThresholdResult<DilithiumSignature<'static, FF>> {
         // Verify partial signatures
         Self::verify_partial_signatures(partial_signatures, self.threshold)?;
 
@@ -358,22 +358,19 @@ impl ThresholdSignature {
     fn reconstruct_z_vector<FF: FiniteField>(
         &self,
         partial_signatures: &[PartialSignature<'static, FF>],
-    ) -> Result<Vec<Polynomial<'static, FF>>> {
+    ) -> ThresholdResult<Vec<Polynomial<'static, FF>>> {
         if partial_signatures.is_empty() {
-            return Err(ThresholdError::InsufficientShares {
-                required: 1,
-                provided: 0,
-            });
+            return Err(ThresholdError::InsufficientShares(1, 0));
         }
 
         // Respect the threshold here (Dependency Inversion-lite: caller decides slice size)
         // TODO declare ensure_threshold
         let provided = partial_signatures.len();
         if self.threshold > provided {
-            return Err(ThresholdError::InvalidThreshold {
-                threshold: self.threshold,
-                participant_number: provided,
-            });
+            return Err(ThresholdError::InvalidThreshold(
+                self.threshold,
+                provided,
+            ));
         }
         let active = &partial_signatures[..self.threshold];
 
@@ -388,7 +385,7 @@ impl ThresholdSignature {
         &self,
         _partial_signatures: &[PartialSignature<'static, FF>],
         _public_key: &PublicKey<'static, FF>,
-    ) -> Result<Vec<Polynomial<'static, FF>>> {
+    ) -> ThresholdResult<Vec<Polynomial<'static, FF>>> {
         let hint_polys = (0..K).map(|_| Polynomial::zero()).collect();
 
         Ok(hint_polys) // K polynomials
