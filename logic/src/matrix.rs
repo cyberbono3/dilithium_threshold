@@ -152,13 +152,18 @@ fn row_mul<'a, 'b, FF: FiniteField>(
     row: &[Polynomial<'a, FF>],
     vec: &[Polynomial<'b, FF>],
 ) -> Polynomial<'static, FF> {
-    row.iter().zip(vec.iter()).fold(
-        Polynomial::<FF>::zero(),
-        |mut acc, (a, b)| {
-            acc += a.clone() * b.clone();
-            acc
-        },
-    )
+    let mut zipped = row.iter().zip(vec.iter());
+
+    let Some((first_a, first_b)) = zipped.next() else {
+        return Polynomial::<FF>::zero();
+    };
+
+    let mut acc = first_a.clone() * first_b.clone();
+    for (a, b) in zipped {
+        acc += a.clone() * b.clone();
+    }
+
+    acc
 }
 
 /// Expand A from rho using SHAKE128 as XOF (educational: uses modulo reduction).
