@@ -100,25 +100,18 @@ pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
     s2_seed: [u8; 32],
 ) -> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
     let a = expand_a_from_rho(rho);
+    let s1 = expand_secret_array::<L, FF>(s1_seed);
+    let s2 = expand_secret_array::<K, FF>(s2_seed);
 
-    let s1: [Polynomial<'static, FF>; L] =
-        expand_secret_array::<L, FF>(&s1_seed);
+    let mut t = mat_vec_mul(&a, &s1);
+    t.iter_mut()
+        .zip(s2.iter())
+        .for_each(|(dest, addend)| *dest += addend.clone());
 
-    let s2: [Polynomial<'static, FF>; K] =
-        expand_secret_array::<K, FF>(&s2_seed);
+    let public_key = PublicKey::new(a.clone(), t, rho);
+    let private_key = PrivateKey::new(a, s1, s2);
 
-    let t_vec = mat_vec_mul(&a, &s1);
-    let mut t = zero_polyvec::<K, FF>();
-    for i in 0..K {
-        let mut sum = t_vec[i].clone();
-        sum += s2[i].clone();
-        t[i] = sum;
-    }
-
-    (
-        PublicKey::new(a.clone(), t, rho),
-        PrivateKey::new(a, s1, s2),
-    )
+    (public_key, private_key)
 }
 
 #[cfg(test)]
