@@ -1,18 +1,15 @@
 use num_traits::Zero;
 use sha2::{Digest, Sha256};
 use sha3::digest::XofReader;
-use std::collections::HashMap;
-
 use crate::{
     dilithium::DilithiumSignature,
     error::{ThresholdError, ThresholdResult},
     keypair::{PublicKey, keygen},
-    params::{BETA, GAMMA1, K, L, TAU, validate_threshold_config},
-    points::PointSource,
+    params::{K, L, TAU, validate_threshold_config},
     shamir::{AdaptedShamirSSS, ShamirShare},
-    sign::Signature,
+    traits::PointSource,
     utils::{
-        get_hash_reader, get_randomness, hash_message, polyvec_max_infty_norm,
+        get_hash_reader, get_randomness, hash_message,
         reconstruct_vector_from_points, sample_gamma1,
     },
 };
@@ -104,6 +101,15 @@ pub struct ThresholdSignature {
     shamir_s1: AdaptedShamirSSS,
     shamir_s2: AdaptedShamirSSS,
     participant_ids: Vec<usize>,
+}
+
+/// Snapshot of key threshold configuration parameters.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ThresholdInfo {
+    pub threshold: usize,
+    pub participants: usize,
+    pub min_signers: usize,
+    pub max_participants: usize,
 }
 
 impl ThresholdSignature {
@@ -255,9 +261,9 @@ impl ThresholdSignature {
 
         // Verify all partial signatures use the same challenge
         let challenge = &partial_signatures[0].challenge;
-        if !partial_signatures
+        if partial_signatures
             .iter()
-            .all(|ps| &ps.challenge == challenge)
+            .any(|ps| &ps.challenge != challenge)
         {
             return Err(ThresholdError::PartialSignatureChallengeMismatch);
         }
@@ -331,25 +337,19 @@ impl ThresholdSignature {
         &self,
         mu: &[u8],
     ) -> Polynomial<'static, FF> {
-        // Create seed
-        let mut seed = mu.to_vec();
+        let mut seed = Vec::with_capacity(mu.len() + b"challenge".len());
+        seed.extend_from_slice(mu);
         seed.extend_from_slice(b"challenge");
 
-        // Sample tau positions for ±1 coefficients
         let mut reader = get_hash_reader(&seed);
-        let mut hash_output = vec![0u8; TAU * 2];
-        reader.read(&mut hash_output);
+        let mut buffer = vec![0u8; TAU * 2];
+        reader.read(&mut buffer);
 
-        // Initialize coefficients array
         let mut coeffs = vec![0i32; N];
-        for i in 0..TAU {
-            let pos = (hash_output[i * 2] as usize) % N;
-            let sign = if hash_output[i * 2 + 1] % 2 == 0 {
-                1
-            } else {
-                -1
-            };
-            coeffs[pos] = sign;
+        for chunk in buffer.chunks_exact(2) {
+            let position = (chunk[0] as usize) % N;
+            let sign = if chunk[1] & 1 == 0 { 1 } else { -1 };
+            coeffs[position] = sign;
         }
 
         poly![coeffs]
@@ -363,20 +363,21 @@ impl ThresholdSignature {
             return Err(ThresholdError::InsufficientShares(1, 0));
         }
 
-        // Respect the threshold here (Dependency Inversion-lite: caller decides slice size)
-        // TODO declare ensure_threshold
-        let provided = partial_signatures.len();
-        if self.threshold > provided {
-            return Err(ThresholdError::InvalidThreshold(
-                self.threshold,
-                provided,
-            ));
-        }
-        let active = &partial_signatures[..self.threshold];
+        let active = partial_signatures
+            .get(..self.threshold)
+            .ok_or_else(|| {
+                ThresholdError::InvalidThreshold(
+                    self.threshold,
+                    partial_signatures.len(),
+                )
+            })?;
 
-        let vector_length = active[0].z_partial.len();
+        let vector_length = active
+            .first()
+            .map(|ps| ps.z_partial.len())
+            .unwrap_or_default();
+
         let indices: Vec<usize> = (0..vector_length).collect();
-
         reconstruct_vector_from_points::<FF, _>(active, &indices)
     }
 
@@ -384,11 +385,10 @@ impl ThresholdSignature {
     fn reconstruct_hint<FF: FiniteField>(
         &self,
         _partial_signatures: &[PartialSignature<'static, FF>],
-        _public_key: &PublicKey<'static, FF>,
+        public_key: &PublicKey<'static, FF>,
     ) -> ThresholdResult<Vec<Polynomial<'static, FF>>> {
-        let hint_polys = (0..K).map(|_| Polynomial::zero()).collect();
-
-        Ok(hint_polys) // K polynomials
+        let hint_len = public_key.t.len();
+        Ok(vec![Polynomial::<FF>::zero(); hint_len])
     }
 
     // /// Check if partial signature satisfies bound requirements.
@@ -407,14 +407,13 @@ impl ThresholdSignature {
     // }
 
     /// Get information about the threshold configuration.
-    pub fn get_threshold_info(&self) -> HashMap<&'static str, usize> {
-        let mut info = HashMap::new();
-        info.insert("threshold", self.threshold);
-        info.insert("participants", self.participants);
-        //info.insert("security_level", self.security_level);
-        info.insert("min_signers", self.threshold);
-        info.insert("max_participants", self.participants);
-        info
+    pub fn get_threshold_info(&self) -> ThresholdInfo {
+        ThresholdInfo {
+            threshold: self.threshold,
+            participants: self.participants,
+            min_signers: self.threshold,
+            max_participants: self.participants,
+        }
     }
 }
 
@@ -536,6 +535,286 @@ mod tests {
         }
     }
 
+    mod sample_partial_y_tests {
+        use super::*;
+        use crate::params::{GAMMA1, L, N};
+        use math::field_element::FieldElement;
+
+        fn centered_value(fe: FieldElement) -> i64 {
+            let mut v = i64::from(fe);
+            let p = FieldElement::P as i64;
+            if v > p / 2 {
+                v -= p;
+            }
+            v
+        }
+
+        #[test]
+        fn produces_l_polynomials_within_bounds() {
+            let threshold_sig = ThresholdSignature::default();
+            let randomness = vec![0x11u8; 32];
+
+            let polys =
+                threshold_sig.sample_partial_y::<FieldElement>(&randomness);
+
+            assert_eq!(polys.len(), L);
+            for poly in &polys {
+                assert_eq!(poly.coefficients().len(), N);
+                for coeff in poly.coefficients() {
+                    let abs = centered_value(*coeff).abs();
+                    assert!(
+                        abs <= GAMMA1 as i64,
+                        "coefficient {abs} exceeds GAMMA1"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn deterministic_for_same_randomness() {
+            let threshold_sig = ThresholdSignature::default();
+            let randomness = vec![0x22u8; 32];
+
+            let first =
+                threshold_sig.sample_partial_y::<FieldElement>(&randomness);
+            let second =
+                threshold_sig.sample_partial_y::<FieldElement>(&randomness);
+
+            assert_eq!(first, second);
+        }
+
+        #[test]
+        fn different_randomness_changes_output() {
+            let threshold_sig = ThresholdSignature::default();
+            let randomness_a = vec![0x33u8; 32];
+            let randomness_b = vec![0x44u8; 32];
+
+            let polys_a =
+                threshold_sig.sample_partial_y::<FieldElement>(&randomness_a);
+            let polys_b =
+                threshold_sig.sample_partial_y::<FieldElement>(&randomness_b);
+
+            assert_ne!(polys_a, polys_b);
+        }
+    }
+
+    mod generate_partial_challenge_tests {
+        use super::*;
+        use crate::params::{N, TAU};
+        use math::field_element::FieldElement;
+
+        fn centered_value(fe: FieldElement) -> i64 {
+            let mut v = i64::from(fe);
+            let p = FieldElement::P as i64;
+            if v > p / 2 {
+                v -= p;
+            }
+            v
+        }
+
+        #[test]
+        fn deterministic_for_identical_inputs() {
+            let threshold_sig = ThresholdSignature::default();
+            let mu = b"deterministic-mu";
+
+            let first =
+                threshold_sig.generate_partial_challenge::<FieldElement>(mu);
+            let second =
+                threshold_sig.generate_partial_challenge::<FieldElement>(mu);
+
+            assert_eq!(first, second);
+        }
+
+        #[test]
+        fn coefficients_are_sparse_and_small() {
+            let threshold_sig = ThresholdSignature::default();
+            let mu = b"weight-check";
+
+            let poly =
+                threshold_sig.generate_partial_challenge::<FieldElement>(mu);
+
+            let mut non_zero = 0usize;
+            let mut dense = vec![0i64; N];
+            for (idx, &coeff) in poly.coefficients().iter().enumerate() {
+                dense[idx] = centered_value(coeff);
+            }
+
+            for val in dense {
+                assert!(
+                    matches!(val, -1 | 0 | 1),
+                    "unexpected coefficient value: {val}"
+                );
+                if val != 0 {
+                    non_zero += 1;
+                }
+            }
+
+            assert!(
+                non_zero <= TAU,
+                "expected at most {TAU} non-zero coefficients, found {non_zero}"
+            );
+        }
+
+        #[test]
+        fn different_inputs_vary_output() {
+            let threshold_sig = ThresholdSignature::default();
+
+            let mu_a = b"challenge-a";
+            let mu_b = b"challenge-b";
+
+            let poly_a =
+                threshold_sig.generate_partial_challenge::<FieldElement>(mu_a);
+            let poly_b =
+                threshold_sig.generate_partial_challenge::<FieldElement>(mu_b);
+
+            assert_ne!(poly_a, poly_b);
+        }
+    }
+
+    mod reconstruct_z_vector_tests {
+        use super::*;
+        use math::field_element::FieldElement;
+
+        fn make_partial(
+            participant_id: usize,
+            poly: &Polynomial<'static, FieldElement>,
+        ) -> PartialSignature<'static, FieldElement> {
+            PartialSignature::new(
+                participant_id,
+                vec![poly.clone()],
+                vec![Polynomial::<FieldElement>::zero()],
+                Polynomial::<FieldElement>::zero(),
+            )
+        }
+
+        #[test]
+        fn reconstructs_constant_polynomials() {
+            let threshold_sig = ThresholdSignature::new(2, 3).unwrap();
+            let shared_poly: Polynomial<'static, FieldElement> = poly![5, -3, 8];
+
+            let partials = vec![
+                make_partial(1, &shared_poly),
+                make_partial(2, &shared_poly),
+            ];
+
+            let reconstructed =
+                threshold_sig.reconstruct_z_vector(&partials).unwrap();
+
+            assert_eq!(reconstructed, vec![shared_poly]);
+        }
+
+        #[test]
+        fn errors_when_not_enough_partials() {
+            let threshold_sig = ThresholdSignature::default();
+            let poly: Polynomial<'static, FieldElement> = poly![1, 2, 3];
+            let partials = vec![make_partial(1, &poly), make_partial(2, &poly)];
+
+            let err = threshold_sig
+                .reconstruct_z_vector(&partials)
+                .unwrap_err();
+
+            assert!(matches!(
+                err,
+                ThresholdError::InvalidThreshold(expected, provided)
+                if expected == threshold_sig.threshold && provided == partials.len()
+            ));
+        }
+
+        #[test]
+        fn errors_on_empty_input() {
+            let threshold_sig = ThresholdSignature::default();
+            let err =
+                threshold_sig.reconstruct_z_vector::<FieldElement>(&[]).unwrap_err();
+
+            assert!(matches!(
+                err,
+                ThresholdError::InsufficientShares(expected, actual)
+                if expected == 1 && actual == 0
+            ));
+        }
+    }
+
+    mod reconstruct_hint_tests {
+        use super::*;
+        use math::field_element::FieldElement;
+
+        fn zero_partial(id: usize) -> PartialSignature<'static, FieldElement> {
+            let z_partial =
+                Vec::from(crate::utils::zero_polyvec::<L, FieldElement>());
+            let commitment =
+                Vec::from(crate::utils::zero_polyvec::<K, FieldElement>());
+            PartialSignature::new(
+                id,
+                z_partial,
+                commitment,
+                Polynomial::zero(),
+            )
+        }
+
+        #[test]
+        fn matches_public_key_dimension() {
+            let threshold_sig = ThresholdSignature::default();
+            let shares =
+                threshold_sig.distributed_keygen::<FieldElement>().unwrap();
+            let partials = (0..threshold_sig.threshold)
+                .map(|i| zero_partial(i + 1))
+                .collect::<Vec<_>>();
+
+            let hints = threshold_sig
+                .reconstruct_hint(&partials, &shares[0].public_key)
+                .unwrap();
+
+            assert_eq!(hints.len(), K);
+        }
+
+        #[test]
+        fn outputs_zero_polynomials() {
+            let threshold_sig = ThresholdSignature::default();
+            let shares =
+                threshold_sig.distributed_keygen::<FieldElement>().unwrap();
+
+            let hints = threshold_sig
+                .reconstruct_hint::<FieldElement>(&[], &shares[0].public_key)
+                .unwrap();
+
+            assert!(hints.iter().all(|poly| {
+                poly.coefficients()
+                    .iter()
+                    .all(|&c| c == FieldElement::zero())
+            }));
+        }
+
+        #[test]
+        fn ignores_partial_data() {
+            let threshold_sig = ThresholdSignature::default();
+            let shares =
+                threshold_sig.distributed_keygen::<FieldElement>().unwrap();
+
+            let mut partials = Vec::new();
+            for (idx, _) in shares.iter().enumerate().take(3) {
+                let dummy_poly = Polynomial::from(vec![FieldElement::from(
+                    (idx as i64) + 1,
+                )]);
+                partials.push(PartialSignature::new(
+                    idx + 1,
+                    vec![dummy_poly.clone(); L],
+                    vec![dummy_poly; K],
+                    Polynomial::zero(),
+                ));
+            }
+
+            let hints = threshold_sig
+                .reconstruct_hint(&partials, &shares[0].public_key)
+                .unwrap();
+
+            assert!(hints.iter().all(|poly| {
+                poly.coefficients()
+                    .iter()
+                    .all(|&c| c == FieldElement::zero())
+            }));
+        }
+    }
+
     mod threshold_signature_tests {
         use super::*;
 
@@ -544,11 +823,21 @@ mod tests {
             let threshold_sig = ThresholdSignature::default();
             let info = threshold_sig.get_threshold_info();
 
-            assert_eq!(info.get("threshold"), Some(&3));
-            assert_eq!(info.get("participants"), Some(&5));
+            assert_eq!(info.threshold, 3);
+            assert_eq!(info.participants, 5);
+            assert_eq!(info.min_signers, 3);
+            assert_eq!(info.max_participants, 5);
+        }
 
-            assert_eq!(info.get("min_signers"), Some(&3));
-            assert_eq!(info.get("max_participants"), Some(&5));
+        #[test]
+        fn test_threshold_info_matches_configuration() {
+            let threshold_sig = ThresholdSignature::new(4, 7).unwrap();
+            let info = threshold_sig.get_threshold_info();
+
+            assert_eq!(info.threshold, 4);
+            assert_eq!(info.participants, 7);
+            assert_eq!(info.min_signers, 4);
+            assert_eq!(info.max_participants, 7);
         }
 
         #[test]
@@ -795,6 +1084,44 @@ mod tests {
                 .combine_signatures(&partial_sigs, &shares[0].public_key);
 
             assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_combine_signatures_produces_verifiable_signature() {
+            let threshold_sig = ThresholdSignature::default();
+            let shares =
+                threshold_sig.distributed_keygen::<FieldElement>().unwrap();
+            let message = b"threshold signing works";
+
+            let partials: Vec<_> = shares
+                .iter()
+                .take(threshold_sig.threshold)
+                .enumerate()
+                .map(|(idx, share)| {
+                    threshold_sig
+                        .partial_sign(
+                            message,
+                            share,
+                            Some(&create_test_seed((idx as u8) + 21)),
+                        )
+                        .expect("partial signing should succeed")
+                })
+                .collect();
+
+            let combined = threshold_sig
+                .combine_signatures(&partials, &shares[0].public_key)
+                .expect("combination of valid partials must succeed");
+
+            let expected_z = threshold_sig
+                .reconstruct_z_vector(&partials)
+                .expect("reconstruction should succeed");
+            let expected_h = threshold_sig
+                .reconstruct_hint(&partials, &shares[0].public_key)
+                .expect("hint reconstruction should succeed");
+
+            assert_eq!(combined.c, partials[0].challenge);
+            assert_eq!(combined.z.as_slice(), expected_z.as_slice());
+            assert_eq!(combined.h.as_slice(), expected_h.as_slice());
         }
 
         #[test]

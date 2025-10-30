@@ -11,8 +11,12 @@ use sha3::{
 
 use crate::error::{ThresholdError, ThresholdResult};
 use crate::params::GAMMA1;
-use crate::points::PointSource;
+use crate::traits::PointSource;
 use math::{poly::Polynomial, prelude::*, traits::FiniteField};
+
+
+const RANDOMNESS_BYTES: usize = 32;
+const HASH_BYTES: usize = 64;
 
 // Fill byte array of length 32 by random bytes
 pub fn random_bytes() -> [u8; 32] {
@@ -24,12 +28,11 @@ pub fn random_bytes() -> [u8; 32] {
 
 pub fn get_randomness(randomness: Option<&[u8]>) -> Vec<u8> {
     match randomness {
-        Some(r) => r.to_vec(),
+        Some(bytes) => bytes.to_vec(),
         None => {
-            let mut rng = rand::thread_rng();
-            let mut bytes = vec![0u8; 32];
-            rng.fill_bytes(&mut bytes);
-            bytes
+            let mut out = vec![0u8; RANDOMNESS_BYTES];
+            rand::thread_rng().fill_bytes(&mut out);
+            out
         }
     }
 }
@@ -44,7 +47,7 @@ pub fn get_hash_reader(
 
 pub fn hash_message(message: &[u8]) -> Vec<u8> {
     let mut reader = get_hash_reader(message);
-    let mut output = vec![0u8; 64];
+    let mut output = vec![0u8; HASH_BYTES];
     reader.read(&mut output);
     output
 }
@@ -79,55 +82,50 @@ where
     FF: FiniteField,
     S: PointSource<FF>,
 {
-    if items.is_empty() {
-        return Err(ThresholdError::InsufficientShares(1, 0));
-    }
+    let reference = items.first().ok_or_else(|| ThresholdError::InsufficientShares(1, 0))?;
+    let vector_len = reference.poly_count();
 
-    //assert_eq!(L, poly_indices.len());
-    let mut reconstructed = Vec::with_capacity(poly_indices.len());
-    let vector_len = items[0].poly_count();
+    poly_indices
+        .iter()
+        .map(|&poly_idx| {
+            let template = reference
+                .poly_at(poly_idx)
+                .ok_or_else(|| ThresholdError::InvalidIndex(poly_idx, vector_len))?;
 
-    for &poly_idx in poly_indices {
-        let coeff_len = items[0]
-            .poly_at(poly_idx)
-            .map(|p| p.coefficients().len())
-            .ok_or_else(|| {
-                ThresholdError::InvalidIndex(poly_idx, vector_len)
-            })?;
-        let mut coeffs = vec![FF::ZERO; coeff_len];
-
-        let mut coeffs = vec![FF::ZERO; coeff_len];
-
-        for (coeff_idx, c) in coeffs.iter_mut().enumerate().take(coeff_len) {
             let mut xs = Vec::with_capacity(items.len());
-            let mut ys = Vec::with_capacity(items.len());
+            let mut polys = Vec::with_capacity(items.len());
 
-            for it in items {
-                let x = it.x();
-                let poly = it.poly_at(poly_idx).ok_or_else(|| {
+            for item in items {
+                xs.push(item.x());
+                let poly = item.poly_at(poly_idx).ok_or_else(|| {
                     ThresholdError::InvalidIndex(poly_idx, vector_len)
                 })?;
-                let y =
-                    poly.coefficients().get(coeff_idx).copied().ok_or_else(
-                        || {
-                            ThresholdError::InvalidIndex(
-                                coeff_idx,
-                                poly.coefficients().len(),
-                            )
-                        },
-                    )?;
-                xs.push(x);
-                ys.push(y);
+                polys.push(poly);
             }
 
-            *c = interpolate_constant_at_zero(&xs, &ys);
-        }
+            (0..template.coefficients().len())
+                .map(|coeff_idx| {
+                    let ys = polys
+                        .iter()
+                        .map(|poly| {
+                            poly.coefficients()
+                                .get(coeff_idx)
+                                .copied()
+                                .ok_or_else(|| {
+                                    ThresholdError::InvalidIndex(
+                                        coeff_idx,
+                                        poly.coefficients().len(),
+                                    )
+                                })
+                        })
+                        .collect::<ThresholdResult<Vec<_>>>()?;
 
-        reconstructed.push(Polynomial::from(coeffs));
-    }
-    // let arr: [Polynomial<'static, FF>; L]  = reconstructed.try_into()
-    //     .unwrap_or_else(|v: Vec<Polynomial<'static, FF>>| panic!("Expected a Vec of length {} but it was {}", N, v.len()));
-    Ok(reconstructed)
+                    Ok(interpolate_constant_at_zero(xs.as_slice(), &ys))
+                })
+                .collect::<ThresholdResult<Vec<_>>>()
+                .map(Polynomial::from)
+        })
+        .collect()
 }
 
 /// Lagrange interpolate over (xs, ys) and return f(0).
@@ -152,15 +150,13 @@ pub fn zero_polyvec<const LEN: usize, FF: FiniteField>()
 /// Useful for bound checks; returns 0 for an empty slice.
 pub fn polyvec_max_infty_norm<FF: FiniteField>(
     polys: &[Polynomial<'_, FF>],
-) -> i64
-where
-    i64: std::convert::From<FF>,
-{
+) -> i64 {
     polys
         .iter()
-        .map(|p| p.norm_infinity() as i64)
+        .map(|p| p.norm_infinity())
         .max()
-        .unwrap_or(0)
+        .unwrap_or_default()
+        .into()
 }
 
 #[cfg(test)]
@@ -189,6 +185,290 @@ mod tests {
             .iter()
             .map(|&coeff| centered_i64(coeff))
             .collect()
+    }
+
+    mod get_randomness_tests {
+        use super::*;
+
+        #[test]
+        fn returns_supplied_randomness() {
+            let input = [0xAAu8; 48];
+            let result = get_randomness(Some(&input));
+            assert_eq!(result, input);
+        }
+
+        #[test]
+        fn generates_32_bytes_when_none() {
+            let random = get_randomness(None);
+            assert_eq!(random.len(), 32);
+        }
+
+        #[test]
+        fn consecutive_none_calls_produce_distinct_vectors() {
+            let first = get_randomness(None);
+            let second = get_randomness(None);
+            assert_eq!(first.len(), 32);
+            assert_eq!(second.len(), 32);
+            assert_ne!(first, second);
+        }
+    }
+
+    mod get_hash_reader_tests {
+        use super::*;
+
+        #[test]
+        fn deterministic_for_identical_input() {
+            let mut reader_a = get_hash_reader(b"dilithium");
+            let mut reader_b = get_hash_reader(b"dilithium");
+
+            let mut out_a = [0u8; 64];
+            let mut out_b = [0u8; 64];
+            reader_a.read(&mut out_a);
+            reader_b.read(&mut out_b);
+
+            assert_eq!(out_a, out_b);
+        }
+
+        #[test]
+        fn different_inputs_produce_distinct_streams() {
+            let mut reader_a = get_hash_reader(b"message-a");
+            let mut reader_b = get_hash_reader(b"message-b");
+
+            let mut out_a = [0u8; 64];
+            let mut out_b = [0u8; 64];
+            reader_a.read(&mut out_a);
+            reader_b.read(&mut out_b);
+
+            assert_ne!(out_a, out_b);
+        }
+
+        #[test]
+        fn consecutive_reads_concatenate_correctly() {
+            let mut reader = get_hash_reader(b"chunked-read");
+            let mut first = [0u8; 32];
+            let mut second = [0u8; 32];
+            reader.read(&mut first);
+            reader.read(&mut second);
+
+            let mut combined = [0u8; 64];
+            combined[..32].copy_from_slice(&first);
+            combined[32..].copy_from_slice(&second);
+
+            let mut single = get_hash_reader(b"chunked-read");
+            let mut full = [0u8; 64];
+            single.read(&mut full);
+
+            assert_eq!(combined, full);
+        }
+    }
+
+    mod hash_message_tests {
+        use super::*;
+
+        #[test]
+        fn produces_fixed_length_output() {
+            let digest = hash_message(b"dilithium-threshold");
+            assert_eq!(digest.len(), HASH_BYTES);
+        }
+
+        #[test]
+        fn deterministic_for_same_message() {
+            let first = hash_message(b"deterministic");
+            let second = hash_message(b"deterministic");
+            assert_eq!(first, second);
+        }
+
+        #[test]
+        fn distinct_messages_hash_differently() {
+            let first = hash_message(b"message-one");
+            let second = hash_message(b"message-two");
+            assert_ne!(first, second);
+        }
+    }
+
+    mod reconstruct_vector_from_points_tests {
+        use super::*;
+        use crate::error::ThresholdError;
+        use crate::traits::PointSource;
+        use math::fe;
+
+        #[derive(Clone)]
+        struct MockSource {
+            x: FieldElement,
+            polys: Vec<Polynomial<'static, FieldElement>>,
+        }
+
+        impl PointSource<FieldElement> for MockSource {
+            fn x(&self) -> FieldElement {
+                self.x
+            }
+
+            fn poly_at(&self, index: usize) -> Option<&Polynomial<'static, FieldElement>> {
+                self.polys.get(index)
+            }
+
+            fn poly_count(&self) -> usize {
+                self.polys.len()
+            }
+        }
+
+        #[test]
+        fn reconstructs_polynomials_from_points() {
+            let poly0 =
+                Polynomial::from(vec![fe!(1), fe!(-2), fe!(3)]);
+            let poly1 = Polynomial::from(vec![fe!(4)]);
+
+            let sources = vec![
+                MockSource {
+                    x: fe!(1),
+                    polys: vec![poly0.clone(), poly1.clone()],
+                },
+                MockSource {
+                    x: fe!(2),
+                    polys: vec![poly0.clone(), poly1.clone()],
+                },
+            ];
+
+            let reconstructed = reconstruct_vector_from_points::<
+                FieldElement,
+                _,
+            >(&sources, &[0, 1])
+            .expect("reconstruction should succeed");
+
+            assert_eq!(reconstructed.len(), 2);
+            assert_eq!(reconstructed[0], poly0);
+            assert_eq!(reconstructed[1], poly1);
+        }
+
+        #[test]
+        fn errors_on_empty_sources() {
+            let result = reconstruct_vector_from_points::<FieldElement, _>(
+                &Vec::<MockSource>::new(),
+                &[0],
+            );
+
+            assert!(matches!(
+                result,
+                Err(ThresholdError::InsufficientShares(required, provided))
+                if required == 1 && provided == 0
+            ));
+        }
+
+        #[test]
+        fn errors_when_poly_missing_in_source() {
+            let base_poly = Polynomial::from(vec![fe!(7)]);
+
+            let sources = vec![
+                MockSource {
+                    x: fe!(1),
+                    polys: vec![base_poly.clone(), base_poly.clone()],
+                },
+                MockSource {
+                    x: fe!(2),
+                    polys: vec![base_poly.clone()],
+                },
+            ];
+
+            let result = reconstruct_vector_from_points::<FieldElement, _>(
+                &sources,
+                &[0, 1],
+            );
+
+            assert!(matches!(
+                result,
+                Err(ThresholdError::InvalidIndex(index, len))
+                if index == 1 && len == 2
+            ));
+        }
+
+        #[test]
+        fn errors_when_coefficients_missing() {
+            let poly_full = Polynomial::from(vec![fe!(1), fe!(2)]);
+            let poly_short = Polynomial::from(vec![fe!(1)]);
+
+            let sources = vec![
+                MockSource {
+                    x: fe!(1),
+                    polys: vec![poly_full.clone()],
+                },
+                MockSource {
+                    x: fe!(2),
+                    polys: vec![poly_short.clone()],
+                },
+            ];
+
+            let result = reconstruct_vector_from_points::<FieldElement, _>(
+                &sources,
+                &[0],
+            );
+
+            assert!(matches!(
+                result,
+                Err(ThresholdError::InvalidIndex(index, len))
+                if index == 1 && len == poly_short.coefficients().len()
+            ));
+        }
+    }
+
+    mod interpolate_constant_at_zero_tests {
+        use super::*;
+        use math::fe;
+
+        #[test]
+        fn interpolates_constant_polynomial() {
+            let xs = [fe!(1), fe!(2), fe!(3)];
+            let ys = [fe!(5), fe!(5), fe!(5)];
+            let result = interpolate_constant_at_zero(&xs, &ys);
+            assert_eq!(result, fe!(5));
+        }
+
+        #[test]
+        fn interpolates_linear_polynomial_at_zero() {
+            let xs = [fe!(1), fe!(2)];
+            let ys = [fe!(3), fe!(5)]; // corresponds to f(x) = 2x + 1
+            let result = interpolate_constant_at_zero(&xs, &ys);
+            assert_eq!(result, fe!(1));
+        }
+
+        #[test]
+        fn interpolates_quadratic_polynomial_at_zero() {
+            let xs = [fe!(1), fe!(2), fe!(3)];
+            let ys = [fe!(2), fe!(5), fe!(10)]; // f(x) = x^2 + 1
+            let result = interpolate_constant_at_zero(&xs, &ys);
+            assert_eq!(result, fe!(1));
+        }
+    }
+
+    mod polyvec_max_infty_norm_tests {
+        use super::*;
+        use math::field_element::FieldElement;
+
+        fn poly(coeffs: &[i64]) -> Polynomial<'static, FieldElement> {
+            Polynomial::from(
+                coeffs
+                    .iter()
+                    .map(|&c| FieldElement::from(c))
+                    .collect::<Vec<_>>(),
+            )
+        }
+
+        #[test]
+        fn returns_zero_for_empty_slice() {
+            let polys: Vec<Polynomial<'static, FieldElement>> = Vec::new();
+            assert_eq!(polyvec_max_infty_norm(&polys), 0);
+        }
+
+        #[test]
+        fn computes_infinity_norm_for_single_poly() {
+            let poly = poly(&[3, -7, 5]);
+            assert_eq!(polyvec_max_infty_norm(&[poly]), 7);
+        }
+
+        #[test]
+        fn takes_max_across_polynomials() {
+            let polys = [poly(&[1, 2]), poly(&[-8, 3]), poly(&[4, -6])];
+            assert_eq!(polyvec_max_infty_norm(&polys), 8);
+        }
     }
 
     #[test]
