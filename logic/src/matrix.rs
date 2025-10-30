@@ -198,12 +198,8 @@ mod tests {
     use super::*;
     use crate::params::{K, L, Q};
     use crate::utils::zero_polyvec;
-    use math::field_element::FieldElement;
+    use math::{fe, field_element::FieldElement, poly};
     use num_traits::Zero;
-
-    fn poly(coeffs: &[i64]) -> Polynomial<'static, FieldElement> {
-        Polynomial::from(coeffs.to_vec())
-    }
 
     #[test]
     fn expand_a_is_deterministic_and_modq() {
@@ -348,15 +344,40 @@ mod tests {
 
     #[test]
     fn mul_operator_produces_expected_polynomials() {
-        let rows = vec![
-            vec![poly(&[1]), poly(&[2]), poly(&[3]), poly(&[0])],
-            vec![poly(&[0, 1]), poly(&[2]), poly(&[0]), poly(&[0])],
-            vec![poly(&[1]), poly(&[1]), poly(&[1]), poly(&[0])],
-            vec![poly(&[0]), poly(&[0]), poly(&[0]), poly(&[5])],
+        let rows: Vec<Vec<Polynomial<'static, FieldElement>>> = vec![
+            vec![
+                poly!([fe!(1)]),
+                poly!([fe!(2)]),
+                poly!([fe!(3)]),
+                poly!([fe!(0)]),
+            ],
+            vec![
+                poly!([fe!(0), fe!(1)]),
+                poly!([fe!(2)]),
+                poly!([fe!(0)]),
+                poly!([fe!(0)]),
+            ],
+            vec![
+                poly!([fe!(1)]),
+                poly!([fe!(1)]),
+                poly!([fe!(1)]),
+                poly!([fe!(0)]),
+            ],
+            vec![
+                poly!([fe!(0)]),
+                poly!([fe!(0)]),
+                poly!([fe!(0)]),
+                poly!([fe!(5)]),
+            ],
         ];
         let matrix = MatrixA::new(rows.clone());
 
-        let rhs = [poly(&[1, 1]), poly(&[2]), poly(&[0, 1]), poly(&[1])];
+        let rhs: [Polynomial<'static, FieldElement>; L] = [
+            poly![vec![fe!(1), fe!(1)]],
+            poly!([fe!(2)]),
+            poly!([fe!(0), fe!(1)]),
+            poly!([fe!(1)]),
+        ];
 
         let product = (&matrix) * &rhs;
 
@@ -388,16 +409,41 @@ mod tests {
 
     #[test]
     fn mul_operator_does_not_mutate_inputs() {
-        let rows = vec![
-            vec![poly(&[1]), poly(&[2]), poly(&[3]), poly(&[0])],
-            vec![poly(&[0, 1]), poly(&[2]), poly(&[0]), poly(&[0])],
-            vec![poly(&[1]), poly(&[1]), poly(&[1]), poly(&[0])],
-            vec![poly(&[0]), poly(&[0]), poly(&[0]), poly(&[5])],
+        let rows: Vec<Vec<Polynomial<'static, FieldElement>>> = vec![
+            vec![
+                poly!([fe!(1)]),
+                poly!([fe!(2)]),
+                poly!([fe!(3)]),
+                poly!([fe!(0)]),
+            ],
+            vec![
+                poly!([fe!(0), fe!(1)]),
+                poly!([fe!(2)]),
+                poly!([fe!(0)]),
+                poly!([fe!(0)]),
+            ],
+            vec![
+                poly!([fe!(1)]),
+                poly!([fe!(1)]),
+                poly!([fe!(1)]),
+                poly!([fe!(0)]),
+            ],
+            vec![
+                poly!([fe!(0)]),
+                poly!([fe!(0)]),
+                poly!([fe!(0)]),
+                poly!([fe!(5)]),
+            ],
         ];
         let matrix = MatrixA::new(rows);
         let matrix_snapshot = matrix.clone();
 
-        let rhs = [poly(&[1, 1]), poly(&[2]), poly(&[0, 1]), poly(&[1])];
+        let rhs: [Polynomial<'static, FieldElement>; L] = [
+            poly![vec![fe!(1), fe!(1)]],
+            poly!([fe!(2)]),
+            poly!([fe!(0), fe!(1)]),
+            poly!([fe!(1)]),
+        ];
         let rhs_snapshot = rhs.clone();
 
         let _ = (&matrix) * &rhs;
