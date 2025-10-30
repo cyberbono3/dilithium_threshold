@@ -156,6 +156,23 @@ impl AdaptedShamirSSS {
         self.reconstruct_poly_vector(active_shares, poly_indices)
     }
 
+    #[cfg(test)]
+    fn ensure_poly_indices_within_bounds(
+        &self,
+        poly_indices: &[usize],
+        vector_length: usize,
+    ) -> ThresholdResult<()> {
+        if let Some(&invalid_idx) =
+            poly_indices.iter().find(|&&idx| idx >= vector_length)
+        {
+            return Err(ThresholdError::InvalidIndex(
+                invalid_idx,
+                vector_length,
+            ));
+        }
+        Ok(())
+    }
+
     fn reconstruct_poly_vector<FF: FiniteField>(
         &self,
         shares: &[ShamirShare<'static, FF>],
@@ -164,30 +181,6 @@ impl AdaptedShamirSSS {
         reconstruct_vector_from_points::<FF, _>(shares, poly_indices)
     }
 
-    // /// Organize participant shares into ShamirShare objects
-    // fn organize_shares<FF: FiniteField>(
-    //     &self,
-    //     participant_shares: Vec<Vec<Share<FF>>>,
-    //     vector_length: usize,
-    // ) -> Result<Vec<ShamirShare<'static, FF>>> {
-    //     let mut shares = Vec::with_capacity(self.participant_number);
-
-    //     for pid in 1..=self.participant_number {
-    //         let mut share_coeffs = vec![vec![FF::default(); N]; vector_length];
-
-    //         // Fill in the coefficients for each polynomial
-    //         for share in &participant_shares[pid - 1] {
-    //             share_coeffs[share.poly_idx][share.coeff_idx] = share.value;
-    //         }
-
-    //         let poly_vec: Vec<Polynomial<'static, FF>> =
-    //             share_coeffs.into_iter().map(Polynomial::from).collect();
-
-    //         shares.push(ShamirShare::new(pid, poly_vec)?);
-    //     }
-
-    //     Ok(shares)
-    // }
     fn select_active_shares<'a, FF>(
         &self,
         shares: &'a [ShamirShare<'static, FF>],
@@ -229,19 +222,7 @@ impl AdaptedShamirSSS {
         Ok(expected_length)
     }
 
-    fn ensure_poly_indices_within_bounds(
-        &self,
-        indices: &[usize],
-        vector_length: usize,
-    ) -> ThresholdResult<()> {
-        for &idx in indices {
-            if idx >= vector_length {
-                return Err(ThresholdError::InvalidIndex(idx, vector_length));
-            }
-        }
-        Ok(())
-    }
-    
+
     /// Organize participant shares into ShamirShare objects
     fn organize_shares<FF: FiniteField>(
         &self,
@@ -406,42 +387,60 @@ mod tests {
             AdaptedShamirSSS::new(threshold, participants)
         }
 
-        fn simple_share(id: usize, len: usize) -> ShamirShare<'static, FieldElement> {
-            let polys = std::iter::repeat(Polynomial::from(vec![FieldElement::from(id as i64)]))
-                .take(len)
-                .collect::<Vec<_>>();
-            ShamirShare::new(id, polys).expect("valid share")
+        fn share_with_length(
+            id: usize,
+            polys: usize,
+        ) -> ShamirShare<'static, FieldElement> {
+            let vector = (0..polys)
+                .map(|offset| {
+                    Polynomial::from(vec![FieldElement::from(
+                        (id + offset + 1) as i64,
+                    )])
+                })
+                .collect();
+            ShamirShare::new(id, vector).expect("valid share")
         }
 
         #[test]
-        fn ensure_consistent_lengths_empty_input() {
+        fn ensure_consistent_lengths_empty_slice() {
             let shamir = AdaptedShamirSSS::default();
-            let length = shamir
+            let len = shamir
                 .ensure_consistent_lengths::<FieldElement>(&[])
-                .expect("empty slice should succeed");
-            assert_eq!(length, 0);
+                .expect("empty input should succeed");
+            assert_eq!(len, 0);
         }
 
         #[test]
-        fn ensure_consistent_lengths_detects_mismatch() {
+        fn ensure_consistent_lengths_reports_error() {
             let shamir = AdaptedShamirSSS::default();
-            let shares = vec![simple_share(1, 2), simple_share(2, 3)];
+            let shares = vec![share_with_length(1, 2), share_with_length(2, 3)];
 
             let err = shamir
                 .ensure_consistent_lengths::<FieldElement>(&shares)
-                .expect_err("mismatched lengths should error");
+                .expect_err("mismatched lengths must fail");
             assert!(matches!(err, ThresholdError::InconsistentShareLengths));
         }
 
         #[test]
-        fn ensure_consistent_lengths_returns_length_when_ok() {
+        fn ensure_consistent_lengths_tracks_length() {
             let shamir = AdaptedShamirSSS::default();
-            let shares = vec![simple_share(1, 3), simple_share(2, 3)];
+            let shares = vec![share_with_length(1, 4), share_with_length(2, 4)];
 
             let len = shamir
                 .ensure_consistent_lengths::<FieldElement>(&shares)
                 .expect("consistent lengths should succeed");
-            assert_eq!(len, 3);
+            assert_eq!(len, 4);
+        }
+
+        #[test]
+        fn ensure_consistent_lengths_single_share() {
+            let shamir = AdaptedShamirSSS::default();
+            let shares = vec![share_with_length(1, 5)];
+
+            let len = shamir
+                .ensure_consistent_lengths::<FieldElement>(&shares)
+                .expect("single share should succeed");
+            assert_eq!(len, 5);
         }
 
         #[test]
