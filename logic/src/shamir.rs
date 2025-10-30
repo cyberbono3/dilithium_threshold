@@ -444,6 +444,42 @@ mod tests {
         }
 
         #[test]
+        fn collect_required_lengths_handles_empty_shares() {
+            let lengths = AdaptedShamirSSS::collect_required_lengths::<FieldElement>(
+                3,
+                &[],
+            );
+            assert_eq!(lengths, vec![0, 0, 0]);
+        }
+
+        #[test]
+        fn collect_required_lengths_respects_highest_index() {
+            let shares = vec![
+                Share::new(0, 0, FieldElement::from(1)),
+                Share::new(0, 2, FieldElement::from(2)),
+                Share::new(1, 1, FieldElement::from(3)),
+            ];
+
+            let lengths = AdaptedShamirSSS::collect_required_lengths::<FieldElement>(
+                3,
+                &shares,
+            );
+
+            assert_eq!(lengths, vec![3, 2, 0]);
+        }
+
+        #[test]
+        fn collect_required_lengths_ignores_unused_polynomials() {
+            let shares = vec![Share::new(2, 4, FieldElement::from(5))];
+            let lengths = AdaptedShamirSSS::collect_required_lengths::<FieldElement>(
+                4,
+                &shares,
+            );
+
+            assert_eq!(lengths, vec![0, 0, 5, 0]);
+        }
+
+        #[test]
         fn test_invalid_threshold_config() {
             // Threshold too small
             assert!(matches!(
