@@ -14,7 +14,6 @@ use crate::params::GAMMA1;
 use crate::traits::PointSource;
 use math::{poly::Polynomial, prelude::*, traits::FiniteField};
 
-
 const RANDOMNESS_BYTES: usize = 32;
 const HASH_BYTES: usize = 64;
 
@@ -82,15 +81,17 @@ where
     FF: FiniteField,
     S: PointSource<FF>,
 {
-    let reference = items.first().ok_or_else(|| ThresholdError::InsufficientShares(1, 0))?;
+    let reference = items
+        .first()
+        .ok_or_else(|| ThresholdError::InsufficientShares(1, 0))?;
     let vector_len = reference.poly_count();
 
     poly_indices
         .iter()
         .map(|&poly_idx| {
-            let template = reference
-                .poly_at(poly_idx)
-                .ok_or_else(|| ThresholdError::InvalidIndex(poly_idx, vector_len))?;
+            let template = reference.poly_at(poly_idx).ok_or_else(|| {
+                ThresholdError::InvalidIndex(poly_idx, vector_len)
+            })?;
 
             let mut xs = Vec::with_capacity(items.len());
             let mut polys = Vec::with_capacity(items.len());
@@ -303,7 +304,10 @@ mod tests {
                 self.x
             }
 
-            fn poly_at(&self, index: usize) -> Option<&Polynomial<'static, FieldElement>> {
+            fn poly_at(
+                &self,
+                index: usize,
+            ) -> Option<&Polynomial<'static, FieldElement>> {
                 self.polys.get(index)
             }
 
@@ -314,8 +318,7 @@ mod tests {
 
         #[test]
         fn reconstructs_polynomials_from_points() {
-            let poly0 =
-                Polynomial::from(vec![fe!(1), fe!(-2), fe!(3)]);
+            let poly0 = Polynomial::from(vec![fe!(1), fe!(-2), fe!(3)]);
             let poly1 = Polynomial::from(vec![fe!(4)]);
 
             let sources = vec![
@@ -329,11 +332,12 @@ mod tests {
                 },
             ];
 
-            let reconstructed = reconstruct_vector_from_points::<
-                FieldElement,
-                _,
-            >(&sources, &[0, 1])
-            .expect("reconstruction should succeed");
+            let reconstructed =
+                reconstruct_vector_from_points::<FieldElement, _>(
+                    &sources,
+                    &[0, 1],
+                )
+                .expect("reconstruction should succeed");
 
             assert_eq!(reconstructed.len(), 2);
             assert_eq!(reconstructed[0], poly0);

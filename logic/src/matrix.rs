@@ -188,32 +188,6 @@ pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(
     MatrixA { rows }
 }
 
-// TODO declare the trait
-pub fn mat_vec_mul<FF: FiniteField + 'static>(
-    a: &MatrixA<FF>,
-    y: &[Polynomial<FF>; L],
-) -> [Polynomial<'static, FF>; K] {
-    a.mul(y)
-}
-
-// impl<FF: FiniteField> Mul<&Polynomial<'static, FF>> for Vec<Polynomial<'static, FF>> {
-//     type Output = Self;
-
-//     fn mul(self, poly: Self) -> Self::Output {
-//         assert!(
-//             self.len() == poly.len(),
-//             "Vector lengths must match for element-wise multiplication"
-//         );
-
-//         self
-//             .into_iter()
-//             .map(|p1| p1 * poly)
-//             .collect()
-
-//     }
-// }
-
-// TODO add more tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,11 +261,9 @@ mod tests {
         let y = zero_polyvec::<L, FieldElement>();
 
         let via_method = a.mul_vector(&y);
-        let via_free_fn = mat_vec_mul(&a, &y);
         let via_operator = (&a) * &y;
 
-        assert_eq!(via_method, via_free_fn);
-        assert_eq!(via_operator, via_free_fn);
+        assert_eq!(via_method.as_slice(), via_operator.as_slice());
     }
 
     #[test]
@@ -360,10 +332,10 @@ mod tests {
     }
 
     #[test]
-    fn mat_vec_mul_zero_is_zero() {
+    fn mul_operator_zero_is_zero() {
         let a = expand_a_from_rho::<FieldElement>([42u8; 32]);
         let y = zero_polyvec::<L, FieldElement>();
-        let w = mat_vec_mul(&a, &y);
+        let w = (&a) * &y;
         for i in 0..K {
             assert_eq!(w[i], Polynomial::zero());
         }

@@ -1,12 +1,12 @@
 use crate::error::ThresholdError;
 use crate::hash::shake256;
 use crate::keypair::{PrivateKey, PublicKey};
-use crate::matrix::mat_vec_mul;
 use crate::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N, TAU};
 use crate::utils::zero_polyvec;
 
 use math::prelude::FieldElement;
 use math::{poly::Polynomial, traits::FiniteField};
+use std::ops::Mul;
 
 const REJECTION_LIMIT: u32 = 10000;
 
@@ -206,7 +206,7 @@ where
     (0u32..REJECTION_LIMIT)
         .find_map(|ctr| {
             let y = sample_y(&y_seed, ctr);
-            let w = mat_vec_mul(&priv_key.a, &y);
+            let w = priv_key.a.mul(&y);
 
             let w1 = w.clone().map(|p| poly_high(&p));
             let w1_pack = pack_w1_for_hash(&w1);
@@ -253,7 +253,7 @@ where
         && derive_challenge(
             msg,
             &pack_w1_for_hash(&{
-                let az = mat_vec_mul(&pub_key.a, &sig.z);
+                let az = pub_key.a.mul(&sig.z);
                 let mut az_minus_ct = zero_polyvec::<L, FF>();
                 polyvec_sub_scaled_in_place::<FF, K>(
                     &mut az_minus_ct,

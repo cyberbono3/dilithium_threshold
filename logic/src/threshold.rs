@@ -1,6 +1,3 @@
-use num_traits::Zero;
-use sha2::{Digest, Sha256};
-use sha3::digest::XofReader;
 use crate::{
     dilithium::DilithiumSignature,
     error::{ThresholdError, ThresholdResult},
@@ -13,6 +10,9 @@ use crate::{
         reconstruct_vector_from_points, sample_gamma1,
     },
 };
+use num_traits::Zero;
+use sha2::{Digest, Sha256};
+use sha3::digest::XofReader;
 
 use math::{prelude::*, traits::FiniteField};
 
@@ -363,9 +363,8 @@ impl ThresholdSignature {
             return Err(ThresholdError::InsufficientShares(1, 0));
         }
 
-        let active = partial_signatures
-            .get(..self.threshold)
-            .ok_or_else(|| {
+        let active =
+            partial_signatures.get(..self.threshold).ok_or_else(|| {
                 ThresholdError::InvalidThreshold(
                     self.threshold,
                     partial_signatures.len(),
@@ -690,7 +689,8 @@ mod tests {
         #[test]
         fn reconstructs_constant_polynomials() {
             let threshold_sig = ThresholdSignature::new(2, 3).unwrap();
-            let shared_poly: Polynomial<'static, FieldElement> = poly![5, -3, 8];
+            let shared_poly: Polynomial<'static, FieldElement> =
+                poly![5, -3, 8];
 
             let partials = vec![
                 make_partial(1, &shared_poly),
@@ -709,9 +709,8 @@ mod tests {
             let poly: Polynomial<'static, FieldElement> = poly![1, 2, 3];
             let partials = vec![make_partial(1, &poly), make_partial(2, &poly)];
 
-            let err = threshold_sig
-                .reconstruct_z_vector(&partials)
-                .unwrap_err();
+            let err =
+                threshold_sig.reconstruct_z_vector(&partials).unwrap_err();
 
             assert!(matches!(
                 err,
@@ -723,8 +722,9 @@ mod tests {
         #[test]
         fn errors_on_empty_input() {
             let threshold_sig = ThresholdSignature::default();
-            let err =
-                threshold_sig.reconstruct_z_vector::<FieldElement>(&[]).unwrap_err();
+            let err = threshold_sig
+                .reconstruct_z_vector::<FieldElement>(&[])
+                .unwrap_err();
 
             assert!(matches!(
                 err,
@@ -743,12 +743,7 @@ mod tests {
                 Vec::from(crate::utils::zero_polyvec::<L, FieldElement>());
             let commitment =
                 Vec::from(crate::utils::zero_polyvec::<K, FieldElement>());
-            PartialSignature::new(
-                id,
-                z_partial,
-                commitment,
-                Polynomial::zero(),
-            )
+            PartialSignature::new(id, z_partial, commitment, Polynomial::zero())
         }
 
         #[test]

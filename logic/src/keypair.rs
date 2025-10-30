@@ -1,8 +1,9 @@
 use crate::hash::shake256;
-use crate::matrix::{MatrixA, expand_a_from_rho, mat_vec_mul};
+use crate::matrix::{MatrixA, expand_a_from_rho};
 use crate::params::{K, L, N};
 use crate::utils::{random_bytes, zero_polyvec};
 use math::{poly::Polynomial, traits::FiniteField};
+use std::ops::Mul;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PublicKey<'a, FF: FiniteField> {
@@ -103,7 +104,7 @@ pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
     let s1 = expand_secret_array::<L, FF>(s1_seed);
     let s2 = expand_secret_array::<K, FF>(s2_seed);
 
-    let mut t = mat_vec_mul(&a, &s1);
+    let mut t = a.mul(&s1);
     t.iter_mut()
         .zip(s2.iter())
         .for_each(|(dest, addend)| *dest += addend.clone());
@@ -117,7 +118,7 @@ pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::matrix::{expand_a_from_rho, mat_vec_mul};
+    use crate::matrix::expand_a_from_rho;
     use crate::params::{K, L};
     use crate::utils::zero_polyvec;
     use math::field_element::FieldElement;
@@ -168,7 +169,7 @@ mod tests {
     fn t_equals_a_times_s1_plus_s2() {
         let (pk, sk) = keygen::<FieldElement>();
 
-        let as1 = mat_vec_mul(&sk.a, &sk.s1);
+        let as1 = sk.a.mul(&sk.s1);
         let mut expected_t = zero_polyvec::<K, FieldElement>();
         for i in 0..K {
             let mut sum = as1[i].clone();
