@@ -3,22 +3,31 @@ use sha3::{
     digest::{ExtendableOutput, Update, XofReader},
 };
 
-pub fn shake128(out_len: usize, input: &[u8]) -> Vec<u8> {
-    let mut hasher = Shake128::default();
+/// Hash helper that captures the shared mechanics of SHAKE-based XOFs.
+fn squeeze_xof<Hash>(out_len: usize, input: &[u8]) -> Vec<u8>
+where
+    Hash: Default + Update + ExtendableOutput,
+{
+    let mut hasher = Hash::default();
     hasher.update(input);
-    let mut reader = hasher.finalize_xof();
+    read_xof(hasher.finalize_xof(), out_len)
+}
+
+fn read_xof<R>(mut reader: R, out_len: usize) -> Vec<u8>
+where
+    R: XofReader,
+{
     let mut out = vec![0u8; out_len];
     reader.read(&mut out);
     out
 }
 
+pub fn shake128(out_len: usize, input: &[u8]) -> Vec<u8> {
+    squeeze_xof::<Shake128>(out_len, input)
+}
+
 pub fn shake256(out_len: usize, input: &[u8]) -> Vec<u8> {
-    let mut hasher = Shake256::default();
-    hasher.update(input);
-    let mut reader = hasher.finalize_xof();
-    let mut out = vec![0u8; out_len];
-    reader.read(&mut out);
-    out
+    squeeze_xof::<Shake256>(out_len, input)
 }
 
 #[cfg(test)]

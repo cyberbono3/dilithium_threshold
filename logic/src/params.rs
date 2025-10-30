@@ -1,22 +1,79 @@
-pub const DEFAULT_SECURITY_LEVEL: usize = 2;
+use std::fmt;
 
-/// Round-3 / ML-DSA-44 (a.k.a. Dilithium-2) parameter set.
-/// See Table 2 in the Round-3 specification. (Educational; uncompressed variant.)
-pub const N: usize = 256;
-pub const Q: i64 = 8_380_417; // 2^23 - 2^13 + 1
-pub const D: u32 = 13; // dropped bits for t in compressed scheme (unused here but kept for reference)
-pub const TAU: usize = 39; // challenge weight (±1s)
-pub const ETA: i64 = 2; // SK coeff range via CBD(η=2)
-pub const K: usize = 4; // A is K x L
-pub const L: usize = 4;
+/// Default security level used throughout the logic layer (Dilithium-2).
+pub const DEFAULT_SECURITY_LEVEL: usize = SecurityLevel::Level2.as_usize();
 
-pub const GAMMA1: i64 = 1 << 17; // 131072
-pub const GAMMA2: i64 = (Q - 1) / 88; // 95_232
-pub const ALPHA: i64 = 2 * GAMMA2; // 190_464
-pub const BETA: i64 = (TAU as i64) * ETA; // 78
+/// Supported Dilithium security levels as defined in the ML-DSA specification.
+pub const SUPPORTED_SECURITY_LEVELS: [SecurityLevel; 3] = [
+    SecurityLevel::Level2,
+    SecurityLevel::Level3,
+    SecurityLevel::Level5,
+];
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// Enumerates the supported ML-DSA / Dilithium security levels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(usize)]
+pub enum SecurityLevel {
+    Level2 = 2,
+    Level3 = 3,
+    Level5 = 5,
+}
+
+impl SecurityLevel {
+    /// Return the numeric identifier used by the Dilithium specification.
+    #[inline]
+    pub const fn as_usize(self) -> usize {
+        self as usize
+    }
+
+    /// Retrieve the parameter set associated with this security level.
+    #[inline]
+    pub const fn config(self) -> DilithiumConfig {
+        match self {
+            SecurityLevel::Level2 => DILITHIUM_L2_CONFIG,
+            SecurityLevel::Level3 => DILITHIUM_L3_CONFIG,
+            SecurityLevel::Level5 => DILITHIUM_L5_CONFIG,
+        }
+    }
+}
+
+impl TryFrom<usize> for SecurityLevel {
+    type Error = InvalidSecurityLevel;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        match value {
+            x if x == SecurityLevel::Level2 as usize => {
+                Ok(SecurityLevel::Level2)
+            }
+            x if x == SecurityLevel::Level3 as usize => {
+                Ok(SecurityLevel::Level3)
+            }
+            x if x == SecurityLevel::Level5 as usize => {
+                Ok(SecurityLevel::Level5)
+            }
+            other => Err(InvalidSecurityLevel(other)),
+        }
+    }
+}
+
+/// Error raised when an unsupported security level is requested.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidSecurityLevel(pub usize);
+
+impl fmt::Display for InvalidSecurityLevel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unsupported Dilithium security level {}", self.0)
+    }
+}
+
+impl std::error::Error for InvalidSecurityLevel {}
+
+/// Dilithium parameter collection associated with a concrete security level.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DilithiumConfig {
+    pub n: usize,
+    pub q: i64,
+    pub d: u32,
     pub k: usize,
     pub l: usize,
     pub eta: u32,
@@ -24,62 +81,115 @@ pub struct DilithiumConfig {
     pub beta: u32,
     pub gamma1: u32,
     pub gamma2: u32,
-    pub d: usize,
+}
+
+impl DilithiumConfig {
+    /// Create a new parameter set from literal values (const-friendly).
+    pub const fn from_values(
+        n: usize,
+        q: i64,
+        d: u32,
+        k: usize,
+        l: usize,
+        eta: u32,
+        tau: usize,
+        beta: u32,
+        gamma1: u32,
+        gamma2: u32,
+    ) -> Self {
+        Self {
+            n,
+            q,
+            d,
+            k,
+            l,
+            eta,
+            tau,
+            beta,
+            gamma1,
+            gamma2,
+        }
+    }
+
+    /// Return the parameter set for a given [`SecurityLevel`].
+    #[inline]
+    pub const fn for_level(level: SecurityLevel) -> Self {
+        level.config()
+    }
+
+    /// Convenience helper that preserves the historical `usize` API.
+    ///
+    /// Returns an error when `security_level` does not correspond to a supported set.
+    pub fn new(security_level: usize) -> Result<Self, InvalidSecurityLevel> {
+        Self::try_from(security_level)
+    }
+
+    /// Enumerate the security levels known at compile time.
+    pub const fn supported_levels() -> &'static [SecurityLevel; 3] {
+        &SUPPORTED_SECURITY_LEVELS
+    }
 }
 
 impl Default for DilithiumConfig {
     fn default() -> Self {
-        Self {
-            k: 4,
-            l: 4,
-            eta: 2,
-            tau: 39,
-            beta: 78,
-            gamma1: 131072,
-            gamma2: 95232,
-            d: 13,
-        }
+        SecurityLevel::Level2.config()
     }
 }
 
-impl DilithiumConfig {
-    pub fn new(security_level: usize) -> Self {
-        match security_level {
-            2 => Self::default(),
-            // 3 => Self {
-            //     k: 6,
-            //     l: 5,
-            //     eta: 4,
-            //     tau: 49,
-            //     beta: 196,
-            //     gamma1: 524288,
-            //     gamma2: 261888,
-            //     d: 13,
-            // },
-            // 5 => Self {
-            //     k: 8,
-            //     l: 7,
-            //     eta: 2,
-            //     tau: 60,
-            //     beta: 120,
-            //     gamma1: 524288,
-            //     gamma2: 261888,
-            //     d: 13,
-            // },
-            _ => panic!("Invalid security level"),
-        }
+impl TryFrom<usize> for DilithiumConfig {
+    type Error = InvalidSecurityLevel;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        SecurityLevel::try_from(value).map(DilithiumConfig::for_level)
     }
 }
 
-/// Validate threshold config
+/// Round-3 / ML-DSA-44 (Dilithium-2) parameter set (educational, uncompressed).
+const DILITHIUM_L2_CONFIG: DilithiumConfig = DilithiumConfig::from_values(
+    256,       // n
+    8_380_417, // q
+    13,        // d
+    4,         // k
+    4,         // l
+    2,         // eta
+    39,        // tau
+    78,        // beta
+    131_072,   // gamma1
+    95_232,    // gamma2
+);
+
+/// Round-3 / ML-DSA-65 (Dilithium-3) parameter set (educational, uncompressed).
+const DILITHIUM_L3_CONFIG: DilithiumConfig = DilithiumConfig::from_values(
+    256, // n
+    8_380_417, 13, 6, 5, 4, 49, 196, 524_288, 261_888,
+);
+
+/// Round-3 / ML-DSA-87 (Dilithium-5) parameter set (educational, uncompressed).
+const DILITHIUM_L5_CONFIG: DilithiumConfig = DilithiumConfig::from_values(
+    256, // n
+    8_380_417, 13, 8, 7, 2, 60, 120, 524_288, 261_888,
+);
+
+/// Default parameter set backing the module-level constants.
+pub const DEFAULT_CONFIG: DilithiumConfig = DILITHIUM_L2_CONFIG;
+
+pub const N: usize = DEFAULT_CONFIG.n;
+pub const Q: i64 = DEFAULT_CONFIG.q;
+pub const D: u32 = DEFAULT_CONFIG.d;
+pub const K: usize = DEFAULT_CONFIG.k;
+pub const L: usize = DEFAULT_CONFIG.l;
+pub const ETA: i64 = DEFAULT_CONFIG.eta as i64;
+pub const TAU: usize = DEFAULT_CONFIG.tau;
+pub const BETA: i64 = DEFAULT_CONFIG.beta as i64;
+pub const GAMMA1: i64 = DEFAULT_CONFIG.gamma1 as i64;
+pub const GAMMA2: i64 = DEFAULT_CONFIG.gamma2 as i64;
+pub const ALPHA: i64 = 2 * GAMMA2;
+
+/// Validate the relation between threshold and participant counts.
 pub fn validate_threshold_config(
     threshold: usize,
     participants: usize,
 ) -> bool {
-    // Threshold must be at least 2 (no single point of failure)
-    // Threshold cannot exceed number of participant
-    // Reasonable upper limit on participants. Use as a practical limit for the number of participants
-    // Participants must be at least 2 (otherwise threshold >= 2 would be impossible)
     (2..=participants).contains(&threshold) && (2..N).contains(&participants)
 }
 
@@ -87,136 +197,90 @@ pub fn validate_threshold_config(
 mod tests {
     use super::*;
 
-    // Tests for DilithiumConfig
+    const EXPECTED_LEVEL_CONFIGS: [(SecurityLevel, DilithiumConfig); 3] = [
+        (SecurityLevel::Level2, DILITHIUM_L2_CONFIG),
+        (SecurityLevel::Level3, DILITHIUM_L3_CONFIG),
+        (SecurityLevel::Level5, DILITHIUM_L5_CONFIG),
+    ];
+
     #[test]
-    fn test_dilithium_config_default() {
+    fn default_config_matches_level2() {
+        assert_eq!(DilithiumConfig::default(), DILITHIUM_L2_CONFIG);
+        assert_eq!(DEFAULT_CONFIG, DILITHIUM_L2_CONFIG);
+        assert_eq!(DEFAULT_SECURITY_LEVEL, SecurityLevel::Level2.as_usize());
+    }
+
+    #[test]
+    fn security_level_iteration_is_complete() {
+        let from_const: Vec<_> =
+            SUPPORTED_SECURITY_LEVELS.iter().copied().collect();
+        let from_helper: Vec<_> = DilithiumConfig::supported_levels()
+            .iter()
+            .copied()
+            .collect();
+        assert_eq!(from_const, from_helper);
+        assert_eq!(from_const.len(), EXPECTED_LEVEL_CONFIGS.len());
+        for level in &from_const {
+            assert!(
+                EXPECTED_LEVEL_CONFIGS
+                    .iter()
+                    .any(|(expected_level, _)| expected_level == level),
+                "level {:?} missing in expectations",
+                level
+            );
+        }
+    }
+
+    #[test]
+    fn config_lookup_per_security_level() {
+        for (level, expected) in EXPECTED_LEVEL_CONFIGS {
+            assert_eq!(level.config(), expected);
+            assert_eq!(DilithiumConfig::for_level(level), expected);
+            assert_eq!(
+                DilithiumConfig::try_from(level.as_usize()).unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_security_levels_are_rejected() {
+        for level in [0, 1, 4, 6, 100] {
+            assert!(SecurityLevel::try_from(level).is_err());
+            assert!(DilithiumConfig::try_from(level).is_err());
+        }
+    }
+
+    #[test]
+    fn new_rejects_invalid_levels() {
+        for level in [0, 1, 4, 6, 100] {
+            assert!(
+                DilithiumConfig::new(level).is_err(),
+                "expected level {level} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn debug_includes_field_information() {
         let config = DilithiumConfig::default();
-        assert_eq!(config.k, 4);
-        assert_eq!(config.l, 4);
-        assert_eq!(config.eta, 2);
-        assert_eq!(config.tau, 39);
-        assert_eq!(config.beta, 78);
-        assert_eq!(config.gamma1, 131072);
-        assert_eq!(config.gamma2, 95232);
-        assert_eq!(config.d, 13);
-    }
-
-    #[test]
-    fn test_dilithium_config_security_level_2() {
-        let config = DilithiumConfig::new(2);
-        // Security level 2 should match default
-        assert_eq!(config.k, 4);
-        assert_eq!(config.l, 4);
-        assert_eq!(config.eta, 2);
-        assert_eq!(config.tau, 39);
-        assert_eq!(config.beta, 78);
-        assert_eq!(config.gamma1, 131072);
-        assert_eq!(config.gamma2, 95232);
-        assert_eq!(config.d, 13);
-
-        // Verify it equals default
-        assert_eq!(config, DilithiumConfig::default());
-    }
-
-    // #[test]
-    // fn test_dilithium_config_security_level_3() {
-    //     let config = DilithiumConfig::new(3);
-    //     assert_eq!(config.k, 6);
-    //     assert_eq!(config.l, 5);
-    //     assert_eq!(config.eta, 4);
-    //     assert_eq!(config.tau, 49);
-    //     assert_eq!(config.beta, 196);
-    //     assert_eq!(config.gamma1, 524288);
-    //     assert_eq!(config.gamma2, 261888);
-    //     assert_eq!(config.d, 13);
-    // }
-
-    // #[test]
-    // fn test_dilithium_config_security_level_5() {
-    //     let config = DilithiumConfig::new(5);
-    //     assert_eq!(config.k, 8);
-    //     assert_eq!(config.l, 7);
-    //     assert_eq!(config.eta, 2);
-    //     assert_eq!(config.tau, 60);
-    //     assert_eq!(config.beta, 120);
-    //     assert_eq!(config.gamma1, 524288);
-    //     assert_eq!(config.gamma2, 261888);
-    //     assert_eq!(config.d, 13);
-    // }
-
-    #[test]
-    #[should_panic(expected = "Invalid security level")]
-    fn test_dilithium_config_invalid_security_level_0() {
-        DilithiumConfig::new(0);
-    }
-
-    #[test]
-    #[should_panic(expected = "Invalid security level")]
-    fn test_dilithium_config_invalid_security_level_1() {
-        DilithiumConfig::new(1);
-    }
-
-    #[test]
-    #[should_panic(expected = "Invalid security level")]
-    fn test_dilithium_config_invalid_security_level_4() {
-        DilithiumConfig::new(4);
-    }
-
-    #[test]
-    #[should_panic(expected = "Invalid security level")]
-    fn test_dilithium_config_invalid_security_level_6() {
-        DilithiumConfig::new(6);
-    }
-
-    #[test]
-    #[should_panic(expected = "Invalid security level")]
-    fn test_dilithium_config_invalid_security_level_large() {
-        DilithiumConfig::new(100);
-    }
-
-    // #[test]
-    // fn test_dilithium_config_copy() {
-    //     let config1 = DilithiumConfig::new(5);
-    //     let config2 = config1; // Copy semantics
-    //     assert_eq!(config1, config2);
-    // }
-
-    #[test]
-    fn test_dilithium_config_debug() {
-        let config = DilithiumConfig::default();
-        let debug_str = format!("{:?}", config);
+        let debug_str = format!("{config:?}");
         assert!(debug_str.contains("DilithiumConfig"));
         assert!(debug_str.contains("k: 4"));
         assert!(debug_str.contains("l: 4"));
     }
 
-    // #[test]
-    // fn test_dilithium_config_partial_eq() {
-    //     let config1 = DilithiumConfig::new(2);
-    //     let config2 = DilithiumConfig::new(2);
-    //     let config3 = DilithiumConfig::new(3);
-
-    //     assert_eq!(config1, config2);
-    //     assert_ne!(config1, config3);
-    //     assert_ne!(config2, config3);
-    // }
-
     #[test]
-    fn test_default_security_level_constant() {
-        assert_eq!(DEFAULT_SECURITY_LEVEL, 2);
-        // Verify that default security level creates default config
-        let config_from_const = DilithiumConfig::new(DEFAULT_SECURITY_LEVEL);
-        let config_default = DilithiumConfig::default();
-        assert_eq!(config_from_const, config_default);
+    fn default_security_level_constant_round_trip() {
+        let config_from_const =
+            DilithiumConfig::new(DEFAULT_SECURITY_LEVEL).unwrap();
+        assert_eq!(config_from_const, DilithiumConfig::default());
     }
 
-    // Tests for validate_threshold_config
     #[test]
-    fn test_valid_threshold_configs() {
-        // Valid configurations where 2 <= threshold <= participants and 2 <= participants < N
-        assert!(validate_threshold_config(2, 2)); // Minimum valid case
-        assert!(validate_threshold_config(2, 3));
-        assert!(validate_threshold_config(3, 3)); // threshold == participants
+    fn validate_threshold_config_accepts_expected_inputs() {
+        assert!(validate_threshold_config(2, 2));
+        assert!(validate_threshold_config(3, 3));
         assert!(validate_threshold_config(2, 10));
         assert!(validate_threshold_config(5, 10));
         assert!(validate_threshold_config(10, 10));
@@ -226,8 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn test_threshold_too_small() {
-        // Threshold must be at least 2
+    fn validate_threshold_config_rejects_small_thresholds() {
         assert!(!validate_threshold_config(0, 5));
         assert!(!validate_threshold_config(1, 5));
         assert!(!validate_threshold_config(0, 2));
@@ -235,55 +298,36 @@ mod tests {
     }
 
     #[test]
-    fn test_threshold_exceeds_participants() {
-        // Threshold cannot exceed participants
+    fn validate_threshold_config_rejects_threshold_above_participants() {
         assert!(!validate_threshold_config(3, 2));
         assert!(!validate_threshold_config(11, 10));
         assert!(!validate_threshold_config(101, 100));
     }
 
     #[test]
-    fn test_participants_too_small() {
-        // Participants must be at least 2
+    fn validate_threshold_config_rejects_small_participant_sets() {
         assert!(!validate_threshold_config(2, 0));
         assert!(!validate_threshold_config(2, 1));
-        // Even if threshold is invalid, participants being < 2 should fail
         assert!(!validate_threshold_config(0, 0));
         assert!(!validate_threshold_config(1, 1));
     }
 
     #[test]
-    fn test_edge_cases() {
-        // Test boundary conditions
-        assert!(validate_threshold_config(2, 2)); // Both at minimum
-
-        // Test invalid combinations
-        assert!(!validate_threshold_config(2, 1)); // participants < 2
-        assert!(!validate_threshold_config(0, 0)); // both invalid
-
-        // Note: Large values like 1000 may fail if N < 1000
-        // The actual upper limit depends on the value of N from math::prelude::N
-        // Only test with smaller values that are likely below N
+    fn validate_threshold_config_edge_cases() {
+        assert!(validate_threshold_config(2, 2));
+        assert!(!validate_threshold_config(2, 1));
+        assert!(!validate_threshold_config(0, 0));
         assert!(validate_threshold_config(50, 50));
         assert!(validate_threshold_config(49, 50));
     }
 
     #[test]
-    fn test_typical_threshold_scenarios() {
-        // Common threshold scenarios in practice
-
-        // 2-of-3 multisig
+    fn validate_threshold_config_typical_scenarios() {
         assert!(validate_threshold_config(2, 3));
-
-        // 3-of-5 multisig
         assert!(validate_threshold_config(3, 5));
-
-        // Majority threshold (n/2 + 1)
-        assert!(validate_threshold_config(6, 11)); // 6 of 11
-        assert!(validate_threshold_config(51, 100)); // 51 of 100
-
-        // Super-majority (2n/3 + 1)
-        assert!(validate_threshold_config(7, 10)); // 7 of 10
-        assert!(validate_threshold_config(67, 100)); // 67 of 100
+        assert!(validate_threshold_config(6, 11));
+        assert!(validate_threshold_config(51, 100));
+        assert!(validate_threshold_config(7, 10));
+        assert!(validate_threshold_config(67, 100));
     }
 }

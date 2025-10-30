@@ -1,5 +1,6 @@
 use crate::hash::shake128;
 use crate::params::{K, L, N};
+use crate::utils::zero_polyvec;
 use math::{poly::Polynomial, traits::FiniteField};
 use num_traits::Zero;
 use std::ops::Mul;
@@ -129,20 +130,40 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
             "All matrix rows must have the same length"
         );
 
-        self.rows
-            .iter()
-            .map(|row| {
-                row.iter().zip(v).fold(
-                    Polynomial::<FF>::zero(),
-                    |mut acc, (a_ij, v_j)| {
-                        // TODO: enable &Polynomial * &Polynomial to avoid clones
-                        acc += a_ij.clone() * v_j.clone();
-                        acc
-                    },
-                )
-            })
-            .collect()
+        self.rows.iter().map(|row| row_mul(row, v)).collect()
     }
+}
+
+impl<'a, 'b, FF: FiniteField + 'static> Mul<&[Polynomial<'b, FF>; L]>
+    for &MatrixA<'a, FF>
+{
+    type Output = [Polynomial<'static, FF>; K];
+
+    fn mul(self, rhs: &[Polynomial<'b, FF>; L]) -> Self::Output {
+        let mut result = zero_polyvec::<K, FF>();
+        for (slot, row) in result.iter_mut().zip(&self.rows) {
+            *slot = row_mul(row, rhs);
+        }
+        result
+    }
+}
+
+fn row_mul<'a, 'b, FF: FiniteField>(
+    row: &[Polynomial<'a, FF>],
+    vec: &[Polynomial<'b, FF>],
+) -> Polynomial<'static, FF> {
+    let mut zipped = row.iter().zip(vec.iter());
+
+    let Some((first_a, first_b)) = zipped.next() else {
+        return Polynomial::<FF>::zero();
+    };
+
+    let mut acc = first_a.clone() * first_b.clone();
+    for (a, b) in zipped {
+        acc += a.clone() * b.clone();
+    }
+
+    acc
 }
 
 /// Expand A from rho using SHAKE128 as XOF (educational: uses modulo reduction).
@@ -172,59 +193,13 @@ pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(
     MatrixA { rows }
 }
 
-// TODO declare the trait
-pub fn mat_vec_mul<FF: FiniteField>(
-    a: &MatrixA<FF>,
-    y: &[Polynomial<FF>; L],
-) -> [Polynomial<'static, FF>; K] {
-    std::array::from_fn(|i| {
-        a.rows[i].iter().zip(y.iter()).fold(
-            Polynomial::zero(),
-            |mut acc, (aij, yj)| {
-                acc += aij.clone() * yj.clone();
-                acc
-            },
-        )
-    })
-}
-
-// impl<FF: FiniteField> Mul<&Polynomial<'static, FF>> for Vec<Polynomial<'static, FF>> {
-//     type Output = Self;
-
-//     fn mul(self, poly: Self) -> Self::Output {
-//         assert!(
-//             self.len() == poly.len(),
-//             "Vector lengths must match for element-wise multiplication"
-//         );
-
-//         self
-//             .into_iter()
-//             .map(|p1| p1 * poly)
-//             .collect()
-
-//     }
-// }
-
-// TODO add more tests
 #[cfg(test)]
 mod tests {
-    use crate::matrix::{expand_a_from_rho, mat_vec_mul};
-    use crate::params::{K, L, N, Q};
-    //use crate::poly::{Poly, mod_q};
-    use math::poly::Polynomial;
+    use super::*;
+    use crate::params::{K, L, Q};
+    use crate::utils::zero_polyvec;
+    use math::{fe, field_element::FieldElement, poly};
     use num_traits::Zero;
-
-    use math::field_element::FieldElement;
-    use math::traits::FiniteField;
-
-    fn zero_y<FF: FiniteField>() -> [Polynomial<'static, FF>; L] {
-        [
-            Polynomial::zero(),
-            Polynomial::zero(),
-            Polynomial::zero(),
-            Polynomial::zero(),
-        ]
-    }
 
     #[test]
     fn expand_a_is_deterministic_and_modq() {
@@ -249,6 +224,95 @@ mod tests {
     }
 
     #[test]
+    fn matrix_constructors_and_accessors() {
+        let row = vec![Polynomial::<FieldElement>::zero(); L];
+        let rows = vec![row.clone(); K];
+        let matrix = MatrixA::new(rows.clone());
+
+        assert_eq!(matrix.shape(), (K, L));
+        assert_eq!(matrix.rows(), K);
+        assert_eq!(matrix.cols(), L);
+        assert_eq!(matrix.as_slice(), &rows);
+    }
+
+    #[test]
+    fn matrix_zeros_produces_zero_matrix() {
+        let matrix = MatrixA::<FieldElement>::zeros(3, 2);
+        assert_eq!(matrix.shape(), (3, 2));
+        assert!(
+            matrix
+                .as_slice()
+                .iter()
+                .all(|row| row.iter().all(|poly| poly.is_zero()))
+        );
+    }
+
+    #[test]
+    fn norm_infinity_returns_max_entry_norm() {
+        let mut matrix = MatrixA::<FieldElement>::zeros(2, 2);
+        matrix.rows[0][0] = Polynomial::from([FieldElement::from(5i64)]);
+        matrix.rows[1][1] = Polynomial::from([FieldElement::from(10i64)]);
+
+        assert_eq!(matrix.norm_infinity(), 10);
+    }
+
+    #[test]
+    fn mul_vector_matches_row_mul() {
+        let a = expand_a_from_rho::<FieldElement>([11u8; 32]);
+        let y = zero_polyvec::<L, FieldElement>();
+
+        let via_method = a.mul_vector(&y);
+        let via_operator = (&a) * &y;
+
+        assert_eq!(via_method.as_slice(), via_operator.as_slice());
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Matrix columns (2) must match vector length (3)"
+    )]
+    fn mul_vector_panics_on_shape_mismatch() {
+        let matrix = MatrixA::<FieldElement>::zeros(2, 2);
+        let vector =
+            [Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
+        let _ = matrix.mul_vector(&vector);
+    }
+
+    #[test]
+    fn row_mul_matches_manual_computation() {
+        let row = vec![
+            Polynomial::from([FieldElement::from(2i64)]),
+            Polynomial::from([FieldElement::from(3i64)]),
+        ];
+        let vec = vec![
+            Polynomial::from([FieldElement::from(5i64)]),
+            Polynomial::from([FieldElement::from(7i64)]),
+        ];
+
+        let result: Polynomial<'static, FieldElement> =
+            super::row_mul(&row, &vec);
+
+        let mut expected = Polynomial::from([FieldElement::from(10i64)]);
+        expected += Polynomial::from([FieldElement::from(21i64)]);
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn row_mul_with_zero_vector_is_zero() {
+        let row = vec![
+            Polynomial::from([FieldElement::from(2i64)]),
+            Polynomial::from([FieldElement::from(3i64)]),
+        ];
+        let zero_vec = vec![Polynomial::zero(), Polynomial::zero()];
+
+        let result: Polynomial<'static, FieldElement> =
+            super::row_mul(&row, &zero_vec);
+
+        assert!(result.is_zero());
+    }
+
+    #[test]
     fn expand_a_changes_with_rho() {
         let a1 = expand_a_from_rho::<FieldElement>([1u8; 32]);
         let a2 = expand_a_from_rho::<FieldElement>([2u8; 32]);
@@ -269,12 +333,122 @@ mod tests {
     }
 
     #[test]
-    fn mat_vec_mul_zero_is_zero() {
+    fn mul_operator_zero_is_zero() {
         let a = expand_a_from_rho::<FieldElement>([42u8; 32]);
-        let y = zero_y();
-        let w = mat_vec_mul(&a, &y);
+        let y = zero_polyvec::<L, FieldElement>();
+        let w = (&a) * &y;
         for i in 0..K {
             assert_eq!(w[i], Polynomial::zero());
         }
+    }
+
+    #[test]
+    fn mul_operator_produces_expected_polynomials() {
+        let rows: Vec<Vec<Polynomial<'static, FieldElement>>> = vec![
+            vec![
+                poly!([fe!(1)]),
+                poly!([fe!(2)]),
+                poly!([fe!(3)]),
+                poly!([fe!(0)]),
+            ],
+            vec![
+                poly!([fe!(0), fe!(1)]),
+                poly!([fe!(2)]),
+                poly!([fe!(0)]),
+                poly!([fe!(0)]),
+            ],
+            vec![
+                poly!([fe!(1)]),
+                poly!([fe!(1)]),
+                poly!([fe!(1)]),
+                poly!([fe!(0)]),
+            ],
+            vec![
+                poly!([fe!(0)]),
+                poly!([fe!(0)]),
+                poly!([fe!(0)]),
+                poly!([fe!(5)]),
+            ],
+        ];
+        let matrix = MatrixA::new(rows.clone());
+
+        let rhs: [Polynomial<'static, FieldElement>; L] = [
+            poly![vec![fe!(1), fe!(1)]],
+            poly!([fe!(2)]),
+            poly!([fe!(0), fe!(1)]),
+            poly!([fe!(1)]),
+        ];
+
+        let product = (&matrix) * &rhs;
+
+        let mut expected_row0 = rows[0][0].clone() * rhs[0].clone();
+        expected_row0 += rows[0][1].clone() * rhs[1].clone();
+        expected_row0 += rows[0][2].clone() * rhs[2].clone();
+        expected_row0 += rows[0][3].clone() * rhs[3].clone();
+
+        let mut expected_row1 = rows[1][0].clone() * rhs[0].clone();
+        expected_row1 += rows[1][1].clone() * rhs[1].clone();
+        expected_row1 += rows[1][2].clone() * rhs[2].clone();
+        expected_row1 += rows[1][3].clone() * rhs[3].clone();
+
+        let mut expected_row2 = rows[2][0].clone() * rhs[0].clone();
+        expected_row2 += rows[2][1].clone() * rhs[1].clone();
+        expected_row2 += rows[2][2].clone() * rhs[2].clone();
+        expected_row2 += rows[2][3].clone() * rhs[3].clone();
+
+        let mut expected_row3 = rows[3][0].clone() * rhs[0].clone();
+        expected_row3 += rows[3][1].clone() * rhs[1].clone();
+        expected_row3 += rows[3][2].clone() * rhs[2].clone();
+        expected_row3 += rows[3][3].clone() * rhs[3].clone();
+
+        let expected =
+            [expected_row0, expected_row1, expected_row2, expected_row3];
+
+        assert_eq!(product, expected);
+    }
+
+    #[test]
+    fn mul_operator_does_not_mutate_inputs() {
+        let rows: Vec<Vec<Polynomial<'static, FieldElement>>> = vec![
+            vec![
+                poly!([fe!(1)]),
+                poly!([fe!(2)]),
+                poly!([fe!(3)]),
+                poly!([fe!(0)]),
+            ],
+            vec![
+                poly!([fe!(0), fe!(1)]),
+                poly!([fe!(2)]),
+                poly!([fe!(0)]),
+                poly!([fe!(0)]),
+            ],
+            vec![
+                poly!([fe!(1)]),
+                poly!([fe!(1)]),
+                poly!([fe!(1)]),
+                poly!([fe!(0)]),
+            ],
+            vec![
+                poly!([fe!(0)]),
+                poly!([fe!(0)]),
+                poly!([fe!(0)]),
+                poly!([fe!(5)]),
+            ],
+        ];
+        let matrix = MatrixA::new(rows);
+        let matrix_snapshot = matrix.clone();
+
+        let rhs: [Polynomial<'static, FieldElement>; L] = [
+            poly![vec![fe!(1), fe!(1)]],
+            poly!([fe!(2)]),
+            poly!([fe!(0), fe!(1)]),
+            poly!([fe!(1)]),
+        ];
+        let rhs_snapshot = rhs.clone();
+
+        let _ = (&matrix) * &rhs;
+
+        assert_eq!(matrix, matrix_snapshot);
+        assert_eq!(rhs, rhs_snapshot);
     }
 }

@@ -10,6 +10,24 @@ pub enum PolynomialError {
     CoefficientOutOfRange,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[non_exhaustive]
+pub enum MatrixError {
+    #[error("Matrix cannot be empty")]
+    Empty,
+    #[error("matrix is ragged: row {row} has {found} columns but expected {expected}")]
+    Ragged {
+        row: usize,
+        expected: usize,
+        found: usize,
+    },
+    #[error("Matrix columns ({matrix_cols}) must match vector length ({vector_len})")]
+    VectorShapeMismatch {
+        matrix_cols: usize,
+        vector_len: usize,
+    },
+}
+
 /// Common result type used across this crate.
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
@@ -23,6 +41,8 @@ pub enum Error {
     Ntt(#[from] NttError),
     #[error("polynomial error: {0:?}")]
     Polynomial(PolynomialError),
+    #[error(transparent)]
+    Matrix(#[from] MatrixError),
 }
 
 /// Errors returned by NTT/INTT helpers.

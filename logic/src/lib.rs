@@ -5,10 +5,10 @@ pub mod hash;
 pub mod keypair;
 pub mod matrix;
 pub mod params;
-pub mod points;
 pub mod shamir;
 pub mod sign;
 #[cfg(test)]
 pub mod tests;
 pub mod threshold;
+pub mod traits;
 pub mod utils;
