@@ -120,7 +120,6 @@ mod tests {
     use super::*;
     use crate::matrix::expand_a_from_rho;
     use crate::params::{K, L};
-    use crate::utils::zero_polyvec;
     use math::field_element::FieldElement;
 
     #[test]
@@ -170,16 +169,13 @@ mod tests {
         let (pk, sk) = keygen::<FieldElement>();
 
         let as1 = sk.a.mul(&sk.s1);
-        let mut expected_t = zero_polyvec::<K, FieldElement>();
-        for i in 0..K {
-            let mut sum = as1[i].clone();
-            sum += sk.s2[i].clone();
-            expected_t[i] = sum;
-        }
+        let expected_t: Vec<_> = as1
+            .into_iter()
+            .zip(sk.s2.iter())
+            .map(|(a_row, s2_row)| a_row + s2_row.clone())
+            .collect();
 
-        for i in 0..K {
-            assert_eq!(pk.t[i], expected_t[i], "t mismatch at row {}", i);
-        }
+        assert_eq!(pk.t.as_slice(), expected_t.as_slice());
     }
 
     #[test]
