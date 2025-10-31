@@ -83,48 +83,49 @@ where
 {
     let reference = items
         .first()
-        .ok_or_else(|| ThresholdError::InsufficientShares(1, 0))?;
+        .ok_or(ThresholdError::InsufficientShares(1, 0))?;
     let vector_len = reference.poly_count();
+    let xs: Vec<FF> = items.iter().map(|item| item.x()).collect();
 
     poly_indices
         .iter()
         .map(|&poly_idx| {
-            let template = reference.poly_at(poly_idx).ok_or_else(|| {
-                ThresholdError::InvalidIndex(poly_idx, vector_len)
-            })?;
+            let template = reference
+                .poly_at(poly_idx)
+                .ok_or(ThresholdError::InvalidIndex(poly_idx, vector_len))?;
+            let coeff_count = template.coefficients().len();
 
-            let mut xs = Vec::with_capacity(items.len());
-            let mut polys = Vec::with_capacity(items.len());
+            let polys = items
+                .iter()
+                .map(|item| {
+                    item.poly_at(poly_idx).ok_or(ThresholdError::InvalidIndex(
+                        poly_idx, vector_len,
+                    ))
+                })
+                .collect::<ThresholdResult<Vec<_>>>()?;
 
-            for item in items {
-                xs.push(item.x());
-                let poly = item.poly_at(poly_idx).ok_or_else(|| {
-                    ThresholdError::InvalidIndex(poly_idx, vector_len)
-                })?;
-                polys.push(poly);
-            }
-
-            (0..template.coefficients().len())
+            let coeffs = (0..coeff_count)
                 .map(|coeff_idx| {
                     let ys = polys
                         .iter()
                         .map(|poly| {
-                            poly.coefficients()
-                                .get(coeff_idx)
-                                .copied()
-                                .ok_or_else(|| {
-                                    ThresholdError::InvalidIndex(
-                                        coeff_idx,
-                                        poly.coefficients().len(),
-                                    )
-                                })
+                            poly.coefficients().get(coeff_idx).copied().ok_or(
+                                ThresholdError::InvalidIndex(
+                                    coeff_idx,
+                                    poly.coefficients().len(),
+                                ),
+                            )
                         })
                         .collect::<ThresholdResult<Vec<_>>>()?;
 
-                    Ok(interpolate_constant_at_zero(xs.as_slice(), &ys))
+                    Ok(interpolate_constant_at_zero(
+                        xs.as_slice(),
+                        ys.as_slice(),
+                    ))
                 })
-                .collect::<ThresholdResult<Vec<_>>>()
-                .map(Polynomial::from)
+                .collect::<ThresholdResult<Vec<_>>>()?;
+
+            Ok(Polynomial::from(coeffs))
         })
         .collect()
 }

@@ -48,6 +48,7 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
     }
 
     /// Create a zero matrix of size (rows x cols).
+    /// TODO implement zero trait for MatrixA
     pub fn zeros(rows: usize, cols: usize) -> Self {
         let mut data = Vec::with_capacity(rows);
         for _ in 0..rows {
@@ -105,8 +106,7 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
     //     self.mul_vector(v)
     // }
 
-    // TODO add proper error handling and testing
-    /// Panicking matrix–vector multiplication (asserts on shape mismatch).
+    // TODO remove it
     pub fn mul_vector(
         &self,
         v: &[Polynomial<'static, FF>],
@@ -139,10 +139,10 @@ impl<'a, 'b, FF: FiniteField + 'static> Mul<&[Polynomial<'b, FF>; L]>
 {
     type Output = [Polynomial<'static, FF>; K];
 
-    fn mul(self, rhs: &[Polynomial<'b, FF>; L]) -> Self::Output {
+    fn mul(self, vec: &[Polynomial<'b, FF>; L]) -> Self::Output {
         let mut result = zero_polyvec::<K, FF>();
         for (slot, row) in result.iter_mut().zip(&self.rows) {
-            *slot = row_mul(row, rhs);
+            *slot = row_mul(row, vec);
         }
         result
     }

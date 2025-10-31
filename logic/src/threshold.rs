@@ -310,6 +310,7 @@ impl ThresholdSignature {
     }
 
     /// Derive participant-specific randomness.
+    /// TODO remove self
     fn derive_participant_randomness(
         &self,
         base_randomness: &[u8],
@@ -323,6 +324,7 @@ impl ThresholdSignature {
     }
 
     /// Sample partial mask vector y.
+    /// TODO remove self
     fn sample_partial_y<FF: FiniteField>(
         &self,
         randomness: &[u8],
@@ -333,6 +335,7 @@ impl ThresholdSignature {
     }
 
     /// Convert to polynomial with tau non-zero coefficients
+    /// TODO remove self
     fn generate_partial_challenge<FF: FiniteField>(
         &self,
         mu: &[u8],
@@ -363,6 +366,7 @@ impl ThresholdSignature {
             return Err(ThresholdError::InsufficientShares(1, 0));
         }
 
+        // TODO address clippy issue
         let active =
             partial_signatures.get(..self.threshold).ok_or_else(|| {
                 ThresholdError::InvalidThreshold(
@@ -381,6 +385,7 @@ impl ThresholdSignature {
     }
 
     /// Reconstruct hint vector (simplified implementation).
+    /// TODO remove self
     fn reconstruct_hint<FF: FiniteField>(
         &self,
         _partial_signatures: &[PartialSignature<'static, FF>],
