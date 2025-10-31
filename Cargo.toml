@@ -1,8 +1,7 @@
 [workspace]
 members = [
-    "core",
     "math",
-    "logic"
+    "core"
 ]
 
 
