@@ -50,19 +50,12 @@ where
 /// In practice, it makes sense to truncate the tree depth, in which case every
 /// leaf contains a chunk of points whose size is upper-bounded and more or less
 /// equal to some constant threshold.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum ZerofierTree<FF: FiniteField + MulAssign<FieldElement> + 'static> {
     Leaf(Leaf<FF>),
     Branch(Box<Branch<FF>>),
+    #[default]
     Padding,
-}
-
-impl<FF: FiniteField + MulAssign<FieldElement> + 'static> Default
-    for ZerofierTree<FF>
-{
-    fn default() -> Self {
-        ZerofierTree::Padding
-    }
 }
 
 impl<FF: FiniteField + MulAssign<FieldElement> + 'static> ZerofierTree<FF> {

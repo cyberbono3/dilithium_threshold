@@ -1,5 +1,5 @@
-use crate::keypair::keygen;
-use crate::sign::{sign, verify};
+use crate::signature::keypair::keygen;
+use crate::signature::sign::{sign, verify};
 
 use math::field_element::FieldElement;
 

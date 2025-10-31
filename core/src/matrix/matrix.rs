@@ -1,6 +1,6 @@
-use crate::hash::shake128;
-use crate::params::{K, L, N};
-use crate::utils::zero_polyvec;
+use super::hash::shake128;
+use crate::threshold::params::{K, L, N, Q};
+use crate::threshold::utils::zero_polyvec;
 use math::{poly::Polynomial, traits::FiniteField};
 use num_traits::Zero;
 use std::ops::Mul;
@@ -106,10 +106,10 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
     //     self.mul_vector(v)
     // }
 
-    // TODO remove it
-    pub fn mul_vector(
+    /// Multiply the matrix by a polynomial vector, returning the result as a `Vec`.
+    pub fn mul_vector<'b>(
         &self,
-        v: &[Polynomial<'static, FF>],
+        v: &[Polynomial<'b, FF>],
     ) -> Vec<Polynomial<'static, FF>> {
         // Check matrix is not empty
         assert!(!self.rows.is_empty(), "Matrix cannot be empty");
@@ -131,6 +131,14 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
         );
 
         self.rows.iter().map(|row| row_mul(row, v)).collect()
+    }
+
+    /// Multiply the matrix by a polynomial vector and return the fixed-size array result.
+    pub fn mul<'b>(
+        &self,
+        v: &[Polynomial<'b, FF>; L],
+    ) -> [Polynomial<'static, FF>; K] {
+        self * v
     }
 }
 
@@ -170,6 +178,7 @@ fn row_mul<'a, 'b, FF: FiniteField>(
 pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(
     rho: [u8; 32],
 ) -> MatrixA<'static, FF> {
+    let modulus = Q as u32;
     let mut rows = Vec::with_capacity(K);
     for i in 0..K {
         let mut row = Vec::with_capacity(L);
@@ -184,7 +193,7 @@ pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(
             for t in 0..N {
                 let b = &stream[4 * t..4 * t + 4];
                 let v = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
-                coeffs[t] = v;
+                coeffs[t] = v % modulus;
             }
             row.push(Polynomial::from(coeffs));
         }
@@ -196,8 +205,8 @@ pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::params::{K, L, Q};
-    use crate::utils::zero_polyvec;
+    use crate::threshold::params::{K, L, Q};
+    use crate::threshold::utils::zero_polyvec;
     use math::{fe, field_element::FieldElement, poly};
     use num_traits::Zero;
 

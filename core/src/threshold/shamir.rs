@@ -1,11 +1,9 @@
 use math::{prelude::*, traits::FiniteField};
 
-use crate::{
-    error::{ThresholdError, ThresholdResult},
-    params::validate_threshold_config,
-    traits::PointSource,
-    utils::reconstruct_vector_from_points,
-};
+use crate::threshold::error::{ThresholdError, ThresholdResult};
+use crate::threshold::params::validate_threshold_config;
+use crate::threshold::utils::reconstruct_vector_from_points;
+use crate::traits::PointSource;
 
 use rand::Rng;
 

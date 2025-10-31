@@ -1,13 +1,11 @@
-use crate::error::ThresholdError;
-use crate::hash::shake256;
-use crate::keypair::{PrivateKey, PublicKey};
-use crate::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N, TAU};
-use crate::utils::zero_polyvec;
+use crate::matrix::hash::shake256;
+use crate::signature::keypair::{PrivateKey, PublicKey};
+use crate::threshold::error::ThresholdError;
+use crate::threshold::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N, TAU};
+use crate::threshold::utils::zero_polyvec;
 
 use math::prelude::FieldElement;
 use math::{poly::Polynomial, traits::FiniteField};
-use std::ops::Mul;
-
 const REJECTION_LIMIT: u32 = 10000;
 
 #[derive(Clone, Debug)]
@@ -254,7 +252,7 @@ where
             msg,
             &pack_w1_for_hash(&{
                 let az = pub_key.a.mul(&sig.z);
-                let mut az_minus_ct = zero_polyvec::<L, FF>();
+                let mut az_minus_ct = zero_polyvec::<K, FF>();
                 polyvec_sub_scaled_in_place::<FF, K>(
                     &mut az_minus_ct,
                     &az,
@@ -269,8 +267,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*; // brings sign/verify + private helpers into scope
-    use crate::keypair::*;
-    use crate::params::{BETA, GAMMA1, L, N};
+    use crate::signature::keypair::*;
+    use crate::threshold::params::{BETA, GAMMA1, L, N};
     use math::field_element::FieldElement;
 
     // Deterministic fixtures for reproducible tests

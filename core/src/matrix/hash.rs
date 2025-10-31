@@ -67,6 +67,6 @@ mod tests {
         };
     }
 
-    xof_smoke_tests!(shake128_suite, crate::hash::shake128);
-    xof_smoke_tests!(shake256_suite, crate::hash::shake256);
+    xof_smoke_tests!(shake128_suite, crate::matrix::hash::shake128);
+    xof_smoke_tests!(shake256_suite, crate::matrix::hash::shake256);
 }

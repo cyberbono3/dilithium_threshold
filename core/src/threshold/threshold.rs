@@ -1,15 +1,13 @@
-use crate::{
-    dilithium::DilithiumSignature,
-    error::{ThresholdError, ThresholdResult},
-    keypair::{PublicKey, keygen},
-    params::{K, L, TAU, validate_threshold_config},
-    shamir::{AdaptedShamirSSS, ShamirShare},
-    traits::PointSource,
-    utils::{
-        get_hash_reader, get_randomness, hash_message,
-        reconstruct_vector_from_points, sample_gamma1,
-    },
+use crate::signature::keypair::{PublicKey, keygen};
+use crate::threshold::dilithium::DilithiumSignature;
+use crate::threshold::error::{ThresholdError, ThresholdResult};
+use crate::threshold::params::{L, TAU, validate_threshold_config};
+use crate::threshold::shamir::{AdaptedShamirSSS, ShamirShare};
+use crate::threshold::utils::{
+    get_hash_reader, get_randomness, hash_message,
+    reconstruct_vector_from_points, sample_gamma1,
 };
+use crate::traits::PointSource;
 use num_traits::Zero;
 use sha2::{Digest, Sha256};
 use sha3::digest::XofReader;
@@ -158,7 +156,7 @@ impl ThresholdSignature {
         rand::distributions::Standard: rand::distributions::Distribution<FF>,
     {
         // Generate base Dilithium key pair
-        let (pub_key, priv_key) = keygen();
+        let (pub_key, priv_key) = keygen::<FF>();
 
         // Split secret vectors using adapted Shamir scheme
         let s1_shares = self.shamir_s1.split_secret(&priv_key.s1)?;
@@ -445,6 +443,7 @@ impl<FF: FiniteField> PointSource<FF> for PartialSignature<'static, FF> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::threshold::params::K;
 
     // Helper function to create a deterministic seed
     fn create_test_seed(value: u8) -> Vec<u8> {
@@ -464,7 +463,7 @@ mod tests {
             let s1_share = ShamirShare::new(1, s1_share_vec).unwrap();
             let s2_share = ShamirShare::new(1, s2_share_vec).unwrap();
 
-            let (pub_key, _) = keygen();
+            let (pub_key, _) = keygen::<FieldElement>();
 
             let key_share = ThresholdKeyShare::new(
                 1,
@@ -488,7 +487,7 @@ mod tests {
             let s1_share = ShamirShare::new(5, s1_share_vec).unwrap();
             let s2_share = ShamirShare::new(5, s2_share_vec).unwrap();
 
-            let (pub_key, _) = keygen();
+            let (pub_key, _) = keygen::<FieldElement>();
 
             let key_share =
                 ThresholdKeyShare::new(5, s1_share, s2_share, pub_key);
@@ -541,7 +540,7 @@ mod tests {
 
     mod sample_partial_y_tests {
         use super::*;
-        use crate::params::{GAMMA1, L, N};
+        use crate::threshold::params::{GAMMA1, L, N};
         use math::field_element::FieldElement;
 
         fn centered_value(fe: FieldElement) -> i64 {
@@ -604,7 +603,7 @@ mod tests {
 
     mod generate_partial_challenge_tests {
         use super::*;
-        use crate::params::{N, TAU};
+        use crate::threshold::params::{N, TAU};
         use math::field_element::FieldElement;
 
         fn centered_value(fe: FieldElement) -> i64 {
@@ -740,14 +739,20 @@ mod tests {
     }
 
     mod reconstruct_hint_tests {
+        use super::K;
         use super::*;
         use math::field_element::FieldElement;
 
         fn zero_partial(id: usize) -> PartialSignature<'static, FieldElement> {
-            let z_partial =
-                Vec::from(crate::utils::zero_polyvec::<L, FieldElement>());
+            let z_partial = Vec::from(crate::threshold::utils::zero_polyvec::<
+                L,
+                FieldElement,
+            >());
             let commitment =
-                Vec::from(crate::utils::zero_polyvec::<K, FieldElement>());
+                Vec::from(crate::threshold::utils::zero_polyvec::<
+                    K,
+                    FieldElement,
+                >());
             PartialSignature::new(id, z_partial, commitment, Polynomial::zero())
         }
 
@@ -816,6 +821,7 @@ mod tests {
     }
 
     mod threshold_signature_tests {
+        use super::K;
         use super::*;
 
         #[test]

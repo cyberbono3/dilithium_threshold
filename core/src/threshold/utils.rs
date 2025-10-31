@@ -9,10 +9,10 @@ use sha3::{
     digest::{ExtendableOutput, Update, XofReader},
 };
 
-use crate::error::{ThresholdError, ThresholdResult};
-use crate::params::GAMMA1;
+use crate::threshold::error::{ThresholdError, ThresholdResult};
+use crate::threshold::params::{GAMMA1, N};
 use crate::traits::PointSource;
-use math::{poly::Polynomial, prelude::*, traits::FiniteField};
+use math::{poly::Polynomial, traits::FiniteField};
 
 const RANDOMNESS_BYTES: usize = 32;
 const HASH_BYTES: usize = 64;
@@ -290,7 +290,7 @@ mod tests {
 
     mod reconstruct_vector_from_points_tests {
         use super::*;
-        use crate::error::ThresholdError;
+        use crate::threshold::error::ThresholdError;
         use crate::traits::PointSource;
         use math::fe;
 
