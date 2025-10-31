@@ -81,26 +81,26 @@ use crate::prelude::FieldElement;
 #[macro_export]
 macro_rules! poly {
     // Empty case - zero polynomial
-    // TODO fix it
-    () => {
+    () => {{
         $crate::prelude::Polynomial::zero()
-    };
+    }};
 
     // Single expression that evaluates to an array, slice, or vector
-    ($arr:expr) => {
+    ($arr:expr) => {{
         $crate::prelude::Polynomial::from($arr)
-    };
+    }};
 
     // Repeated value case: poly![value; count]
     ($val:expr; $count:expr) => {{
-        let mut coeffs = vec![$val; $count];
-        $crate::prelude::Polynomial::from(coeffs)
+        let value = $val;
+        let count = $count;
+        $crate::prelude::Polynomial::from(vec![value; count])
     }};
 
     // List of coefficients
-    ($($coeff:expr),+ $(,)?) => {
+    ($($coeff:expr),+ $(,)?) => {{
         $crate::prelude::Polynomial::from(vec![$($coeff),+])
-    };
+    }};
 }
 
 impl<FF: FiniteField> Zero for Polynomial<'static, FF> {
@@ -867,6 +867,7 @@ where
     ///
     /// Prefer this over [`self * other`](Self::mul) since it chooses the fastest multiplication
     /// strategy.
+    // TODO test it
     #[must_use]
     pub fn multiply<FF2>(
         &self,

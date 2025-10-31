@@ -318,6 +318,26 @@ impl FieldElement {
     pub const fn is_canonical(x: u32) -> bool {
         x < Self::P
     }
+
+    #[inline]
+    fn from_unsigned_mod(value: u128) -> Self {
+        Self::new(Self::reduce_unsigned(value))
+    }
+
+    #[inline]
+    fn from_signed_mod(value: i128) -> Self {
+        Self::new(Self::reduce_signed(value))
+    }
+
+    #[inline]
+    fn reduce_unsigned(value: u128) -> u32 {
+        (value % Self::P as u128) as u32
+    }
+
+    #[inline]
+    fn reduce_signed(value: i128) -> u32 {
+        value.rem_euclid(Self::P as i128) as u32
+    }
 }
 
 impl fmt::Display for FieldElement {
@@ -354,15 +374,13 @@ impl From<usize> for FieldElement {
 
 impl From<u128> for FieldElement {
     fn from(value: u128) -> Self {
-        // Reduce u128 modulo our prime
-        Self::new((value % Self::P as u128) as u32)
+        Self::from_unsigned_mod(value)
     }
 }
 
 impl From<u64> for FieldElement {
     fn from(value: u64) -> Self {
-        // Reduce u64 modulo our prime
-        Self::new((value % Self::P as u64) as u32)
+        Self::from_unsigned_mod(value as u128)
     }
 }
 
@@ -370,7 +388,7 @@ macro_rules! impl_from_small_unsigned_int_for_fe {
     ($($t:ident),+ $(,)?) => {$(
         impl From<$t> for FieldElement {
             fn from(value: $t) -> Self {
-                Self::new(u32::from(value))
+                Self::from_unsigned_mod(u128::from(value))
             }
         }
     )+};
@@ -380,30 +398,13 @@ impl_from_small_unsigned_int_for_fe!(u8, u16, u32);
 
 impl From<isize> for FieldElement {
     fn from(value: isize) -> Self {
-        if value >= 0 {
-            Self::from(value as usize)
-        } else {
-            // Convert to i64 to safely handle isize::MIN
-            Self::from(value as i64)
-        }
+        Self::from_signed_mod(value as i128)
     }
 }
 
 impl From<i64> for FieldElement {
     fn from(value: i64) -> Self {
-        if value >= 0 {
-            Self::from(value as u64)
-        } else {
-            // For negative values, we need to handle the modular arithmetic carefully
-            // We want the representative in [0, P-1] of the equivalence class of value mod P
-            let remainder = value % (Self::P as i64);
-            if remainder == 0 {
-                Self::ZERO
-            } else {
-                // remainder is negative here, so P + remainder gives us the positive representative
-                Self::new((Self::P as i64 + remainder) as u32)
-            }
-        }
+        Self::from_signed_mod(value as i128)
     }
 }
 
@@ -411,7 +412,7 @@ macro_rules! impl_from_small_signed_int_for_fe {
     ($($t:ident),+ $(,)?) => {$(
         impl From<$t> for FieldElement {
             fn from(value: $t) -> Self {
-                i64::from(value).into()
+                Self::from_signed_mod(i128::from(value))
             }
         }
     )+};
@@ -867,6 +868,53 @@ mod b_prime_field_element_test {
         prop_assert_eq!(expected_value, fe.value());
     }
 
+    #[proptest]
+    fn from_u128_reduces_modulus(value: u128) {
+        let fe = FieldElement::from(value);
+        let expected = (value % FieldElement::P as u128) as u32;
+        prop_assert_eq!(expected, fe.value());
+    }
+
+    #[proptest]
+    fn from_i64_matches_modulus(value: i64) {
+        let fe = FieldElement::from(value);
+        let expected = value.rem_euclid(FieldElement::P as i64) as u32;
+        prop_assert_eq!(expected, fe.value());
+    }
+
+    #[test]
+    fn from_i64_handles_small_negatives() {
+        let minus_one = FieldElement::from(-1_i64);
+        assert_eq!(FieldElement::MAX, minus_one.value());
+
+        let minus_two = FieldElement::from(-2_i64);
+        assert_eq!(FieldElement::MAX - 1, minus_two.value());
+    }
+
+    #[test]
+    fn from_i64_wraps_around_full_modulus() {
+        let minus_modulus = FieldElement::from(-(FieldElement::P as i64));
+        assert_eq!(FieldElement::ZERO, minus_modulus);
+
+        let minus_modulus_plus_one =
+            FieldElement::from(-(FieldElement::P as i64) + 1);
+        assert_eq!(FieldElement::ONE, minus_modulus_plus_one);
+    }
+
+    #[proptest]
+    fn raw_u16_roundtrip(fe: FieldElement) {
+        let chunks = fe.raw_u16s();
+        let rebuilt = FieldElement::from_raw_u16s(&chunks);
+        prop_assert_eq!(fe.raw_u32(), rebuilt.raw_u32());
+    }
+
+    #[proptest]
+    fn raw_bytes_roundtrip(fe: FieldElement) {
+        let bytes = fe.raw_bytes();
+        let rebuilt = FieldElement::from_raw_bytes(&bytes);
+        prop_assert_eq!(fe.raw_u32(), rebuilt.raw_u32());
+    }
+
     #[test]
     fn display_test() {
         let seven: FieldElement = FieldElement::new(7);
@@ -999,19 +1047,26 @@ mod b_prime_field_element_test {
 
     #[proptest]
     fn batch_inversion(fes: Vec<FieldElement>) {
-        // Filter out zero elements since batch_inversion panics on zero
-        let non_zero_fes: Vec<_> =
-            fes.into_iter().filter(|fe| !fe.is_zero()).collect();
-
-        if non_zero_fes.is_empty() {
+        if fes.iter().any(FieldElement::is_zero) {
+            prop_assert!(FieldElement::try_batch_inversion(fes).is_none());
             return Ok(());
         }
 
-        let fes_inv = FieldElement::batch_inversion(non_zero_fes.clone());
-        prop_assert_eq!(non_zero_fes.len(), fes_inv.len());
-        for (fe, fe_inv) in izip!(non_zero_fes, fes_inv) {
+        let inverses =
+            FieldElement::try_batch_inversion(fes.clone()).expect("non-zero");
+        prop_assert_eq!(fes.len(), inverses.len());
+        for (fe, fe_inv) in izip!(fes, inverses) {
             prop_assert_eq!(FieldElement::ONE, fe * fe_inv);
         }
+    }
+
+    #[test]
+    fn try_batch_inversion_returns_none_on_zero() {
+        let result = FieldElement::try_batch_inversion(vec![
+            FieldElement::ONE,
+            FieldElement::ZERO,
+        ]);
+        assert!(result.is_none());
     }
 
     #[test]
