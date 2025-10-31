@@ -247,11 +247,11 @@ pub fn verify<
 where
     i64: From<FF>,
 {
+    let az = pub_key.a.mul(&sig.z);
     all_infty_norm_below::<FF, L>(&sig.z, GAMMA1 - BETA)
         && derive_challenge(
             msg,
             &pack_w1_for_hash(&{
-                let az = pub_key.a.mul(&sig.z);
                 let mut az_minus_ct = zero_polyvec::<K, FF>();
                 polyvec_sub_scaled_in_place::<FF, K>(
                     &mut az_minus_ct,
