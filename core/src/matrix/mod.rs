@@ -1,4 +1,4 @@
 pub mod hash;
-pub mod matrix;
+pub mod matrix_a;
 
-pub use matrix::{MatrixA, expand_a_from_rho};
+pub use matrix_a::{MatrixA, expand_a_from_rho};
