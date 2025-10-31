@@ -61,37 +61,76 @@ fn cbd_eta2<FF: FiniteField + From<i64>>(
     out.into()
 }
 
-pub fn keygen<FF: FiniteField + From<i64>>()
--> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
-    let rho = random_bytes();
-    let s1_seed = random_bytes();
-    let s2_seed = random_bytes();
-
-    keygen_with_seeds::<FF>(rho, s1_seed, s2_seed)
+#[derive(Debug, Clone, Copy)]
+pub struct KeypairSeeds {
+    pub rho: [u8; 32],
+    pub s1: [u8; 32],
+    pub s2: [u8; 32],
 }
 
-#[inline]
-fn expand_secret_array<const LEN: usize, FF>(
-    seed: impl AsRef<[u8]>,
-) -> [Polynomial<'static, FF>; LEN]
-where
-    FF: math::traits::FiniteField + From<i64>,
-{
-    let seed = seed.as_ref();
-    let mut input = Vec::with_capacity(seed.len() + 2);
-    input.extend_from_slice(seed);
-    input.extend_from_slice(&[0u8; 2]);
-
-    let mut secrets = zero_polyvec::<LEN, FF>();
-    for (j, slot) in secrets.iter_mut().enumerate() {
-        let idx_bytes = (j as u16).to_le_bytes();
-        let offset = input.len() - 2;
-        input[offset..].copy_from_slice(&idx_bytes);
-        let bytes = shake256(2 * N, &input);
-        *slot = cbd_eta2::<FF>(&bytes);
+impl KeypairSeeds {
+    #[inline]
+    pub fn random() -> Self {
+        Self {
+            rho: random_bytes(),
+            s1: random_bytes(),
+            s2: random_bytes(),
+        }
     }
 
-    secrets
+    #[inline]
+    pub const fn new(rho: [u8; 32], s1: [u8; 32], s2: [u8; 32]) -> Self {
+        Self { rho, s1, s2 }
+    }
+
+    fn expand_secret_vector<const LEN: usize, FF>(
+        seed: &[u8; 32],
+    ) -> [Polynomial<'static, FF>; LEN]
+    where
+        FF: math::traits::FiniteField + From<i64>,
+    {
+        let mut input = Vec::with_capacity(seed.len() + 2);
+        input.extend_from_slice(seed);
+        input.extend_from_slice(&[0u8; 2]);
+
+        let mut secrets = zero_polyvec::<LEN, FF>();
+        for (index, slot) in secrets.iter_mut().enumerate() {
+            let idx_bytes = (index as u16).to_le_bytes();
+            let offset = input.len() - 2;
+            input[offset..].copy_from_slice(&idx_bytes);
+            let bytes = shake256(2 * N, &input);
+            *slot = cbd_eta2::<FF>(&bytes);
+        }
+
+        secrets
+    }
+
+    pub fn into_keypair<FF>(
+        self,
+    ) -> (PublicKey<'static, FF>, PrivateKey<'static, FF>)
+    where
+        FF: math::traits::FiniteField + From<i64>,
+    {
+        let KeypairSeeds { rho, s1, s2 } = self;
+        let a = expand_a_from_rho(rho);
+        let s1 = Self::expand_secret_vector::<L, FF>(&s1);
+        let s2 = Self::expand_secret_vector::<K, FF>(&s2);
+
+        let mut t = a.mul(&s1);
+        t.iter_mut()
+            .zip(s2.iter())
+            .for_each(|(dest, addend)| *dest += addend.clone());
+
+        let public_key = PublicKey::new(a.clone(), t, rho);
+        let private_key = PrivateKey::new(a, s1, s2);
+
+        (public_key, private_key)
+    }
+}
+
+pub fn keygen<FF: FiniteField + From<i64>>()
+-> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
+    KeypairSeeds::random().into_keypair::<FF>()
 }
 
 pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
@@ -99,19 +138,7 @@ pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
     s1_seed: [u8; 32],
     s2_seed: [u8; 32],
 ) -> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
-    let a = expand_a_from_rho(rho);
-    let s1 = expand_secret_array::<L, FF>(s1_seed);
-    let s2 = expand_secret_array::<K, FF>(s2_seed);
-
-    let mut t = a.mul(&s1);
-    t.iter_mut()
-        .zip(s2.iter())
-        .for_each(|(dest, addend)| *dest += addend.clone());
-
-    let public_key = PublicKey::new(a.clone(), t, rho);
-    let private_key = PrivateKey::new(a, s1, s2);
-
-    (public_key, private_key)
+    KeypairSeeds::new(rho, s1_seed, s2_seed).into_keypair::<FF>()
 }
 
 #[cfg(test)]
