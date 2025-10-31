@@ -6,189 +6,244 @@ use crate::threshold::utils::zero_polyvec;
 
 use math::prelude::FieldElement;
 use math::{poly::Polynomial, traits::FiniteField};
+use std::array::from_fn;
 const REJECTION_LIMIT: u32 = 10000;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Signature<'a, FF: FiniteField> {
     pub z: [Polynomial<'a, FF>; L],
     pub c: Polynomial<'a, FF>, // challenge polynomial with TAU non-zeros in {-1,0,1}
 }
 
-fn high_low_bits(x: i64) -> (i64, i64) {
-    let w1 = x / ALPHA;
-    let mut w0 = x - w1 * ALPHA;
-    if w0 > ALPHA / 2 {
-        w0 -= ALPHA;
+mod utils {
+    use super::*;
+
+    pub(super) fn poly_high_low<FF: FiniteField + From<i64>>(
+        p: &Polynomial<'_, FF>,
+    ) -> (Polynomial<'static, FF>, Polynomial<'static, FF>)
+    where
+        i64: From<FF>,
+    {
+        let (hi, lo): (Vec<_>, Vec<_>) = padded_coefficients(p)
+            .map(|coeff| high_low_bits(i64::from(coeff)))
+            .unzip();
+        (hi.into(), lo.into())
     }
-    (w1, w0)
-}
 
-fn padded_coefficients<'a, FF: FiniteField>(
-    poly: &'a Polynomial<'a, FF>,
-) -> impl Iterator<Item = FF> + 'a {
-    poly.coefficients()
-        .iter()
-        .copied()
-        .chain(std::iter::repeat(FF::ZERO))
-        .take(N)
-}
-
-fn poly_high_low<FF: FiniteField + From<i64>>(
-    p: &Polynomial<'_, FF>,
-) -> (Polynomial<'static, FF>, Polynomial<'static, FF>)
-where
-    i64: From<FF>,
-{
-    let (hi, lo): (Vec<_>, Vec<_>) = padded_coefficients(p)
-        .map(|coeff| high_low_bits(i64::from(coeff)))
-        .unzip();
-    (hi.into(), lo.into())
-}
-
-fn poly_high<FF: FiniteField + From<i64>>(
-    p: &Polynomial<'_, FF>,
-) -> Polynomial<'static, FF>
-where
-    i64: From<FF>,
-{
-    let (high, _) = poly_high_low(p);
-    high
-}
-
-fn poly_low<FF: FiniteField + From<i64>>(
-    p: &Polynomial<'_, FF>,
-) -> Polynomial<'static, FF>
-where
-    i64: From<FF>,
-{
-    let (_, low) = poly_high_low(p);
-    low
-}
-
-/// Pack w1 (k polys of small integers) into bytes for hashing.
-/// For ML-DSA-44, w1 coeffs are in 0..=43 (6 bits). We'll store as u16 for simplicity.
-fn pack_w1_for_hash<FF: FiniteField + Into<[u8; FieldElement::BYTES]>>(
-    w1: &[Polynomial<'_, FF>; K],
-) -> Vec<u8> {
-    let mut out = Vec::with_capacity(K * N * 2);
-    for i in 0..K {
-        for v in w1[i].coefficients() {
-            //let u: u16 = (*v).try_into()?;
-            let arr: [u8; FieldElement::BYTES] = (*v).into();
-            out.extend_from_slice(&arr);
-        }
+    pub(super) fn poly_high<FF: FiniteField + From<i64>>(
+        p: &Polynomial<'_, FF>,
+    ) -> Polynomial<'static, FF>
+    where
+        i64: From<FF>,
+    {
+        let (high, _) = poly_high_low(p);
+        high
     }
-    out
-}
 
-/// Sample masking y in [-GAMMA1, GAMMA1] deterministically from a seed.
-fn sample_y<FF: FiniteField + From<i64>>(
-    seed: &[u8],
-    ctr: u32,
-) -> [Polynomial<'static, FF>; L] {
-    let mut out = zero_polyvec::<L, FF>();
-
-    for j in 0..L {
-        let mut inp = Vec::new();
-        inp.extend_from_slice(seed);
-        inp.extend_from_slice(&(j as u16).to_le_bytes());
-        inp.extend_from_slice(&ctr.to_le_bytes());
-        let bytes = shake256(3 * N, &inp); // 3 bytes per coeff -> 24-bit
-        let mut c = [0i64; N];
-        for i in 0..N {
-            let b = &bytes[3 * i..3 * i + 3];
-            let v = ((b[0] as u32)
-                | ((b[1] as u32) << 8)
-                | ((b[2] as u32) << 16)) as i64;
-            // Map to [-GAMMA1, GAMMA1)
-            let m = (2 * GAMMA1 + 1) as i64;
-            let r = (v % m + m) % m;
-            c[i] = r - GAMMA1; // centered
-        }
-        out[j] = c.into();
+    pub(super) fn poly_low<FF: FiniteField + From<i64>>(
+        p: &Polynomial<'_, FF>,
+    ) -> Polynomial<'static, FF>
+    where
+        i64: From<FF>,
+    {
+        let (_, low) = poly_high_low(p);
+        low
     }
-    out
-}
 
-/// Build a sparse ternary polynomial c with TAU nonzeros in {-1, +1},
-/// derived from H(M || w1_pack). Uses SHAKE256 as a PRF.
-fn derive_challenge<FF: FiniteField + From<i64>>(
-    m: &[u8],
-    w1_pack: &[u8],
-) -> Polynomial<'static, FF> {
-    let mut seed = Vec::with_capacity(m.len() + w1_pack.len());
-    seed.extend_from_slice(m);
-    seed.extend_from_slice(w1_pack);
-    let mut stream = shake256(4 * TAU + 1024, &seed); // extra bytes for indices
-
-    let mut used = [false; N];
-    let mut c = [0i64; N];
-    let mut filled = 0usize;
-    let mut idx = 0usize;
-
-    while filled < TAU {
-        if idx + 3 >= stream.len() {
-            let more = shake256(1024, &stream);
-            stream.extend_from_slice(&more);
+    pub(super) fn pack_w1_for_hash<
+        FF: FiniteField + Into<[u8; FieldElement::BYTES]>,
+    >(
+        w1: &[Polynomial<'_, FF>; K],
+    ) -> Vec<u8> {
+        let mut out = Vec::with_capacity(K * N * 2);
+        for poly in w1 {
+            for v in poly.coefficients() {
+                let arr: [u8; FieldElement::BYTES] = (*v).into();
+                out.extend_from_slice(&arr);
+            }
         }
-        // 2 bytes for index, 1 byte for sign
-        let j = u16::from_le_bytes([stream[idx], stream[idx + 1]]) as usize % N;
-        let sbit = stream[idx + 2] & 1;
-        idx += 3;
-
-        if !used[j] {
-            used[j] = true;
-            c[j] = if sbit == 1 { 1 } else { -1 };
-            filled += 1;
-        }
+        out
     }
-    c.into()
-}
 
-#[inline]
-fn polyvec_add_scaled_in_place<
-    'a,
-    FF: FiniteField + 'static,
-    const LEN: usize,
->(
-    dest: &mut [Polynomial<'a, FF>; LEN],
-    base: &[Polynomial<'a, FF>; LEN],
-    scale: &Polynomial<'a, FF>,
-    mult: &[Polynomial<'a, FF>; LEN],
-) {
-    dest.iter_mut().zip(base.iter()).zip(mult.iter()).for_each(
-        |((slot, base_poly), mult_poly)| {
-            // slot = base + scale * mult
+    pub(super) fn sample_y<FF: FiniteField + From<i64>>(
+        seed: &[u8],
+        ctr: u32,
+    ) -> [Polynomial<'static, FF>; L] {
+        let mut out = zero_polyvec::<L, FF>();
+
+        for (j, slot) in out.iter_mut().enumerate() {
+            let mut inp = Vec::with_capacity(seed.len() + 6);
+            inp.extend_from_slice(seed);
+            inp.extend_from_slice(&(j as u16).to_le_bytes());
+            inp.extend_from_slice(&ctr.to_le_bytes());
+            let bytes = shake256(3 * N, &inp); // 3 bytes per coeff -> 24-bit
+            let mut coeffs = [0i64; N];
+            for (i, chunk) in bytes.chunks_exact(3).take(N).enumerate() {
+                let v = (chunk[0] as i64)
+                    | ((chunk[1] as i64) << 8)
+                    | ((chunk[2] as i64) << 16);
+                let modulus = (2 * GAMMA1 + 1) as i64;
+                let centered = (v % modulus + modulus) % modulus - GAMMA1;
+                coeffs[i] = centered;
+            }
+            *slot = coeffs.into();
+        }
+        out
+    }
+
+    pub(super) fn derive_challenge<FF: FiniteField + From<i64>>(
+        message: &[u8],
+        w1_pack: &[u8],
+    ) -> Polynomial<'static, FF> {
+        let mut seed = Vec::with_capacity(message.len() + w1_pack.len());
+        seed.extend_from_slice(message);
+        seed.extend_from_slice(w1_pack);
+        let mut stream = shake256(4 * TAU + 1024, &seed); // extra bytes for indices
+
+        let mut used = [false; N];
+        let mut coeffs = [0i64; N];
+        let mut filled = 0usize;
+        let mut idx = 0usize;
+
+        while filled < TAU {
+            if idx + 3 >= stream.len() {
+                let more = shake256(1024, &stream);
+                stream.extend_from_slice(&more);
+            }
+
+            let j =
+                u16::from_le_bytes([stream[idx], stream[idx + 1]]) as usize % N;
+            let sign = if stream[idx + 2] & 1 == 1 { 1 } else { -1 };
+            idx += 3;
+
+            if !used[j] {
+                used[j] = true;
+                coeffs[j] = sign;
+                filled += 1;
+            }
+        }
+        coeffs.into()
+    }
+
+    #[inline]
+    pub(super) fn polyvec_add_scaled<
+        FF: FiniteField + 'static,
+        const LEN: usize,
+    >(
+        base: &[Polynomial<'static, FF>; LEN],
+        scale: &Polynomial<'_, FF>,
+        mult: &[Polynomial<'static, FF>; LEN],
+    ) -> [Polynomial<'static, FF>; LEN] {
+        let mut dest = zero_polyvec::<LEN, FF>();
+        for ((slot, base_poly), mult_poly) in
+            dest.iter_mut().zip(base.iter()).zip(mult.iter())
+        {
             slot.clone_from(base_poly);
-            *slot += scale.clone() * mult_poly.clone();
-        },
-    );
+            let scaled = mult_poly.clone() * scale.clone();
+            *slot += scaled;
+        }
+        dest
+    }
+
+    #[inline]
+    pub(super) fn polyvec_sub_scaled<
+        FF: FiniteField + 'static,
+        const LEN: usize,
+    >(
+        base: &[Polynomial<'static, FF>; LEN],
+        scale: &Polynomial<'_, FF>,
+        mult: &[Polynomial<'static, FF>; LEN],
+    ) -> [Polynomial<'static, FF>; LEN] {
+        let mut dest = zero_polyvec::<LEN, FF>();
+        for ((slot, base_poly), mult_poly) in
+            dest.iter_mut().zip(base.iter()).zip(mult.iter())
+        {
+            slot.clone_from(base_poly);
+            let scaled = mult_poly.clone() * scale.clone();
+            *slot += -scaled;
+        }
+        dest
+    }
+
+    #[inline]
+    pub(super) fn all_infty_norm_below<FF: FiniteField, const LEN: usize>(
+        polys: &[Polynomial<'_, FF>; LEN],
+        bound: i64,
+    ) -> bool
+    where
+        i64: From<FF>,
+    {
+        polys.iter().all(|p| (p.norm_infinity() as i64) < bound)
+    }
+
+    fn high_low_bits(x: i64) -> (i64, i64) {
+        let w1 = x / ALPHA;
+        let mut w0 = x - w1 * ALPHA;
+        if w0 > ALPHA / 2 {
+            w0 -= ALPHA;
+        }
+        (w1, w0)
+    }
+
+    fn padded_coefficients<'a, FF: FiniteField>(
+        poly: &'a Polynomial<'a, FF>,
+    ) -> impl Iterator<Item = FF> + 'a {
+        poly.coefficients()
+            .iter()
+            .copied()
+            .chain(std::iter::repeat(FF::ZERO))
+            .take(N)
+    }
 }
 
-#[inline]
-fn polyvec_sub_scaled_in_place<
-    'a,
-    FF: FiniteField + 'static,
-    const LEN: usize,
->(
-    dest: &mut [Polynomial<'a, FF>; LEN],
-    base: &[Polynomial<'a, FF>; LEN],
-    scale: &Polynomial<'a, FF>,
-    mult: &[Polynomial<'a, FF>; LEN],
-) {
-    let neg_scale = -scale.clone();
-    polyvec_add_scaled_in_place(dest, base, &neg_scale, mult);
-}
+use utils::{
+    all_infty_norm_below, derive_challenge, pack_w1_for_hash, poly_high,
+    poly_low, polyvec_add_scaled, polyvec_sub_scaled, sample_y,
+};
 
-#[inline]
-fn all_infty_norm_below<FF: FiniteField, const LEN: usize>(
-    polys: &[Polynomial<'_, FF>; LEN],
-    bound: i64,
-) -> bool
+struct SigningEngine<'pk, 'msg, FF>
 where
+    FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64> + 'static,
     i64: From<FF>,
 {
-    polys.iter().all(|p| (p.norm_infinity() as i64) < bound)
+    priv_key: &'pk PrivateKey<'static, FF>,
+    msg: &'msg [u8],
+    y_seed: Vec<u8>,
+}
+
+impl<'pk, 'msg, FF> SigningEngine<'pk, 'msg, FF>
+where
+    FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64> + 'static,
+    i64: From<FF>,
+{
+    fn new(priv_key: &'pk PrivateKey<'static, FF>, msg: &'msg [u8]) -> Self {
+        Self {
+            priv_key,
+            msg,
+            y_seed: shake256(32, msg),
+        }
+    }
+
+    fn try_with_counter(&self, ctr: u32) -> Option<Signature<'static, FF>> {
+        let y = sample_y::<FF>(&self.y_seed, ctr);
+        let w = self.priv_key.a.mul(&y);
+        let w1 = from_fn(|idx| poly_high(&w[idx]));
+        let challenge = derive_challenge(self.msg, &pack_w1_for_hash(&w1));
+
+        let z = polyvec_add_scaled::<FF, L>(&y, &challenge, &self.priv_key.s1);
+        if !all_infty_norm_below::<FF, L>(&z, GAMMA1 - BETA) {
+            return None;
+        }
+
+        let ay_minus_cs2 =
+            polyvec_sub_scaled::<FF, K>(&w, &challenge, &self.priv_key.s2);
+        let w0 = ay_minus_cs2.map(|p| poly_low(&p));
+        if !all_infty_norm_below::<FF, K>(&w0, GAMMA2 - BETA) {
+            return None;
+        }
+
+        Some(Signature { z, c: challenge })
+    }
 }
 
 pub fn sign<FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64>>(
@@ -199,35 +254,10 @@ pub fn sign<FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64>>(
 where
     i64: From<FF>,
 {
-    let y_seed = shake256(32, msg);
+    let engine = SigningEngine::new(priv_key, msg);
 
     (0u32..REJECTION_LIMIT)
-        .find_map(|ctr| {
-            let y = sample_y(&y_seed, ctr);
-            let w = priv_key.a.mul(&y);
-
-            let w1 = w.clone().map(|p| poly_high(&p));
-            let w1_pack = pack_w1_for_hash(&w1);
-            let c = derive_challenge(msg, &w1_pack);
-
-            let mut z = zero_polyvec::<L, FF>();
-            polyvec_add_scaled_in_place::<FF, L>(&mut z, &y, &c, &priv_key.s1);
-
-            let ok1 = all_infty_norm_below::<FF, L>(&z, GAMMA1 - BETA);
-
-            let mut ay_minus_cs2 = zero_polyvec::<L, FF>();
-            polyvec_sub_scaled_in_place::<FF, K>(
-                &mut ay_minus_cs2,
-                &w,
-                &c,
-                &priv_key.s2,
-            );
-            let w0 = ay_minus_cs2.map(|p| poly_low(&p));
-            let ok2 = all_infty_norm_below::<FF, K>(&w0, GAMMA2 - BETA);
-
-            ok1.then_some((z, c)).filter(|_| ok2)
-        })
-        .map(|(z, c)| Signature { z, c })
+        .find_map(|ctr| engine.try_with_counter(ctr))
         .ok_or(ThresholdError::SignatureGenerationFailed)
 }
 
@@ -247,21 +277,18 @@ pub fn verify<
 where
     i64: From<FF>,
 {
+    if !all_infty_norm_below::<FF, L>(&sig.z, GAMMA1 - BETA) {
+        return false;
+    }
+
     let az = pub_key.a.mul(&sig.z);
-    all_infty_norm_below::<FF, L>(&sig.z, GAMMA1 - BETA)
-        && derive_challenge(
-            msg,
-            &pack_w1_for_hash(&{
-                let mut az_minus_ct = zero_polyvec::<K, FF>();
-                polyvec_sub_scaled_in_place::<FF, K>(
-                    &mut az_minus_ct,
-                    &az,
-                    &sig.c,
-                    &pub_key.t,
-                );
-                az_minus_ct.map(|p| poly_high(&p))
-            }),
-        ) == sig.c
+    let w1_prime = {
+        let az_minus_ct = polyvec_sub_scaled::<FF, K>(&az, &sig.c, &pub_key.t);
+        az_minus_ct.map(|poly| poly_high(&poly))
+    };
+
+    let derived = derive_challenge(msg, &pack_w1_for_hash(&w1_prime));
+    derived == sig.c
 }
 
 #[cfg(test)]
@@ -286,6 +313,81 @@ mod tests {
         let s1 = [0x5Au8; 32];
         let s2 = [0x33u8; 32];
         keygen_with_seeds::<FF>(rho, s1, s2)
+    }
+
+    mod signing_engine_tests {
+        use super::*;
+
+        #[test]
+        fn engine_produces_signatures_within_limit() {
+            let message = b"engine-test";
+            let (pub_key, priv_key) = keypair_fixture_1::<FieldElement>();
+            let engine = SigningEngine::new(&priv_key, message);
+
+            let mut produced = None;
+            for ctr in 0..REJECTION_LIMIT {
+                if let Some(sig) = engine.try_with_counter(ctr) {
+                    produced = Some(sig);
+                    break;
+                }
+            }
+
+            let signature =
+                produced.expect("expected a signature before limit");
+            assert!(
+                utils::all_infty_norm_below::<FieldElement, L>(
+                    &signature.z,
+                    GAMMA1 - BETA
+                ),
+                "z exceeds bound"
+            );
+            assert!(
+                verify::<FieldElement>(&pub_key, message, &signature),
+                "engine output should verify against the public key"
+            );
+        }
+
+        #[test]
+        fn engine_is_deterministic_for_same_inputs() {
+            let message = b"deterministic-engine";
+            let seeds = ([0x42u8; 32], [0x24u8; 32], [0x18u8; 32]);
+
+            let (_, priv_key_a) =
+                keygen_with_seeds::<FieldElement>(seeds.0, seeds.1, seeds.2);
+            let (_, priv_key_b) =
+                keygen_with_seeds::<FieldElement>(seeds.0, seeds.1, seeds.2);
+
+            let engine_a = SigningEngine::new(&priv_key_a, message);
+            let engine_b = SigningEngine::new(&priv_key_b, message);
+
+            let ctr = 5;
+            assert_eq!(
+                engine_a.try_with_counter(ctr),
+                engine_b.try_with_counter(ctr),
+                "same inputs must yield identical signatures"
+            );
+        }
+
+        #[test]
+        fn engine_rejects_when_mask_norm_exceeds_bounds() {
+            let message = b"rejection-test";
+            let (_, mut priv_key) = keypair_fixture_1::<FieldElement>();
+
+            for poly in priv_key.s1.iter_mut() {
+                let coeffs =
+                    vec![FieldElement::from((GAMMA1 + BETA + 1) as i64); N];
+                *poly = coeffs.into();
+            }
+
+            let engine = SigningEngine::new(&priv_key, message);
+
+            for ctr in 0..10 {
+                assert!(
+                    engine.try_with_counter(ctr).is_none(),
+                    "expected rejection for counter {ctr}"
+                );
+            }
+        }
     }
 
     mod sample_y_tests {
@@ -313,23 +415,23 @@ mod tests {
         #[test]
         fn deterministic_per_seed_and_counter() {
             let seed = [0x11u8; 32];
-            let first = super::sample_y::<FieldElement>(&seed, 7);
-            let second = super::sample_y::<FieldElement>(&seed, 7);
+            let first = super::utils::sample_y::<FieldElement>(&seed, 7);
+            let second = super::utils::sample_y::<FieldElement>(&seed, 7);
             assert_eq!(first, second);
         }
 
         #[test]
         fn different_counters_produce_distinct_vectors() {
             let seed = [0x77u8; 32];
-            let first = super::sample_y::<FieldElement>(&seed, 1);
-            let second = super::sample_y::<FieldElement>(&seed, 2);
+            let first = super::utils::sample_y::<FieldElement>(&seed, 1);
+            let second = super::utils::sample_y::<FieldElement>(&seed, 2);
             assert_ne!(first, second);
         }
 
         #[test]
         fn coefficients_are_centered() {
             let seed = [0xC3u8; 32];
-            let polys = super::sample_y::<FieldElement>(&seed, 5);
+            let polys = super::utils::sample_y::<FieldElement>(&seed, 5);
             assert!(coeffs_within_bounds(&polys));
         }
     }
@@ -355,8 +457,8 @@ mod tests {
                 simple_poly(&[10, 11, 12]),
             ];
 
-            let first = super::pack_w1_for_hash(&polys);
-            let second = super::pack_w1_for_hash(&polys);
+            let first = super::utils::pack_w1_for_hash(&polys);
+            let second = super::utils::pack_w1_for_hash(&polys);
             assert_eq!(first, second);
         }
 
@@ -376,8 +478,8 @@ mod tests {
                 simple_poly(&[10, 11, 13]),
             ];
 
-            let hash_a = super::pack_w1_for_hash(&polys_a);
-            let hash_b = super::pack_w1_for_hash(&polys_b);
+            let hash_a = super::utils::pack_w1_for_hash(&polys_a);
+            let hash_b = super::utils::pack_w1_for_hash(&polys_b);
             assert_ne!(hash_a, hash_b);
         }
     }
@@ -390,16 +492,18 @@ mod tests {
         fn deterministic_for_same_inputs() {
             let msg = b"challenge";
             let hash = vec![0x42; 32];
-            let c1 = super::derive_challenge::<FieldElement>(msg, &hash);
-            let c2 = super::derive_challenge::<FieldElement>(msg, &hash);
+            let c1 = super::utils::derive_challenge::<FieldElement>(msg, &hash);
+            let c2 = super::utils::derive_challenge::<FieldElement>(msg, &hash);
             assert_eq!(c1, c2);
         }
 
         #[test]
         fn changing_message_changes_challenge() {
             let hash = vec![0x77; 64];
-            let c1 = super::derive_challenge::<FieldElement>(b"m1", &hash);
-            let c2 = super::derive_challenge::<FieldElement>(b"m2", &hash);
+            let c1 =
+                super::utils::derive_challenge::<FieldElement>(b"m1", &hash);
+            let c2 =
+                super::utils::derive_challenge::<FieldElement>(b"m2", &hash);
             assert_ne!(c1, c2);
         }
 
@@ -407,7 +511,8 @@ mod tests {
         fn challenge_has_tau_non_zero_entries() {
             let msg = b"nonzero-count";
             let hash = vec![0xAB; 128];
-            let challenge = super::derive_challenge::<FieldElement>(msg, &hash);
+            let challenge =
+                super::utils::derive_challenge::<FieldElement>(msg, &hash);
             let non_zero = challenge
                 .coefficients()
                 .iter()
@@ -432,13 +537,13 @@ mod tests {
         #[test]
         fn detects_within_bound() {
             let polys = [make_poly(&[1, -2, 3]), make_poly(&[0, 0, 4])];
-            assert!(super::all_infty_norm_below(&polys, 5));
+            assert!(super::utils::all_infty_norm_below(&polys, 5));
         }
 
         #[test]
         fn detects_violation() {
             let polys = [make_poly(&[1, -2, 3]), make_poly(&[0, 0, 6])];
-            assert!(!super::all_infty_norm_below(&polys, 5));
+            assert!(!super::utils::all_infty_norm_below(&polys, 5));
         }
     }
 
@@ -516,6 +621,21 @@ mod tests {
         assert!(
             !super::verify::<FieldElement>(&pub_key2, msg, &sig),
             "verification must fail under a different public key"
+        );
+    }
+
+    #[test]
+    fn verify_rejects_wrong_message() {
+        let (pub_key, priv_key) = keypair_fixture_1();
+        let message = b"hello world";
+        let signature =
+            super::sign::<FieldElement>(&priv_key, &pub_key.t, message)
+                .expect("signing should succeed");
+
+        let wrong = b"hello wurld";
+        assert!(
+            !super::verify::<FieldElement>(&pub_key, wrong, &signature),
+            "verification must fail for a different message"
         );
     }
 
