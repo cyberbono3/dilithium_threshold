@@ -9,8 +9,8 @@ use sha3::{
     digest::{ExtendableOutput, Update, XofReader},
 };
 
-use crate::threshold::error::{ThresholdError, ThresholdResult};
-use crate::threshold::params::{GAMMA1, N};
+use crate::dilithium::error::{ThresholdError, ThresholdResult};
+use crate::dilithium::params::{GAMMA1, N};
 use crate::traits::PointSource;
 use math::{poly::Polynomial, traits::FiniteField};
 
@@ -290,7 +290,7 @@ mod tests {
 
     mod reconstruct_vector_from_points_tests {
         use super::*;
-        use crate::threshold::error::ThresholdError;
+        use crate::dilithium::error::ThresholdError;
         use crate::traits::PointSource;
         use math::fe;
 

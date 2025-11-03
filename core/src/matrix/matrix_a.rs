@@ -1,6 +1,6 @@
 use super::hash::shake128;
-use crate::threshold::params::{K, L, N, Q};
-use crate::threshold::utils::zero_polyvec;
+use crate::dilithium::params::{K, L, N, Q};
+use crate::dilithium::utils::zero_polyvec;
 use math::{poly::Polynomial, traits::FiniteField};
 use num_traits::Zero;
 use std::ops::Mul;
@@ -107,6 +107,7 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
     // }
 
     /// Multiply the matrix by a polynomial vector, returning the result as a `Vec`.
+    /// TODO replace it with Mul trait
     pub fn mul_vector<'b>(
         &self,
         v: &[Polynomial<'b, FF>],
@@ -205,8 +206,8 @@ pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::threshold::params::{K, L, Q};
-    use crate::threshold::utils::zero_polyvec;
+    use crate::dilithium::params::{K, L, Q};
+    use crate::dilithium::utils::zero_polyvec;
     use math::{fe, field_element::FieldElement, poly};
     use num_traits::Zero;
 

@@ -1,7 +1,7 @@
+use crate::dilithium::params::{K, L, N};
+use crate::dilithium::utils::{random_bytes, zero_polyvec};
 use crate::matrix::hash::shake256;
 use crate::matrix::{MatrixA, expand_a_from_rho};
-use crate::threshold::params::{K, L, N};
-use crate::threshold::utils::{random_bytes, zero_polyvec};
 use math::{poly::Polynomial, traits::FiniteField};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -144,8 +144,8 @@ pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dilithium::params::{K, L};
     use crate::matrix::expand_a_from_rho;
-    use crate::threshold::params::{K, L};
     use math::field_element::FieldElement;
 
     #[test]

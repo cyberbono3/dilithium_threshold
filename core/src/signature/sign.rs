@@ -1,8 +1,8 @@
+use crate::dilithium::error::ThresholdError;
+use crate::dilithium::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N, TAU};
+use crate::dilithium::utils::zero_polyvec;
 use crate::matrix::hash::shake256;
 use crate::signature::keypair::{PrivateKey, PublicKey};
-use crate::threshold::error::ThresholdError;
-use crate::threshold::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N, TAU};
-use crate::threshold::utils::zero_polyvec;
 
 use math::prelude::FieldElement;
 use math::{poly::Polynomial, traits::FiniteField};
@@ -294,8 +294,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*; // brings sign/verify + private helpers into scope
+    use crate::dilithium::params::{BETA, GAMMA1, L, N};
     use crate::signature::keypair::*;
-    use crate::threshold::params::{BETA, GAMMA1, L, N};
     use math::field_element::FieldElement;
 
     // Deterministic fixtures for reproducible tests
