@@ -10,8 +10,9 @@ use sha3::{
 };
 
 use crate::dilithium::error::{DilithiumError, DilithiumResult};
-use crate::dilithium::params::{GAMMA1, N};
+use crate::dilithium::params::{GAMMA1, N, TAU};
 use crate::dilithium::shamir::error::ShamirError;
+use crate::matrix::hash::shake256;
 use crate::traits::PointSource;
 use math::{poly::Polynomial, traits::FiniteField};
 
@@ -71,6 +72,51 @@ pub fn sample_gamma1<FF: FiniteField>(seed: &[u8]) -> Polynomial<'static, FF> {
         .collect();
 
     Polynomial::from(coeffs)
+}
+
+/// Derive a TAU-sparse challenge polynomial from the provided seed bytes.
+pub fn derive_challenge_polynomial<FF: FiniteField + From<i64>>(
+    seed: &[u8],
+) -> Polynomial<'static, FF> {
+    let mut stream = shake256(4 * TAU + 1024, seed);
+    let mut used = vec![false; N];
+    let mut coeffs = vec![0i64; N];
+    let mut filled = 0usize;
+    let mut idx = 0usize;
+
+    while filled < TAU {
+        if idx + 3 > stream.len() {
+            stream.extend_from_slice(&shake256(1024, &stream));
+        }
+
+        let position =
+            u16::from_le_bytes([stream[idx], stream[idx + 1]]) as usize % N;
+        let sign = if stream[idx + 2] & 1 == 1 { 1 } else { -1 };
+        idx += 3;
+
+        if !used[position] {
+            used[position] = true;
+            coeffs[position] = sign;
+            filled += 1;
+        }
+    }
+
+    coeffs.into()
+}
+
+/// Convenience helper to sample multiple polynomials centered in [-GAMMA1, GAMMA1].
+pub fn sample_gamma1_vector<FF: FiniteField>(
+    seed: &[u8],
+    count: usize,
+) -> Vec<Polynomial<'static, FF>> {
+    (0..count)
+        .map(|i| {
+            let mut namespaced = Vec::with_capacity(seed.len() + 1);
+            namespaced.extend_from_slice(seed);
+            namespaced.push(i as u8);
+            sample_gamma1(&namespaced)
+        })
+        .collect()
 }
 
 // Generic reconstruction from any point providers (removes duplication).

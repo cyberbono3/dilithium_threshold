@@ -1,4 +1,4 @@
-use crate::traits::PointSource;
+use crate::traits::PolyVectorSource;
 use math::{prelude::*, traits::FiniteField};
 
 /// Represents a partial signature from one participant.
@@ -36,17 +36,13 @@ impl<FF: FiniteField> std::fmt::Display for PartialSignature<'static, FF> {
     }
 }
 
-impl<FF: FiniteField> PointSource<FF> for PartialSignature<'static, FF> {
-    fn x(&self) -> FF {
-        (self.participant_id as u64).into()
+impl<FF: FiniteField> PolyVectorSource<FF> for PartialSignature<'static, FF> {
+    fn participant_id(&self) -> usize {
+        self.participant_id
     }
 
-    fn poly_at(&self, index: usize) -> Option<&Polynomial<'static, FF>> {
-        self.z_partial.get(index)
-    }
-
-    fn poly_count(&self) -> usize {
-        self.z_partial.len()
+    fn polynomials(&self) -> &[Polynomial<'static, FF>] {
+        &self.z_partial
     }
 }
 

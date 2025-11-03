@@ -1,5 +1,5 @@
 use crate::dilithium::error::DilithiumError;
-use crate::dilithium::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N, TAU};
+use crate::dilithium::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N};
 use crate::dilithium::utils::zero_polyvec;
 use crate::matrix::hash::shake256;
 use crate::basic::keypair::{PrivateKey, PublicKey};
@@ -17,6 +17,7 @@ pub struct Signature<'a, FF: FiniteField> {
 
 mod utils {
     use super::*;
+    use crate::dilithium::utils::derive_challenge_polynomial;
 
     pub(super) fn poly_high_low<FF: FiniteField + From<i64>>(
         p: &Polynomial<'_, FF>,
@@ -98,31 +99,7 @@ mod utils {
         let mut seed = Vec::with_capacity(message.len() + w1_pack.len());
         seed.extend_from_slice(message);
         seed.extend_from_slice(w1_pack);
-        let mut stream = shake256(4 * TAU + 1024, &seed); // extra bytes for indices
-
-        let mut used = [false; N];
-        let mut coeffs = [0i64; N];
-        let mut filled = 0usize;
-        let mut idx = 0usize;
-
-        while filled < TAU {
-            if idx + 3 >= stream.len() {
-                let more = shake256(1024, &stream);
-                stream.extend_from_slice(&more);
-            }
-
-            let j =
-                u16::from_le_bytes([stream[idx], stream[idx + 1]]) as usize % N;
-            let sign = if stream[idx + 2] & 1 == 1 { 1 } else { -1 };
-            idx += 3;
-
-            if !used[j] {
-                used[j] = true;
-                coeffs[j] = sign;
-                filled += 1;
-            }
-        }
-        coeffs.into()
+        derive_challenge_polynomial::<FF>(&seed)
     }
 
     #[inline]
@@ -486,6 +463,7 @@ mod tests {
 
     mod derive_challenge_tests {
         use super::*;
+        use crate::dilithium::params::TAU;
         use num_traits::ConstZero;
 
         #[test]

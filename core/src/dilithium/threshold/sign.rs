@@ -1,16 +1,15 @@
 use crate::dilithium::error::{DilithiumError, DilithiumResult};
-use crate::dilithium::params::{L, N, TAU, validate_threshold_config};
+use crate::dilithium::params::{L, validate_threshold_config};
 use crate::dilithium::shamir::AdaptedShamirSSS;
 use crate::dilithium::sign::DilithiumSignature;
 use crate::dilithium::utils::{
-    get_hash_reader, get_randomness, hash_message,
-    reconstruct_vector_from_points, sample_gamma1,
+    derive_challenge_polynomial, get_randomness, hash_message,
+    reconstruct_vector_from_points, sample_gamma1_vector,
 };
 use crate::basic::keypair::{PublicKey, keygen};
 use math::{prelude::*, traits::FiniteField};
 use num_traits::Zero;
 use sha2::{Digest, Sha256};
-use sha3::digest::XofReader;
 
 use super::error::ThresholdError;
 use super::{key_share::ThresholdKeyShare, partial::PartialSignature};
@@ -93,7 +92,7 @@ impl ThresholdSignature {
     ///
     /// Each participant can create a partial signature using only their share,
     /// without reconstructing the full secret key.
-    pub fn partial_sign<FF: FiniteField>(
+    pub fn partial_sign<FF: FiniteField + From<i64>>(
         &self,
         message: &[u8],
         key_share: &ThresholdKeyShare<'static, FF>,
@@ -151,7 +150,7 @@ impl ThresholdSignature {
         Ok(DilithiumSignature::new(z, h, challenge))
     }
 
-    pub fn verify_partial_signature<FF: FiniteField>(
+    pub fn verify_partial_signature<FF: FiniteField + From<i64>>(
         &self,
         message: &[u8],
         partial_sig: &PartialSignature<'static, FF>,
@@ -211,31 +210,18 @@ impl ThresholdSignature {
     fn sample_partial_y<FF: FiniteField>(
         randomness: &[u8],
     ) -> Vec<Polynomial<'static, FF>> {
-        (0..L)
-            .map(|i| sample_gamma1(&[randomness, &[i as u8]].concat()))
-            .collect()
+        sample_gamma1_vector(randomness, L)
     }
 
     /// Convert to polynomial with tau non-zero coefficients.
-    fn generate_partial_challenge<FF: FiniteField>(
+    fn generate_partial_challenge<FF: FiniteField + From<i64>>(
         mu: &[u8],
     ) -> Polynomial<'static, FF> {
         let mut seed = Vec::with_capacity(mu.len() + b"challenge".len());
         seed.extend_from_slice(mu);
         seed.extend_from_slice(b"challenge");
 
-        let mut reader = get_hash_reader(&seed);
-        let mut buffer = vec![0u8; TAU * 2];
-        reader.read(&mut buffer);
-
-        let mut coeffs = vec![0i32; N];
-        for chunk in buffer.chunks_exact(2) {
-            let position = (chunk[0] as usize) % N;
-            let sign = if chunk[1] & 1 == 0 { 1 } else { -1 };
-            coeffs[position] = sign;
-        }
-
-        poly![coeffs]
+        derive_challenge_polynomial::<FF>(&seed)
     }
 
     fn reconstruct_z_vector<FF: FiniteField>(
@@ -284,7 +270,7 @@ impl Default for ThresholdSignature {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dilithium::params::{GAMMA1, K, L, N};
+    use crate::dilithium::params::{GAMMA1, K, L, N, TAU};
     use crate::dilithium::utils::zero_polyvec;
     use math::field_element::FieldElement;
 

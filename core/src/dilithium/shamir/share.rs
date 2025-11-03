@@ -2,7 +2,7 @@ use math::{prelude::*, traits::FiniteField};
 
 use crate::dilithium::error::DilithiumResult;
 use crate::dilithium::shamir::error::ShamirError;
-use crate::traits::PointSource;
+use crate::traits::PolyVectorSource;
 
 /// Adapted Shamir's Secret Sharing share wrapper.
 #[derive(Clone, Debug, PartialEq)]
@@ -33,18 +33,13 @@ impl<FF: FiniteField> ShamirShare<'static, FF> {
     }
 }
 
-impl<FF: FiniteField> PointSource<FF> for ShamirShare<'static, FF> {
-    fn x(&self) -> FF {
-        let pid: usize = self.participant_id;
-        (pid as u64).into()
+impl<FF: FiniteField> PolyVectorSource<FF> for ShamirShare<'static, FF> {
+    fn participant_id(&self) -> usize {
+        self.participant_id
     }
 
-    fn poly_at(&self, index: usize) -> Option<&Polynomial<'static, FF>> {
-        self.share_vector.get(index)
-    }
-
-    fn poly_count(&self) -> usize {
-        self.vector_length()
+    fn polynomials(&self) -> &[Polynomial<'static, FF>] {
+        &self.share_vector
     }
 }
 
