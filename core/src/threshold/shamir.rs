@@ -5,8 +5,6 @@ use crate::threshold::params::validate_threshold_config;
 use crate::threshold::utils::reconstruct_vector_from_points;
 use crate::traits::PointSource;
 
-use rand::Rng;
-
 /// Adapted Shamir's Secret Sharing
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShamirShare<'a, FF: FiniteField> {
@@ -35,23 +33,6 @@ impl<FF: FiniteField> ShamirShare<'static, FF> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct Share<FF: FiniteField> {
-    poly_idx: usize,
-    coeff_idx: usize,
-    value: FF,
-}
-
-impl<FF: FiniteField> Share<FF> {
-    const fn new(poly_idx: usize, coeff_idx: usize, value: FF) -> Self {
-        Self {
-            poly_idx,
-            coeff_idx,
-            value,
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct AdaptedShamirSSS {
     threshold: usize,
@@ -59,6 +40,15 @@ pub struct AdaptedShamirSSS {
 }
 
 impl AdaptedShamirSSS {
+    fn share_accumulators<FF: FiniteField>(
+        &self,
+        lengths: &[usize],
+    ) -> Vec<ShareAccumulator<FF>> {
+        (1..=self.participant_number)
+            .map(|pid| ShareAccumulator::new(pid, lengths))
+            .collect()
+    }
+
     /// Initialize the adapted Shamir scheme.
     pub fn new(
         threshold: usize,
@@ -86,51 +76,41 @@ impl AdaptedShamirSSS {
         FF: FiniteField,
         rand::distributions::Standard: rand::distributions::Distribution<FF>,
     {
-        let vector_length = secret_vector.len();
-        let mut buckets = self.init_share_buckets::<FF>(vector_length);
-
-        for (poly_idx, polynomial) in secret_vector.iter().enumerate() {
-            self.distribute_polynomial(poly_idx, polynomial, &mut buckets);
+        if secret_vector.is_empty() {
+            return Ok(Vec::new());
         }
 
-        self.organize_shares(buckets, vector_length)
-    }
+        let lengths: Vec<usize> = secret_vector
+            .iter()
+            .map(|poly| poly.coefficients().len())
+            .collect();
 
-    fn init_share_buckets<FF>(
-        &self,
-        vector_length: usize,
-    ) -> Vec<Vec<Share<FF>>>
-    where
-        FF: FiniteField,
-    {
-        (0..self.participant_number)
-            .map(|_| Vec::with_capacity(vector_length * N))
+        let mut accumulators: Vec<ShareAccumulator<FF>> =
+            self.share_accumulators(&lengths);
+
+        let mut rng = rand::thread_rng();
+
+        for (poly_idx, polynomial) in secret_vector.iter().enumerate() {
+            for (coeff_idx, &secret_coeff) in
+                polynomial.coefficients().iter().enumerate()
+            {
+                let shamir_poly =
+                    self.create_shamir_polynomial_with(&mut rng, secret_coeff);
+                for (pid, accumulator) in accumulators.iter_mut().enumerate() {
+                    let point = FF::from((pid + 1) as u64);
+                    let value = shamir_poly.evaluate_in_same_field(point);
+                    accumulator.insert(poly_idx, coeff_idx, value);
+                }
+            }
+        }
+
+        accumulators
+            .into_iter()
+            .map(ShareAccumulator::finalize)
             .collect()
     }
 
-    fn distribute_polynomial<FF>(
-        &self,
-        poly_idx: usize,
-        polynomial: &Polynomial<'static, FF>,
-        buckets: &mut [Vec<Share<FF>>],
-    ) where
-        FF: FiniteField,
-        rand::distributions::Standard: rand::distributions::Distribution<FF>,
-    {
-        for (coeff_idx, secret_coeff) in
-            polynomial.coefficients().iter().copied().enumerate()
-        {
-            let shamir_poly = self.create_shamir_polynomial(&secret_coeff);
-            for (pid, bucket) in buckets.iter_mut().enumerate() {
-                let point = FF::from((pid + 1) as u64);
-                let value = shamir_poly.evaluate_in_same_field(point);
-                bucket.push(Share::new(poly_idx, coeff_idx, value));
-            }
-        }
-    }
-
     /// Reconstruct the secret from a sufficient number of shares.
-    // TODO fix code duplciation with partial_reconstruct
     pub fn reconstruct_secret<FF: FiniteField>(
         &self,
         shares: &[ShamirShare<'static, FF>],
@@ -138,7 +118,7 @@ impl AdaptedShamirSSS {
         let (active_shares, vector_length) =
             self.select_active_shares(shares)?;
         let poly_indices: Vec<usize> = (0..vector_length).collect();
-        self.reconstruct_poly_vector(active_shares, &poly_indices)
+        Self::reconstruct_poly_vector(active_shares, &poly_indices)
     }
 
     #[cfg(test)]
@@ -151,7 +131,7 @@ impl AdaptedShamirSSS {
         let (active_shares, vector_length) =
             self.select_active_shares(shares)?;
         self.ensure_poly_indices_within_bounds(poly_indices, vector_length)?;
-        self.reconstruct_poly_vector(active_shares, poly_indices)
+        Self::reconstruct_poly_vector(active_shares, poly_indices)
     }
 
     #[cfg(test)]
@@ -172,7 +152,6 @@ impl AdaptedShamirSSS {
     }
 
     fn reconstruct_poly_vector<FF: FiniteField>(
-        &self,
         shares: &[ShamirShare<'static, FF>],
         poly_indices: &[usize],
     ) -> ThresholdResult<Vec<Polynomial<'static, FF>>> {
@@ -194,12 +173,11 @@ impl AdaptedShamirSSS {
         }
 
         let active = &shares[..self.threshold];
-        let vector_length = self.ensure_consistent_lengths(active)?;
+        let vector_length = Self::ensure_consistent_lengths(active)?;
         Ok((active, vector_length))
     }
 
     fn ensure_consistent_lengths<FF>(
-        &self,
         shares: &[ShamirShare<'static, FF>],
     ) -> ThresholdResult<usize>
     where
@@ -221,62 +199,7 @@ impl AdaptedShamirSSS {
     }
 
     /// Organize participant shares into ShamirShare objects
-    fn organize_shares<FF: FiniteField>(
-        &self,
-        participant_shares: Vec<Vec<Share<FF>>>,
-        vector_length: usize,
-    ) -> ThresholdResult<Vec<ShamirShare<'static, FF>>> {
-        let mut shares = Vec::with_capacity(self.participant_number);
-
-        for (pid_offset, shares_for_pid) in
-            participant_shares.into_iter().enumerate()
-        {
-            let polynomials =
-                Self::build_share_polynomials(vector_length, &shares_for_pid);
-            shares.push(ShamirShare::new(pid_offset + 1, polynomials)?);
-        }
-
-        Ok(shares)
-    }
-
-    fn build_share_polynomials<FF: FiniteField>(
-        vector_length: usize,
-        shares_for_pid: &[Share<FF>],
-    ) -> Vec<Polynomial<'static, FF>> {
-        let required_lengths =
-            Self::collect_required_lengths(vector_length, shares_for_pid);
-        let mut buffers =
-            Self::allocate_polynomial_buffers::<FF>(&required_lengths);
-
-        for share in shares_for_pid {
-            buffers[share.poly_idx][share.coeff_idx] = share.value;
-        }
-
-        buffers.into_iter().map(Polynomial::from).collect()
-    }
-
-    fn collect_required_lengths<FF: FiniteField>(
-        vector_length: usize,
-        shares_for_pid: &[Share<FF>],
-    ) -> Vec<usize> {
-        let mut per_poly_len = vec![0usize; vector_length];
-        for share in shares_for_pid {
-            let required_len = share.coeff_idx + 1;
-            per_poly_len[share.poly_idx] =
-                per_poly_len[share.poly_idx].max(required_len);
-        }
-        per_poly_len
-    }
-
-    fn allocate_polynomial_buffers<FF: FiniteField>(
-        lengths: &[usize],
-    ) -> Vec<Vec<FF>> {
-        lengths
-            .iter()
-            .map(|&len| vec![FF::default(); len])
-            .collect()
-    }
-
+    #[cfg(test)]
     fn create_shamir_polynomial<FF>(
         &self,
         secret: &FF,
@@ -286,8 +209,24 @@ impl AdaptedShamirSSS {
         rand::distributions::Standard: rand::distributions::Distribution<FF>,
     {
         let mut rng = rand::thread_rng();
-        let coefficients: Vec<FF> = std::iter::once(*secret)
-            .chain((1..self.threshold).map(|_| rng.r#gen()))
+        self.create_shamir_polynomial_with(&mut rng, *secret)
+    }
+
+    fn create_shamir_polynomial_with<FF, R>(
+        &self,
+        rng: &mut R,
+        secret: FF,
+    ) -> Polynomial<'static, FF>
+    where
+        FF: FiniteField,
+        R: rand::Rng + ?Sized,
+        rand::distributions::Standard: rand::distributions::Distribution<FF>,
+    {
+        let coefficients: Vec<FF> = std::iter::once(secret)
+            .chain(
+                std::iter::repeat_with(|| rand::Rng::r#gen(rng))
+                    .take(self.threshold.saturating_sub(1)),
+            )
             .collect();
         Polynomial::from(coefficients)
     }
@@ -304,6 +243,41 @@ impl AdaptedShamirSSS {
         }
 
         result as i32
+    }
+}
+
+struct ShareAccumulator<FF: FiniteField> {
+    participant_id: usize,
+    buffers: Vec<Vec<FF>>,
+}
+
+impl<FF: FiniteField> ShareAccumulator<FF> {
+    fn new(participant_id: usize, lengths: &[usize]) -> Self {
+        let buffers = lengths
+            .iter()
+            .map(|&len| vec![FF::default(); len])
+            .collect();
+        Self {
+            participant_id,
+            buffers,
+        }
+    }
+
+    fn insert(&mut self, poly_idx: usize, coeff_idx: usize, value: FF) {
+        if poly_idx >= self.buffers.len() {
+            return;
+        }
+        let poly = &mut self.buffers[poly_idx];
+        if coeff_idx >= poly.len() {
+            return;
+        }
+        poly[coeff_idx] = value;
+    }
+
+    fn finalize(self) -> ThresholdResult<ShamirShare<'static, FF>> {
+        let polynomials =
+            self.buffers.into_iter().map(Polynomial::from).collect();
+        ShamirShare::new(self.participant_id, polynomials)
     }
 }
 
@@ -333,6 +307,152 @@ mod tests {
                 threshold: 3,
                 participant_number: 5,
             }
+        }
+    }
+
+    mod share_accumulator_tests {
+        use super::*;
+        use num_traits::Zero;
+
+        #[test]
+        fn accumulators_initialize_with_zero_buffers() {
+            let lengths = [2usize, 3, 0];
+            let accumulator =
+                ShareAccumulator::<FieldElement>::new(7, &lengths);
+            assert_eq!(accumulator.participant_id, 7);
+            assert_eq!(accumulator.buffers.len(), lengths.len());
+            for (buffer, &expected_len) in
+                accumulator.buffers.iter().zip(&lengths)
+            {
+                assert_eq!(buffer.len(), expected_len);
+                assert!(buffer.iter().all(|value| value.is_zero()));
+            }
+        }
+
+        #[test]
+        fn insert_updates_target_coefficient_only() {
+            let lengths = [3usize, 2];
+            let mut accumulator =
+                ShareAccumulator::<FieldElement>::new(2, &lengths);
+            let value = FieldElement::from(123i32);
+            accumulator.insert(0, 2, value);
+
+            assert_eq!(accumulator.buffers[0][2], value);
+            // Other coefficients stay at zero.
+            assert!(accumulator.buffers[0][0].is_zero());
+            assert!(accumulator.buffers[0][1].is_zero());
+            assert!(accumulator.buffers[1].iter().all(|coeff| coeff.is_zero()));
+        }
+
+        #[test]
+        fn insert_overwrites_existing_entry() {
+            let mut accumulator =
+                ShareAccumulator::<FieldElement>::new(9, &[2usize]);
+            accumulator.insert(0, 1, FieldElement::from(40i32));
+            accumulator.insert(0, 1, FieldElement::from(55i32));
+
+            assert_eq!(
+                accumulator.buffers[0][1],
+                FieldElement::from(55i32)
+            );
+        }
+
+        #[test]
+        fn insert_handles_multiple_polynomials() {
+            let mut accumulator =
+                ShareAccumulator::<FieldElement>::new(5, &[2usize, 3, 1]);
+            accumulator.insert(0, 0, FieldElement::from(1i32));
+            accumulator.insert(0, 1, FieldElement::from(2i32));
+            accumulator.insert(1, 0, FieldElement::from(10i32));
+            accumulator.insert(1, 2, FieldElement::from(30i32));
+            accumulator.insert(2, 0, FieldElement::from(-5i32));
+
+            assert_eq!(accumulator.buffers[0], vec![fe!(1), fe!(2)]);
+            assert_eq!(
+                accumulator.buffers[1],
+                vec![fe!(10), FieldElement::default(), fe!(30)]
+            );
+            assert_eq!(accumulator.buffers[2], vec![fe!(-5)]);
+        }
+
+        #[test]
+        fn insert_ignores_out_of_bounds_poly_indices() {
+            let mut accumulator =
+                ShareAccumulator::<FieldElement>::new(4, &[2usize, 1]);
+            let snapshot = accumulator.buffers.clone();
+
+            accumulator.insert(5, 0, FieldElement::from(99i32));
+
+            assert_eq!(accumulator.buffers, snapshot);
+        }
+
+        #[test]
+        fn insert_ignores_out_of_bounds_coeff_indices() {
+            let mut accumulator =
+                ShareAccumulator::<FieldElement>::new(6, &[1usize]);
+            accumulator.insert(0, 0, FieldElement::from(33i32));
+            let snapshot = accumulator.buffers.clone();
+
+            accumulator.insert(0, 3, FieldElement::from(77i32));
+
+            assert_eq!(accumulator.buffers, snapshot);
+        }
+
+        #[test]
+        fn insert_ignores_zero_length_polynomial() {
+            let mut accumulator =
+                ShareAccumulator::<FieldElement>::new(7, &[0usize, 2]);
+            let snapshot = accumulator.buffers.clone();
+
+            accumulator.insert(0, 0, FieldElement::from(99i32));
+
+            assert_eq!(accumulator.buffers, snapshot);
+        }
+
+        #[test]
+        fn finalize_produces_shamir_share() {
+            let mut accumulator =
+                ShareAccumulator::<FieldElement>::new(3, &[1, 2]);
+            accumulator.insert(0, 0, FieldElement::from(7));
+            accumulator.insert(1, 1, FieldElement::from(11));
+
+            let share = accumulator.finalize().expect("finalization succeeds");
+            assert_eq!(share.participant_id, 3);
+            assert_eq!(share.vector_length(), 2);
+            assert_eq!(
+                share.share_vector[0].coefficients()[0],
+                FieldElement::from(7)
+            );
+            assert_eq!(
+                share.share_vector[1].coefficients()[1],
+                FieldElement::from(11)
+            );
+        }
+
+        #[test]
+        fn finalize_validates_participant_id() {
+            let accumulator = ShareAccumulator::<FieldElement>::new(1, &[0]);
+            let share = accumulator.finalize();
+            assert!(share.is_ok());
+
+            // participant_id 0 should trigger an error through ShamirShare::new
+            let accumulator_invalid =
+                ShareAccumulator::<FieldElement>::new(0, &[0]);
+            assert!(matches!(
+                accumulator_invalid.finalize(),
+                Err(ThresholdError::InvalidParticipantId(0))
+            ));
+        }
+
+        #[test]
+        fn finalize_preserves_zero_length_polynomials() {
+            let accumulator =
+                ShareAccumulator::<FieldElement>::new(8, &[0usize, 3]);
+            let share = accumulator.finalize().expect("share creation succeeds");
+
+            assert_eq!(share.vector_length(), 2);
+            assert!(share.share_vector[0].coefficients().is_empty());
+            assert!(share.share_vector[1].coefficients().is_empty());
         }
     }
 
@@ -400,77 +520,47 @@ mod tests {
 
         #[test]
         fn ensure_consistent_lengths_empty_slice() {
-            let shamir = AdaptedShamirSSS::default();
-            let len = shamir
-                .ensure_consistent_lengths::<FieldElement>(&[])
-                .expect("empty input should succeed");
+            let len = AdaptedShamirSSS::ensure_consistent_lengths::<
+                FieldElement,
+            >(&[])
+            .expect("empty input should succeed");
             assert_eq!(len, 0);
         }
 
         #[test]
         fn ensure_consistent_lengths_reports_error() {
-            let shamir = AdaptedShamirSSS::default();
             let shares = vec![share_with_length(1, 2), share_with_length(2, 3)];
 
-            let err = shamir
-                .ensure_consistent_lengths::<FieldElement>(&shares)
+            let err =
+                AdaptedShamirSSS::ensure_consistent_lengths::<FieldElement>(
+                    &shares,
+                )
                 .expect_err("mismatched lengths must fail");
             assert!(matches!(err, ThresholdError::InconsistentShareLengths));
         }
 
         #[test]
         fn ensure_consistent_lengths_tracks_length() {
-            let shamir = AdaptedShamirSSS::default();
             let shares = vec![share_with_length(1, 4), share_with_length(2, 4)];
 
-            let len = shamir
-                .ensure_consistent_lengths::<FieldElement>(&shares)
+            let len =
+                AdaptedShamirSSS::ensure_consistent_lengths::<FieldElement>(
+                    &shares,
+                )
                 .expect("consistent lengths should succeed");
             assert_eq!(len, 4);
         }
 
         #[test]
         fn ensure_consistent_lengths_single_share() {
-            let shamir = AdaptedShamirSSS::default();
             let shares = vec![share_with_length(1, 5)];
 
-            let len = shamir
-                .ensure_consistent_lengths::<FieldElement>(&shares)
+            let len =
+                AdaptedShamirSSS::ensure_consistent_lengths::<FieldElement>(
+                    &shares,
+                )
                 .expect("single share should succeed");
             assert_eq!(len, 5);
-        }
-
-        #[test]
-        fn collect_required_lengths_handles_empty_shares() {
-            let lengths = AdaptedShamirSSS::collect_required_lengths::<
-                FieldElement,
-            >(3, &[]);
-            assert_eq!(lengths, vec![0, 0, 0]);
-        }
-
-        #[test]
-        fn collect_required_lengths_respects_highest_index() {
-            let shares = vec![
-                Share::new(0, 0, FieldElement::from(1)),
-                Share::new(0, 2, FieldElement::from(2)),
-                Share::new(1, 1, FieldElement::from(3)),
-            ];
-
-            let lengths = AdaptedShamirSSS::collect_required_lengths::<
-                FieldElement,
-            >(3, &shares);
-
-            assert_eq!(lengths, vec![3, 2, 0]);
-        }
-
-        #[test]
-        fn collect_required_lengths_ignores_unused_polynomials() {
-            let shares = vec![Share::new(2, 4, FieldElement::from(5))];
-            let lengths = AdaptedShamirSSS::collect_required_lengths::<
-                FieldElement,
-            >(4, &shares);
-
-            assert_eq!(lengths, vec![0, 0, 5, 0]);
         }
 
         #[test]
@@ -498,7 +588,6 @@ mod tests {
             ));
         }
 
-        // TODO fix it
         #[test]
         fn test_secret_splitting() {
             let shamir = AdaptedShamirSSS::default();
@@ -530,12 +619,8 @@ mod tests {
             let shamir = AdaptedShamirSSS::default();
 
             // Create test secret vector
-            // TODO declare standadlone function
-            let secret_poly1: Polynomial<'_, FieldElement> =
-                poly![1, 2, 3, 4, 5];
-            let secret_poly2: Polynomial<'_, FieldElement> =
-                poly![10, 20, 30, 40, 50];
-            let secret_vector = vec![secret_poly1, secret_poly2];
+            let secret_vector: Vec<Polynomial<'_, FieldElement>> =
+                vec![poly![1, 2, 3, 4, 5], poly![10, 20, 30, 40, 50]];
 
             // Split secret
             let shares = shamir.split_secret(&secret_vector).unwrap();
