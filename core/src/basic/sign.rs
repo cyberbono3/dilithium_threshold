@@ -1,8 +1,8 @@
-use crate::dilithium::error::ThresholdError;
+use crate::dilithium::error::DilithiumError;
 use crate::dilithium::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N, TAU};
 use crate::dilithium::utils::zero_polyvec;
 use crate::matrix::hash::shake256;
-use crate::signature::keypair::{PrivateKey, PublicKey};
+use crate::basic::keypair::{PrivateKey, PublicKey};
 
 use math::prelude::FieldElement;
 use math::{poly::Polynomial, traits::FiniteField};
@@ -250,7 +250,7 @@ pub fn sign<FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64>>(
     priv_key: &PrivateKey<'static, FF>,
     _t: &[Polynomial<'_, FF>; K], // kept for API parity
     msg: &[u8],
-) -> Result<Signature<'static, FF>, ThresholdError>
+) -> Result<Signature<'static, FF>, DilithiumError>
 where
     i64: From<FF>,
 {
@@ -258,7 +258,7 @@ where
 
     (0u32..REJECTION_LIMIT)
         .find_map(|ctr| engine.try_with_counter(ctr))
-        .ok_or(ThresholdError::SignatureGenerationFailed)
+        .ok_or(DilithiumError::SignatureGenerationFailed)
 }
 
 /// Verify (uncompressed template):
@@ -295,7 +295,7 @@ where
 mod tests {
     use super::*; // brings sign/verify + private helpers into scope
     use crate::dilithium::params::{BETA, GAMMA1, L, N};
-    use crate::signature::keypair::*;
+    use crate::basic::keypair::*;
     use math::field_element::FieldElement;
 
     // Deterministic fixtures for reproducible tests

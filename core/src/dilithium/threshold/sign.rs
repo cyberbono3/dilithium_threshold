@@ -1,4 +1,4 @@
-use crate::dilithium::error::{ThresholdError, ThresholdResult};
+use crate::dilithium::error::{DilithiumError, DilithiumResult};
 use crate::dilithium::params::{L, N, TAU, validate_threshold_config};
 use crate::dilithium::shamir::AdaptedShamirSSS;
 use crate::dilithium::sign::DilithiumSignature;
@@ -6,12 +6,13 @@ use crate::dilithium::utils::{
     get_hash_reader, get_randomness, hash_message,
     reconstruct_vector_from_points, sample_gamma1,
 };
-use crate::signature::keypair::{PublicKey, keygen};
+use crate::basic::keypair::{PublicKey, keygen};
 use math::{prelude::*, traits::FiniteField};
 use num_traits::Zero;
 use sha2::{Digest, Sha256};
 use sha3::digest::XofReader;
 
+use super::error::ThresholdError;
 use super::{key_share::ThresholdKeyShare, partial::PartialSignature};
 
 /// Snapshot of key threshold configuration parameters.
@@ -38,9 +39,9 @@ pub struct ThresholdSignature {
 
 impl ThresholdSignature {
     /// Initialize threshold signature scheme.
-    pub fn new(threshold: usize, participants: usize) -> ThresholdResult<Self> {
+    pub fn new(threshold: usize, participants: usize) -> DilithiumResult<Self> {
         if !validate_threshold_config(threshold, participants) {
-            return Err(ThresholdError::InvalidThreshold(
+            return Err(DilithiumError::InvalidThreshold(
                 threshold,
                 participants,
             ));
@@ -65,7 +66,7 @@ impl ThresholdSignature {
     /// private key into shares using the adapted Shamir scheme.
     pub fn distributed_keygen<FF>(
         &self,
-    ) -> ThresholdResult<Vec<ThresholdKeyShare<'static, FF>>>
+    ) -> DilithiumResult<Vec<ThresholdKeyShare<'static, FF>>>
     where
         FF: FiniteField + From<i64>,
         rand::distributions::Standard: rand::distributions::Distribution<FF>,
@@ -97,7 +98,7 @@ impl ThresholdSignature {
         message: &[u8],
         key_share: &ThresholdKeyShare<'static, FF>,
         randomness: Option<&[u8]>,
-    ) -> ThresholdResult<PartialSignature<'static, FF>> {
+    ) -> DilithiumResult<PartialSignature<'static, FF>> {
         let randomness = get_randomness(randomness);
         let mu = hash_message(message);
 
@@ -139,7 +140,7 @@ impl ThresholdSignature {
         &self,
         partial_signatures: &[PartialSignature<'static, FF>],
         public_key: &PublicKey<'static, FF>,
-    ) -> ThresholdResult<DilithiumSignature<'static, FF>> {
+    ) -> DilithiumResult<DilithiumSignature<'static, FF>> {
         Self::verify_partial_signatures(partial_signatures, self.threshold)?;
 
         let active_partials = &partial_signatures[..self.threshold];
@@ -173,9 +174,9 @@ impl ThresholdSignature {
     fn verify_partial_signatures<FF: FiniteField>(
         partial_signatures: &[PartialSignature<'static, FF>],
         threshold: usize,
-    ) -> ThresholdResult<()> {
+    ) -> DilithiumResult<()> {
         if partial_signatures.len() < threshold {
-            return Err(ThresholdError::InsufficientShares(
+            return Err(DilithiumError::InsufficientShares(
                 threshold,
                 partial_signatures.len(),
             ));
@@ -186,7 +187,9 @@ impl ThresholdSignature {
             .iter()
             .any(|ps| &ps.challenge != challenge)
         {
-            return Err(ThresholdError::PartialSignatureChallengeMismatch);
+            return Err(
+                ThresholdError::PartialSignatureChallengeMismatch.into()
+            );
         }
 
         Ok(())
@@ -238,14 +241,14 @@ impl ThresholdSignature {
     fn reconstruct_z_vector<FF: FiniteField>(
         &self,
         partial_signatures: &[PartialSignature<'static, FF>],
-    ) -> ThresholdResult<Vec<Polynomial<'static, FF>>> {
+    ) -> DilithiumResult<Vec<Polynomial<'static, FF>>> {
         if partial_signatures.is_empty() {
-            return Err(ThresholdError::InsufficientShares(1, 0));
+            return Err(DilithiumError::InsufficientShares(1, 0));
         }
 
         let active =
             partial_signatures.get(..self.threshold).ok_or_else(|| {
-                ThresholdError::InvalidThreshold(
+                DilithiumError::InvalidThreshold(
                     self.threshold,
                     partial_signatures.len(),
                 )
@@ -265,7 +268,7 @@ impl ThresholdSignature {
         &self,
         _partial_signatures: &[PartialSignature<'static, FF>],
         public_key: &PublicKey<'static, FF>,
-    ) -> ThresholdResult<Vec<Polynomial<'static, FF>>> {
+    ) -> DilithiumResult<Vec<Polynomial<'static, FF>>> {
         let hint_len = public_key.t.len();
         Ok(vec![Polynomial::<FF>::zero(); hint_len])
     }
@@ -463,7 +466,7 @@ mod tests {
 
             assert!(matches!(
                 err,
-                ThresholdError::InvalidThreshold(expected, provided)
+                DilithiumError::InvalidThreshold(expected, provided)
                 if expected == threshold_sig.threshold && provided == partials.len()
             ));
         }
@@ -477,7 +480,7 @@ mod tests {
 
             assert!(matches!(
                 err,
-                ThresholdError::InsufficientShares(expected, actual)
+                DilithiumError::InsufficientShares(expected, actual)
                 if expected == 1 && actual == 0
             ));
         }
@@ -548,7 +551,7 @@ mod tests {
 
             assert!(matches!(
                 err,
-                ThresholdError::InsufficientShares(expected, actual)
+                DilithiumError::InsufficientShares(expected, actual)
                 if expected == 2 && actual == 0
             ));
         }
@@ -559,16 +562,18 @@ mod tests {
             let mut b = make_partial(2);
             b.challenge = Polynomial::from(vec![fe!(1)]);
 
-            let err = ThresholdSignature::verify_partial_signatures::<
-                FieldElement,
-            >(&[a, b], 2)
-            .unwrap_err();
+        let err = ThresholdSignature::verify_partial_signatures::<
+            FieldElement,
+        >(&[a, b], 2)
+        .unwrap_err();
 
-            assert!(matches!(
-                err,
+        assert!(matches!(
+            err,
+            DilithiumError::Threshold(
                 ThresholdError::PartialSignatureChallengeMismatch
-            ));
-        }
+            )
+        ));
+    }
 
         #[test]
         fn accepts_matching_partials() {

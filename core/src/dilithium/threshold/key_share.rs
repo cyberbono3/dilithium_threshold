@@ -1,5 +1,5 @@
 use crate::dilithium::shamir::ShamirShare;
-use crate::signature::keypair::PublicKey;
+use crate::basic::keypair::PublicKey;
 use math::traits::FiniteField;
 
 #[derive(Clone, Debug)]
@@ -36,7 +36,7 @@ impl<FF: FiniteField> std::fmt::Display for ThresholdKeyShare<'static, FF> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::signature::keypair::keygen;
+    use crate::basic::keypair::keygen;
     use math::{field_element::FieldElement, prelude::*};
 
     #[test]

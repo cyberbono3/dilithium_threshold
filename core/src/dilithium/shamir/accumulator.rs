@@ -1,6 +1,6 @@
 use math::{prelude::*, traits::FiniteField};
 
-use crate::dilithium::error::ThresholdResult;
+use crate::dilithium::error::DilithiumResult;
 
 use super::share::ShamirShare;
 
@@ -37,7 +37,7 @@ impl<FF: FiniteField> ShareAccumulator<FF> {
         poly[coeff_idx] = value;
     }
 
-    pub(super) fn finalize(self) -> ThresholdResult<ShamirShare<'static, FF>> {
+    pub(super) fn finalize(self) -> DilithiumResult<ShamirShare<'static, FF>> {
         let polynomials =
             self.buffers.into_iter().map(Polynomial::from).collect();
         ShamirShare::new(self.participant_id, polynomials)
@@ -47,7 +47,8 @@ impl<FF: FiniteField> ShareAccumulator<FF> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dilithium::error::ThresholdError;
+    use crate::dilithium::error::DilithiumError;
+    use crate::dilithium::shamir::error::ShamirError;
     use math::prelude::*;
     use num_traits::Zero;
 
@@ -169,7 +170,7 @@ mod tests {
             ShareAccumulator::<FieldElement>::new(0, &[0]);
         assert!(matches!(
             accumulator_invalid.finalize(),
-            Err(ThresholdError::InvalidParticipantId(0))
+            Err(DilithiumError::Shamir(ShamirError::InvalidParticipantId(0)))
         ));
     }
 

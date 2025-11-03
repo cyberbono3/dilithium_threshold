@@ -1,6 +1,7 @@
 use math::{prelude::*, traits::FiniteField};
 
-use crate::dilithium::error::{ThresholdError, ThresholdResult};
+use crate::dilithium::error::DilithiumResult;
+use crate::dilithium::shamir::error::ShamirError;
 use crate::traits::PointSource;
 
 /// Adapted Shamir's Secret Sharing share wrapper.
@@ -14,9 +15,11 @@ impl<FF: FiniteField> ShamirShare<'static, FF> {
     pub fn new(
         participant_id: usize,
         share_vector: Vec<Polynomial<'static, FF>>,
-    ) -> ThresholdResult<Self> {
+    ) -> DilithiumResult<Self> {
         if participant_id == 0 {
-            return Err(ThresholdError::InvalidParticipantId(participant_id));
+            return Err(
+                ShamirError::InvalidParticipantId(participant_id).into()
+            );
         }
 
         Ok(ShamirShare {

@@ -9,8 +9,9 @@ use sha3::{
     digest::{ExtendableOutput, Update, XofReader},
 };
 
-use crate::dilithium::error::{ThresholdError, ThresholdResult};
+use crate::dilithium::error::{DilithiumError, DilithiumResult};
 use crate::dilithium::params::{GAMMA1, N};
+use crate::dilithium::shamir::error::ShamirError;
 use crate::traits::PointSource;
 use math::{poly::Polynomial, traits::FiniteField};
 
@@ -76,14 +77,14 @@ pub fn sample_gamma1<FF: FiniteField>(seed: &[u8]) -> Polynomial<'static, FF> {
 pub fn reconstruct_vector_from_points<FF, S>(
     items: &[S],
     poly_indices: &[usize],
-) -> ThresholdResult<Vec<Polynomial<'static, FF>>>
+) -> DilithiumResult<Vec<Polynomial<'static, FF>>>
 where
     FF: FiniteField,
     S: PointSource<FF>,
 {
     let reference = items
         .first()
-        .ok_or(ThresholdError::InsufficientShares(1, 0))?;
+        .ok_or(DilithiumError::InsufficientShares(1, 0))?;
     let vector_len = reference.poly_count();
     let xs: Vec<FF> = items.iter().map(|item| item.x()).collect();
 
@@ -92,38 +93,44 @@ where
         .map(|&poly_idx| {
             let template = reference
                 .poly_at(poly_idx)
-                .ok_or(ThresholdError::InvalidIndex(poly_idx, vector_len))?;
+                .ok_or_else(|| {
+                    ShamirError::InvalidIndex(poly_idx, vector_len)
+                })?;
             let coeff_count = template.coefficients().len();
 
             let polys = items
                 .iter()
                 .map(|item| {
-                    item.poly_at(poly_idx).ok_or(ThresholdError::InvalidIndex(
-                        poly_idx, vector_len,
-                    ))
+                    item.poly_at(poly_idx).ok_or_else(|| {
+                        ShamirError::InvalidIndex(poly_idx, vector_len)
+                    })
                 })
-                .collect::<ThresholdResult<Vec<_>>>()?;
+                .collect::<Result<Vec<_>, ShamirError>>()?;
 
             let coeffs = (0..coeff_count)
                 .map(|coeff_idx| {
                     let ys = polys
                         .iter()
                         .map(|poly| {
-                            poly.coefficients().get(coeff_idx).copied().ok_or(
-                                ThresholdError::InvalidIndex(
-                                    coeff_idx,
-                                    poly.coefficients().len(),
-                                ),
-                            )
+                            let coeffs = poly.coefficients();
+                            coeffs
+                                .get(coeff_idx)
+                                .copied()
+                                .ok_or_else(|| {
+                                    ShamirError::InvalidIndex(
+                                        coeff_idx,
+                                        coeffs.len(),
+                                    )
+                                })
                         })
-                        .collect::<ThresholdResult<Vec<_>>>()?;
+                        .collect::<Result<Vec<_>, ShamirError>>()?;
 
                     Ok(interpolate_constant_at_zero(
                         xs.as_slice(),
                         ys.as_slice(),
                     ))
                 })
-                .collect::<ThresholdResult<Vec<_>>>()?;
+                .collect::<DilithiumResult<Vec<_>>>()?;
 
             Ok(Polynomial::from(coeffs))
         })
@@ -290,7 +297,8 @@ mod tests {
 
     mod reconstruct_vector_from_points_tests {
         use super::*;
-        use crate::dilithium::error::ThresholdError;
+        use crate::dilithium::error::DilithiumError;
+        use crate::dilithium::shamir::error::ShamirError;
         use crate::traits::PointSource;
         use math::fe;
 
@@ -354,7 +362,7 @@ mod tests {
 
             assert!(matches!(
                 result,
-                Err(ThresholdError::InsufficientShares(required, provided))
+                Err(DilithiumError::InsufficientShares(required, provided))
                 if required == 1 && provided == 0
             ));
         }
@@ -381,7 +389,9 @@ mod tests {
 
             assert!(matches!(
                 result,
-                Err(ThresholdError::InvalidIndex(index, len))
+                Err(DilithiumError::Shamir(
+                    ShamirError::InvalidIndex(index, len)
+                ))
                 if index == 1 && len == 2
             ));
         }
@@ -409,7 +419,9 @@ mod tests {
 
             assert!(matches!(
                 result,
-                Err(ThresholdError::InvalidIndex(index, len))
+                Err(DilithiumError::Shamir(
+                    ShamirError::InvalidIndex(index, len)
+                ))
                 if index == 1 && len == poly_short.coefficients().len()
             ));
         }
