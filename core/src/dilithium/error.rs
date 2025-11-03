@@ -19,8 +19,6 @@ pub enum DilithiumError {
     Shamir(#[from] ShamirError),
     #[error("Signature generation failed after maximum attempts")]
     SignatureGenerationFailed,
-    // #[error("All partial signatures must use the same challenge")]
-    // PartialSignatureChallengeMismatch,
     #[error(transparent)]
     Threshold(#[from] ThresholdError),
 }
