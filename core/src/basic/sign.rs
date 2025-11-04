@@ -108,46 +108,43 @@ mod utils {
         derive_challenge_polynomial::<FF>(&seed)
     }
 
-    /// Compute element-wise addition of `base` and `scale * mult`.
     #[inline]
-    pub(super) fn polyvec_add_scaled<
-        FF: FiniteField + 'static,
-        const LEN: usize,
-    >(
+    fn polyvec_add_scaled_with_sign<FF: FiniteField + 'static, const LEN: usize>(
         base: &[Polynomial<'static, FF>; LEN],
         scale: &Polynomial<'_, FF>,
         mult: &[Polynomial<'static, FF>; LEN],
+        negate: bool,
     ) -> [Polynomial<'static, FF>; LEN] {
         let mut dest = zero_polyvec::<LEN, FF>();
-        for ((slot, base_poly), mult_poly) in
-            dest.iter_mut().zip(base.iter()).zip(mult.iter())
-        {
+        for ((slot, base_poly), mult_poly) in dest.iter_mut().zip(base).zip(mult) {
             slot.clone_from(base_poly);
-            let scaled = mult_poly.clone() * scale.clone();
+            let mut scaled = mult_poly.clone() * scale.clone();
+            if negate {
+                scaled = -scaled;
+            }
             *slot += scaled;
         }
         dest
     }
 
-    /// Compute element-wise subtraction of `scale * mult` from `base`.
+    /// Compute element-wise addition of `base` and `scale * mult`.
     #[inline]
-    pub(super) fn polyvec_sub_scaled<
-        FF: FiniteField + 'static,
-        const LEN: usize,
-    >(
+    pub(super) fn polyvec_add_scaled<FF: FiniteField + 'static, const LEN: usize>(
         base: &[Polynomial<'static, FF>; LEN],
         scale: &Polynomial<'_, FF>,
         mult: &[Polynomial<'static, FF>; LEN],
     ) -> [Polynomial<'static, FF>; LEN] {
-        let mut dest = zero_polyvec::<LEN, FF>();
-        for ((slot, base_poly), mult_poly) in
-            dest.iter_mut().zip(base.iter()).zip(mult.iter())
-        {
-            slot.clone_from(base_poly);
-            let scaled = mult_poly.clone() * scale.clone();
-            *slot += -scaled;
-        }
-        dest
+        polyvec_add_scaled_with_sign(base, scale, mult, false)
+    }
+
+    /// Compute element-wise subtraction of `scale * mult` from `base`.
+    #[inline]
+    pub(super) fn polyvec_sub_scaled<FF: FiniteField + 'static, const LEN: usize>(
+        base: &[Polynomial<'static, FF>; LEN],
+        scale: &Polynomial<'_, FF>,
+        mult: &[Polynomial<'static, FF>; LEN],
+    ) -> [Polynomial<'static, FF>; LEN] {
+        polyvec_add_scaled_with_sign(base, scale, mult, true)
     }
 
     /// Check whether each polynomial's infinity norm stays below `bound`.
@@ -540,6 +537,58 @@ mod tests {
                     .map(|&c| FieldElement::from(c))
                     .collect::<Vec<_>>(),
             )
+        }
+
+        #[test]
+        fn polyvec_add_scaled_adds_scaled_component() {
+            let base = [
+                Polynomial::from(vec![FieldElement::from(1i32)]),
+                Polynomial::from(vec![FieldElement::from(2i32)]),
+            ];
+            let mult = [
+                Polynomial::from(vec![FieldElement::from(3i32)]),
+                Polynomial::from(vec![FieldElement::from(-1i32)]),
+            ];
+            let scale = Polynomial::from(vec![FieldElement::from(2i32)]);
+
+            let result = super::utils::polyvec_add_scaled::<FieldElement, 2>(
+                &base,
+                &scale,
+                &mult,
+            );
+
+            let expected = [
+                Polynomial::from(vec![FieldElement::from(7i32)]),
+                Polynomial::from(vec![FieldElement::from(0i32)]),
+            ];
+
+            assert_eq!(result, expected);
+        }
+
+        #[test]
+        fn polyvec_sub_scaled_subtracts_scaled_component() {
+            let base = [
+                Polynomial::from(vec![FieldElement::from(5i32)]),
+                Polynomial::from(vec![FieldElement::from(-3i32)]),
+            ];
+            let mult = [
+                Polynomial::from(vec![FieldElement::from(2i32)]),
+                Polynomial::from(vec![FieldElement::from(4i32)]),
+            ];
+            let scale = Polynomial::from(vec![FieldElement::from(3i32)]);
+
+            let result = super::utils::polyvec_sub_scaled::<FieldElement, 2>(
+                &base,
+                &scale,
+                &mult,
+            );
+
+            let expected = [
+                Polynomial::from(vec![FieldElement::from(-1i32)]),
+                Polynomial::from(vec![FieldElement::from(-15i32)]),
+            ];
+
+            assert_eq!(result, expected);
         }
 
         /// Detect cases where all polynomials stay within the supplied bound.
