@@ -101,7 +101,7 @@ impl ThresholdSignature {
         );
         let y_partial = Self::sample_partial_y(&participant_randomness);
 
-        let w_partial = key_share.public_key.a.mul_vector(&y_partial);
+        let w_partial = (&key_share.public_key.a) * y_partial.as_slice();
         let challenge = Self::generate_partial_challenge(&mu);
 
         let c_s1: Vec<Polynomial<'static, FF>> = key_share

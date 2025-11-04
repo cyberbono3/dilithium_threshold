@@ -107,38 +107,6 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
     //     self.mul_vector(v)
     // }
 
-    /// Multiply the matrix by a polynomial vector, returning the result as a `Vec`.
-    ///
-    /// This performs shape validation and mirrors the behaviour exposed via the `Mul`
-    /// trait implementation but keeps the dynamically-sized return type for callers
-    /// that prefer `Vec` semantics.
-    /// TODO replace it with Mul trait
-    pub fn mul_vector<'b>(
-        &self,
-        v: &[Polynomial<'b, FF>],
-    ) -> Vec<Polynomial<'static, FF>> {
-        // Check matrix is not empty
-        assert!(!self.rows.is_empty(), "Matrix cannot be empty");
-
-        let cols = self.cols();
-        // Check matrix columns match vector length
-        assert_eq!(
-            cols,
-            v.len(),
-            "Matrix columns ({}) must match vector length ({})",
-            cols,
-            v.len()
-        );
-
-        // Check all rows have same length (rectangular matrix)
-        assert!(
-            self.rows.iter().all(|row| row.len() == cols),
-            "All matrix rows must have the same length"
-        );
-
-        self.rows.iter().map(|row| row_mul(row, v)).collect()
-    }
-
     /// Multiply the matrix by a polynomial vector and return the fixed-size array result.
     ///
     /// Essentially a thin wrapper around the `Mul` trait so callers can invoke the
@@ -162,6 +130,30 @@ impl<'a, 'b, FF: FiniteField + 'static> Mul<&[Polynomial<'b, FF>; L]>
             *slot = row_mul(row, vec);
         }
         result
+    }
+}
+
+impl<'b, FF: FiniteField + 'static> Mul<&'b [Polynomial<'b, FF>]> for &MatrixA<'static, FF> {
+    type Output = Vec<Polynomial<'static, FF>>;
+
+    fn mul(self, vec: &'b [Polynomial<'b, FF>]) -> Self::Output {
+        assert!(!self.rows.is_empty(), "Matrix cannot be empty");
+
+        let cols = self.cols();
+        assert_eq!(
+            cols,
+            vec.len(),
+            "Matrix columns ({}) must match vector length ({})",
+            cols,
+            vec.len()
+        );
+
+        assert!(
+            self.rows.iter().all(|row| row.len() == cols),
+            "All matrix rows must have the same length"
+        );
+
+        self.rows.iter().map(|row| row_mul(row, vec)).collect()
     }
 }
 
@@ -281,10 +273,10 @@ mod tests {
         let a = expand_a_from_rho::<FieldElement>([11u8; 32]);
         let y = zero_polyvec::<L, FieldElement>();
 
-        let via_method = a.mul_vector(&y);
+        let via_slice: Vec<_> = (&a) * y.as_slice();
         let via_operator = (&a) * &y;
 
-        assert_eq!(via_method.as_slice(), via_operator.as_slice());
+        assert_eq!(via_slice, via_operator.to_vec());
     }
 
     #[test]
@@ -295,7 +287,7 @@ mod tests {
         let matrix = MatrixA::<FieldElement>::zeros(2, 2);
         let vector =
             [Polynomial::zero(), Polynomial::zero(), Polynomial::zero()];
-        let _ = matrix.mul_vector(&vector);
+        let _ = &matrix * vector.as_slice();
     }
 
     #[test]
