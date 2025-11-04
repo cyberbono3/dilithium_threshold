@@ -105,19 +105,19 @@ pub fn derive_challenge_polynomial<FF: FiniteField + From<i64>>(
 }
 
 /// Convenience helper to sample multiple polynomials centered in [-GAMMA1, GAMMA1].
-pub fn sample_gamma1_vector<FF: FiniteField>(
-    seed: &[u8],
-    count: usize,
-) -> Vec<Polynomial<'static, FF>> {
-    (0..count)
-        .map(|i| {
-            let mut namespaced = Vec::with_capacity(seed.len() + 1);
-            namespaced.extend_from_slice(seed);
-            namespaced.push(i as u8);
-            sample_gamma1(&namespaced)
-        })
-        .collect()
-}
+// pub fn sample_gamma1_vector<FF: FiniteField>(
+//     seed: &[u8],
+//     count: usize,
+// ) -> Vec<Polynomial<'static, FF>> {
+//     (0..count)
+//         .map(|i| {
+//             let mut namespaced = Vec::with_capacity(seed.len() + 1);
+//             namespaced.extend_from_slice(seed);
+//             namespaced.push(i as u8);
+//             sample_gamma1(&namespaced)
+//         })
+//         .collect()
+// }
 
 // Generic reconstruction from any point providers (removes duplication).
 pub fn reconstruct_vector_from_points<FF, S>(

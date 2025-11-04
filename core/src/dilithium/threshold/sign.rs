@@ -4,7 +4,7 @@ use crate::dilithium::shamir::AdaptedShamirSSS;
 use crate::dilithium::sign::DilithiumSignature;
 use crate::dilithium::utils::{
     derive_challenge_polynomial, get_randomness, hash_message,
-    reconstruct_vector_from_points, sample_gamma1_vector,
+    reconstruct_vector_from_points, sample_gamma1,
 };
 use crate::basic::keypair::{PublicKey, keygen};
 use math::{prelude::*, traits::FiniteField};
@@ -210,7 +210,14 @@ impl ThresholdSignature {
     fn sample_partial_y<FF: FiniteField>(
         randomness: &[u8],
     ) -> Vec<Polynomial<'static, FF>> {
-        sample_gamma1_vector(randomness, L)
+        (0..L)
+        .map(|i| {
+            let mut namespaced = Vec::with_capacity(randomness.len() + 1);
+            namespaced.extend_from_slice(randomness);
+            namespaced.push(i as u8);
+            sample_gamma1(&namespaced)
+        })
+        .collect()
     }
 
     /// Convert to polynomial with tau non-zero coefficients.
