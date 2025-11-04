@@ -18,7 +18,7 @@ impl<FF: FiniteField> ThresholdKeyShare<'static, FF> {
         s2_share: ShamirShare<'static, FF>,
         public_key: PublicKey<'static, FF>,
     ) -> Self {
-        ThresholdKeyShare {
+        Self {
             participant_id,
             s1_share,
             s2_share,

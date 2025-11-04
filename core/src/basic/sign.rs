@@ -1,14 +1,14 @@
 use crate::dilithium::error::DilithiumError;
 use crate::dilithium::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N};
-use crate::dilithium::utils::zero_polyvec;
-use crate::matrix::hash::shake256;
 use crate::basic::keypair::{PrivateKey, PublicKey};
+use crate::matrix::hash::shake256;
 
 use math::prelude::FieldElement;
 use math::{poly::Polynomial, traits::FiniteField};
 use std::array::from_fn;
 const REJECTION_LIMIT: u32 = 10000;
 
+/// Uncompressed Dilithium signature containing the response vector and challenge polynomial.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Signature<'a, FF: FiniteField> {
     pub z: [Polynomial<'a, FF>; L],
@@ -17,8 +17,11 @@ pub struct Signature<'a, FF: FiniteField> {
 
 mod utils {
     use super::*;
-    use crate::dilithium::utils::derive_challenge_polynomial;
+    use crate::dilithium::utils::{
+        derive_challenge_polynomial, shake256_squeezed, zero_polyvec,
+    };
 
+    /// Split a polynomial into its high and low components.
     pub(super) fn poly_high_low<FF: FiniteField + From<i64>>(
         p: &Polynomial<'_, FF>,
     ) -> (Polynomial<'static, FF>, Polynomial<'static, FF>)
@@ -31,6 +34,7 @@ mod utils {
         (hi.into(), lo.into())
     }
 
+    /// Extract only the high component of a polynomial used for hashing.
     pub(super) fn poly_high<FF: FiniteField + From<i64>>(
         p: &Polynomial<'_, FF>,
     ) -> Polynomial<'static, FF>
@@ -41,6 +45,7 @@ mod utils {
         high
     }
 
+    /// Extract only the low component of a polynomial.
     pub(super) fn poly_low<FF: FiniteField + From<i64>>(
         p: &Polynomial<'_, FF>,
     ) -> Polynomial<'static, FF>
@@ -51,6 +56,7 @@ mod utils {
         low
     }
 
+    /// Serialize the w1 vector into bytes that feed the challenge hash.
     pub(super) fn pack_w1_for_hash<
         FF: FiniteField + Into<[u8; FieldElement::BYTES]>,
     >(
@@ -66,6 +72,7 @@ mod utils {
         out
     }
 
+    /// Sample the y polynomial vector for a given message seed and counter.
     pub(super) fn sample_y<FF: FiniteField + From<i64>>(
         seed: &[u8],
         ctr: u32,
@@ -73,17 +80,15 @@ mod utils {
         let mut out = zero_polyvec::<L, FF>();
 
         for (j, slot) in out.iter_mut().enumerate() {
-            let mut inp = Vec::with_capacity(seed.len() + 6);
-            inp.extend_from_slice(seed);
-            inp.extend_from_slice(&(j as u16).to_le_bytes());
-            inp.extend_from_slice(&ctr.to_le_bytes());
-            let bytes = shake256(3 * N, &inp); // 3 bytes per coeff -> 24-bit
+            let idx_bytes = (j as u16).to_le_bytes();
+            let ctr_bytes = ctr.to_le_bytes();
+            let bytes = shake256_squeezed(seed, &[&idx_bytes, &ctr_bytes], 3 * N);
             let mut coeffs = [0i64; N];
             for (i, chunk) in bytes.chunks_exact(3).take(N).enumerate() {
                 let v = (chunk[0] as i64)
                     | ((chunk[1] as i64) << 8)
                     | ((chunk[2] as i64) << 16);
-                let modulus = (2 * GAMMA1 + 1) as i64;
+                let modulus = 2 * GAMMA1 + 1;
                 let centered = (v % modulus + modulus) % modulus - GAMMA1;
                 coeffs[i] = centered;
             }
@@ -92,6 +97,7 @@ mod utils {
         out
     }
 
+    /// Derive the sparse challenge polynomial from message and w1 bytes.
     pub(super) fn derive_challenge<FF: FiniteField + From<i64>>(
         message: &[u8],
         w1_pack: &[u8],
@@ -102,6 +108,7 @@ mod utils {
         derive_challenge_polynomial::<FF>(&seed)
     }
 
+    /// Compute element-wise addition of `base` and `scale * mult`.
     #[inline]
     pub(super) fn polyvec_add_scaled<
         FF: FiniteField + 'static,
@@ -122,6 +129,7 @@ mod utils {
         dest
     }
 
+    /// Compute element-wise subtraction of `scale * mult` from `base`.
     #[inline]
     pub(super) fn polyvec_sub_scaled<
         FF: FiniteField + 'static,
@@ -142,6 +150,7 @@ mod utils {
         dest
     }
 
+    /// Check whether each polynomial's infinity norm stays below `bound`.
     #[inline]
     pub(super) fn all_infty_norm_below<FF: FiniteField, const LEN: usize>(
         polys: &[Polynomial<'_, FF>; LEN],
@@ -153,6 +162,7 @@ mod utils {
         polys.iter().all(|p| (p.norm_infinity() as i64) < bound)
     }
 
+    /// Split a coefficient into high and low parts relative to ALPHA.
     fn high_low_bits(x: i64) -> (i64, i64) {
         let w1 = x / ALPHA;
         let mut w0 = x - w1 * ALPHA;
@@ -162,6 +172,7 @@ mod utils {
         (w1, w0)
     }
 
+    /// Iterate coefficients padded with zeros up to length N.
     fn padded_coefficients<'a, FF: FiniteField>(
         poly: &'a Polynomial<'a, FF>,
     ) -> impl Iterator<Item = FF> + 'a {
@@ -178,6 +189,7 @@ use utils::{
     poly_low, polyvec_add_scaled, polyvec_sub_scaled, sample_y,
 };
 
+/// Internal helper driving the rejection-sampling signing loop.
 struct SigningEngine<'pk, 'msg, FF>
 where
     FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64> + 'static,
@@ -193,6 +205,7 @@ where
     FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64> + 'static,
     i64: From<FF>,
 {
+    /// Construct a new engine for the supplied private key and message.
     fn new(priv_key: &'pk PrivateKey<'static, FF>, msg: &'msg [u8]) -> Self {
         Self {
             priv_key,
@@ -201,6 +214,7 @@ where
         }
     }
 
+    /// Attempt one signing iteration; returns `None` if bounds are violated.
     fn try_with_counter(&self, ctr: u32) -> Option<Signature<'static, FF>> {
         let y = sample_y::<FF>(&self.y_seed, ctr);
         let w = self.priv_key.a.mul(&y);
@@ -223,6 +237,7 @@ where
     }
 }
 
+/// Produce a Dilithium signature using rejection sampling.
 pub fn sign<FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64>>(
     priv_key: &PrivateKey<'static, FF>,
     _t: &[Polynomial<'_, FF>; K], // kept for API parity
@@ -242,8 +257,7 @@ where
 /// 1) compute w1' = HighBits(Az - c t, 2*GAMMA2)
 /// 2) check ||z||_∞ < GAMMA1 - BETA
 /// 3) check c == H(M || pack(w1'))
-//
-
+/// Returns true when the signature is valid.
 pub fn verify<
     FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64> + 'static,
 >(
@@ -275,7 +289,7 @@ mod tests {
     use crate::basic::keypair::*;
     use math::field_element::FieldElement;
 
-    // Deterministic fixtures for reproducible tests
+    /// Deterministic fixture producing a reproducible keypair.
     fn keypair_fixture_1<FF: FiniteField + From<i64>>()
     -> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
         let rho = [0x42u8; 32];
@@ -284,6 +298,7 @@ mod tests {
         keygen_with_seeds::<FF>(rho, s1, s2)
     }
 
+    /// Alternate deterministic keypair fixture used across tests.
     fn keypair_fixture_2<FF: FiniteField + From<i64>>()
     -> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
         let rho = [0xA5u8; 32];
@@ -295,6 +310,7 @@ mod tests {
     mod signing_engine_tests {
         use super::*;
 
+        /// Ensure the signing engine produces a signature before hitting the rejection limit.
         #[test]
         fn engine_produces_signatures_within_limit() {
             let message = b"engine-test";
@@ -324,6 +340,7 @@ mod tests {
             );
         }
 
+        /// Check that the engine yields identical signatures for identical inputs.
         #[test]
         fn engine_is_deterministic_for_same_inputs() {
             let message = b"deterministic-engine";
@@ -345,6 +362,7 @@ mod tests {
             );
         }
 
+        /// Ensure the engine rejects samples when masks violate bounds.
         #[test]
         fn engine_rejects_when_mask_norm_exceeds_bounds() {
             let message = b"rejection-test";
@@ -370,6 +388,7 @@ mod tests {
     mod sample_y_tests {
         use super::*;
 
+        /// Convert a field element into a centered signed integer.
         fn centered_value(fe: FieldElement) -> i64 {
             let mut v = i64::from(fe);
             let p = FieldElement::P as i64;
@@ -379,6 +398,7 @@ mod tests {
             v
         }
 
+        /// Return true if all coefficients stay within the ±GAMMA1 bound.
         fn coeffs_within_bounds(
             polys: &[Polynomial<'_, FieldElement>],
         ) -> bool {
@@ -389,6 +409,7 @@ mod tests {
                 .all(|abs| abs <= GAMMA1)
         }
 
+        /// Sampling with identical seed and counter should be deterministic.
         #[test]
         fn deterministic_per_seed_and_counter() {
             let seed = [0x11u8; 32];
@@ -397,6 +418,7 @@ mod tests {
             assert_eq!(first, second);
         }
 
+        /// Different counters must yield distinct sampled vectors.
         #[test]
         fn different_counters_produce_distinct_vectors() {
             let seed = [0x77u8; 32];
@@ -405,6 +427,7 @@ mod tests {
             assert_ne!(first, second);
         }
 
+        /// All coefficients should remain centered within the permitted bound.
         #[test]
         fn coefficients_are_centered() {
             let seed = [0xC3u8; 32];
@@ -416,6 +439,7 @@ mod tests {
     mod pack_w1_tests {
         use super::*;
 
+        /// Helper to create a polynomial from integer coefficients.
         fn simple_poly(coeffs: &[i64]) -> Polynomial<'static, FieldElement> {
             Polynomial::from(
                 coeffs
@@ -425,6 +449,7 @@ mod tests {
             )
         }
 
+        /// Packing should be deterministic when the input polynomials are fixed.
         #[test]
         fn deterministic_for_fixed_polys() {
             let polys = [
@@ -439,6 +464,7 @@ mod tests {
             assert_eq!(first, second);
         }
 
+        /// Different polynomials must lead to different packed byte arrays.
         #[test]
         fn different_inputs_produce_different_outputs() {
             let polys_a = [
@@ -466,6 +492,7 @@ mod tests {
         use crate::dilithium::params::TAU;
         use num_traits::ConstZero;
 
+        /// Derive challenge should be deterministic for identical inputs.
         #[test]
         fn deterministic_for_same_inputs() {
             let msg = b"challenge";
@@ -475,6 +502,7 @@ mod tests {
             assert_eq!(c1, c2);
         }
 
+        /// Different messages should produce different challenge polynomials.
         #[test]
         fn changing_message_changes_challenge() {
             let hash = vec![0x77; 64];
@@ -485,6 +513,7 @@ mod tests {
             assert_ne!(c1, c2);
         }
 
+        /// The derived challenge must contain exactly TAU non-zero coefficients.
         #[test]
         fn challenge_has_tau_non_zero_entries() {
             let msg = b"nonzero-count";
@@ -503,6 +532,7 @@ mod tests {
     mod infty_norm_tests {
         use super::*;
 
+        /// Helper to construct polynomials for infinity norm tests.
         fn make_poly(coeffs: &[i64]) -> Polynomial<'static, FieldElement> {
             Polynomial::from(
                 coeffs
@@ -512,12 +542,14 @@ mod tests {
             )
         }
 
+        /// Detect cases where all polynomials stay within the supplied bound.
         #[test]
         fn detects_within_bound() {
             let polys = [make_poly(&[1, -2, 3]), make_poly(&[0, 0, 4])];
             assert!(super::utils::all_infty_norm_below(&polys, 5));
         }
 
+        /// Detect cases where the infinity norm exceeds the bound.
         #[test]
         fn detects_violation() {
             let polys = [make_poly(&[1, -2, 3]), make_poly(&[0, 0, 6])];
@@ -525,6 +557,7 @@ mod tests {
         }
     }
 
+    /// Signing then verifying with the same key should succeed.
     #[test]
     fn sign_and_verify_roundtrip() {
         let (pub_key, priv_key) = keypair_fixture_1();
@@ -534,6 +567,7 @@ mod tests {
         assert!(super::verify::<FieldElement>(&pub_key, msg, &sig));
     }
 
+    /// Verification must fail if the message changes after signing.
     #[test]
     fn verify_rejects_modified_message() {
         let (pub_key, priv_key) = keypair_fixture_1();
@@ -549,6 +583,7 @@ mod tests {
         );
     }
 
+    /// Tampering with z should cause signature verification to fail.
     #[test]
     fn verify_rejects_tampered_z() {
         let (pub_key, priv_key) = keypair_fixture_1();
@@ -568,6 +603,7 @@ mod tests {
         );
     }
 
+    /// Tampering with the challenge polynomial must invalidate the signature.
     #[test]
     fn verify_rejects_tampered_c() {
         let (pub_key, priv_key) = keypair_fixture_1();
@@ -586,6 +622,7 @@ mod tests {
         );
     }
 
+    /// Signatures must not validate under a different public key.
     #[test]
     fn verify_fails_with_wrong_public_key() {
         let (pub_key1, priv_key1) = keypair_fixture_1();
@@ -602,6 +639,7 @@ mod tests {
         );
     }
 
+    /// Verification should fail when checked against a different message.
     #[test]
     fn verify_rejects_wrong_message() {
         let (pub_key, priv_key) = keypair_fixture_1();
@@ -617,6 +655,7 @@ mod tests {
         );
     }
 
+    /// Signing the same message twice should yield identical signatures.
     #[test]
     fn signatures_are_deterministic_for_same_message() {
         // With the current design (y derived from msg via SHAKE256), signing is deterministic.
@@ -635,6 +674,7 @@ mod tests {
         }
     }
 
+    /// Signing should work for both empty and long messages.
     #[test]
     fn handles_empty_and_long_messages() {
         let (pub_key1, priv_key1) = keypair_fixture_1();
@@ -654,6 +694,7 @@ mod tests {
         assert!(super::verify::<FieldElement>(&pub_key1, &long, &sig_long));
     }
 
+    /// The infinity norm of z should always remain within the specified bound.
     #[test]
     fn z_infinity_norm_is_within_bound() {
         let (pub_key1, priv_key1) = keypair_fixture_1();
