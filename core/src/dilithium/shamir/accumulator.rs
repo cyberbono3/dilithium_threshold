@@ -10,6 +10,7 @@ pub(super) struct ShareAccumulator<FF: FiniteField> {
 }
 
 impl<FF: FiniteField> ShareAccumulator<FF> {
+    /// Prepare an accumulator with zero-initialised buffers sized to the supplied lengths.
     pub(super) fn new(participant_id: usize, lengths: &[usize]) -> Self {
         let buffers = lengths
             .iter()
@@ -21,6 +22,7 @@ impl<FF: FiniteField> ShareAccumulator<FF> {
         }
     }
 
+    /// Store a coefficient for the given polynomial/coordinate if within bounds.
     pub(super) fn insert(
         &mut self,
         poly_idx: usize,
@@ -37,6 +39,7 @@ impl<FF: FiniteField> ShareAccumulator<FF> {
         poly[coeff_idx] = value;
     }
 
+    /// Convert the internal buffers into an owned `ShamirShare`, validating the participant id.
     pub(super) fn finalize(self) -> DilithiumResult<ShamirShare<'static, FF>> {
         let polynomials =
             self.buffers.into_iter().map(Polynomial::from).collect();

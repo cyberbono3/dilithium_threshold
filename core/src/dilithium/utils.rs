@@ -12,14 +12,14 @@ use sha3::{
 use crate::dilithium::error::{DilithiumError, DilithiumResult};
 use crate::dilithium::params::{GAMMA1, N, TAU};
 use crate::dilithium::shamir::error::ShamirError;
-use crate::matrix::hash::shake256;
 use crate::traits::PointSource;
+use crate::matrix::hash::shake256;
 use math::{poly::Polynomial, traits::FiniteField};
 
 const RANDOMNESS_BYTES: usize = 32;
 const HASH_BYTES: usize = 64;
 
-// Fill byte array of length 32 by random bytes
+/// Produce a fresh 32-byte array filled with cryptographically secure random data.
 pub fn random_bytes() -> [u8; 32] {
     let mut rng = rand::thread_rng();
     let mut tmp = [0u8; 32];
@@ -27,6 +27,7 @@ pub fn random_bytes() -> [u8; 32] {
     tmp
 }
 
+/// Either clone the caller-provided randomness or synthesize a fresh buffer.
 pub fn get_randomness(randomness: Option<&[u8]>) -> Vec<u8> {
     match randomness {
         Some(bytes) => bytes.to_vec(),
@@ -38,6 +39,7 @@ pub fn get_randomness(randomness: Option<&[u8]>) -> Vec<u8> {
     }
 }
 
+/// Obtain a SHAKE256 reader over the supplied message bytes.
 pub fn get_hash_reader(
     message: &[u8],
 ) -> XofReaderCoreWrapper<Shake256ReaderCore> {
@@ -46,6 +48,7 @@ pub fn get_hash_reader(
     hasher.finalize_xof()
 }
 
+/// Hash a message with SHAKE256, returning a fixed-size digest.
 pub fn hash_message(message: &[u8]) -> Vec<u8> {
     let mut reader = get_hash_reader(message);
     let mut output = vec![0u8; HASH_BYTES];
@@ -85,6 +88,21 @@ pub fn sample_gamma1<FF: FiniteField>(seed: &[u8]) -> Polynomial<'static, FF> {
     Polynomial::from(coeffs)
 }
 
+/// Sample multiple polynomials centered in [-GAMMA1, GAMMA1] using namespaced seeds.
+pub fn sample_gamma1_vector<FF: FiniteField>(
+    seed: &[u8],
+    count: usize,
+) -> Vec<Polynomial<'static, FF>> {
+    (0..count)
+        .map(|index| {
+            let mut namespaced = Vec::with_capacity(seed.len() + 1);
+            namespaced.extend_from_slice(seed);
+            namespaced.push(index as u8);
+            sample_gamma1(&namespaced)
+        })
+        .collect()
+}
+
 /// Derive a TAU-sparse challenge polynomial from the provided seed bytes.
 pub fn derive_challenge_polynomial<FF: FiniteField + From<i64>>(
     seed: &[u8],
@@ -116,7 +134,7 @@ pub fn derive_challenge_polynomial<FF: FiniteField + From<i64>>(
 }
 
 
-// Generic reconstruction from any point providers (removes duplication).
+/// Reconstruct the requested polynomial indices from a set of point providers.
 pub fn reconstruct_vector_from_points<FF, S>(
     items: &[S],
     poly_indices: &[usize],
@@ -172,8 +190,8 @@ where
                         xs.as_slice(),
                         ys.as_slice(),
                     ))
-                })
-                .collect::<DilithiumResult<Vec<_>>>()?;
+        })
+        .collect::<DilithiumResult<Vec<_>>>()?;
 
             Ok(Polynomial::from(coeffs))
         })
@@ -193,13 +211,13 @@ pub fn interpolate_constant_at_zero<FF: FiniteField + Copy + 'static>(
 }
 
 #[inline]
+/// Create an array of zero-initialised polynomials of compile-time length.
 pub fn zero_polyvec<const LEN: usize, FF: FiniteField>()
 -> [Polynomial<'static, FF>; LEN] {
     std::array::from_fn(|_| Polynomial::zero())
 }
 
-/// Return the maximum \ell_\infty norm across a slice of polynomials.
-/// Useful for bound checks; returns 0 for an empty slice.
+/// Return the maximum ℓ∞ norm across a slice of polynomials (0 if empty).
 pub fn polyvec_max_infty_norm<FF: FiniteField>(
     polys: &[Polynomial<'_, FF>],
 ) -> i64 {
@@ -342,7 +360,6 @@ mod tests {
         use super::*;
         use crate::dilithium::error::DilithiumError;
         use crate::dilithium::shamir::error::ShamirError;
-        use crate::traits::PointSource;
         use math::fe;
 
         #[derive(Clone)]

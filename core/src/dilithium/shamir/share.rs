@@ -12,6 +12,7 @@ pub struct ShamirShare<'a, FF: FiniteField> {
 }
 
 impl<FF: FiniteField> ShamirShare<'static, FF> {
+    /// Construct a share while validating the participant identifier.
     pub fn new(
         participant_id: usize,
         share_vector: Vec<Polynomial<'static, FF>>,
@@ -28,6 +29,7 @@ impl<FF: FiniteField> ShamirShare<'static, FF> {
         })
     }
 
+    /// Total number of polynomials carried in this share.
     pub fn vector_length(&self) -> usize {
         self.share_vector.len()
     }

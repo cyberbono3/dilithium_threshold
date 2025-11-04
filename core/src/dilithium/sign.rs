@@ -12,7 +12,7 @@ pub struct DilithiumSignature<'a, FF: FiniteField> {
 }
 
 impl<'a, FF: FiniteField> DilithiumSignature<'a, FF> {
-    /// Initialize signature.
+    /// Construct a signature from its response, hint, and challenge components.
     pub fn new(
         z: Vec<Polynomial<'a, FF>>, // TODO consider to use arrays of length L instead
         h: Vec<Polynomial<'a, FF>>, // TODO consider to use arrays of length K instead

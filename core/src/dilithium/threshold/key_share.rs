@@ -2,6 +2,7 @@ use crate::dilithium::shamir::ShamirShare;
 use crate::basic::keypair::PublicKey;
 use math::traits::FiniteField;
 
+/// Threshold participant's key material and associated public key.
 #[derive(Clone, Debug)]
 pub struct ThresholdKeyShare<'a, FF: FiniteField> {
     pub participant_id: usize,
@@ -11,7 +12,7 @@ pub struct ThresholdKeyShare<'a, FF: FiniteField> {
 }
 
 impl<FF: FiniteField> ThresholdKeyShare<'static, FF> {
-    /// Initialize threshold key share.
+    /// Package the participant identifier, Shamir shares, and public key into a threshold share.
     pub fn new(
         participant_id: usize,
         s1_share: ShamirShare<'static, FF>,

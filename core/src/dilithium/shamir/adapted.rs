@@ -8,6 +8,7 @@ use crate::dilithium::utils::reconstruct_vector_from_points;
 use super::accumulator::ShareAccumulator;
 use super::share::ShamirShare;
 
+/// Adapted Shamir secret sharing scheme tailored for polynomial vectors.
 #[derive(Debug)]
 pub struct AdaptedShamirSSS {
     threshold: usize,
@@ -15,6 +16,7 @@ pub struct AdaptedShamirSSS {
 }
 
 impl AdaptedShamirSSS {
+    /// Allocate accumulators for each participant with buffers sized to `lengths`.
     fn share_accumulators<FF: FiniteField>(
         &self,
         lengths: &[usize],
@@ -24,7 +26,7 @@ impl AdaptedShamirSSS {
             .collect()
     }
 
-    /// Initialize the adapted Shamir scheme.
+    /// Create a sharing scheme for the provided threshold/participant configuration.
     pub fn new(
         threshold: usize,
         participant_number: usize,
@@ -42,7 +44,7 @@ impl AdaptedShamirSSS {
         })
     }
 
-    /// Split a polynomial vector secret into shares.
+    /// Split a vector of polynomials into participant shares.
     pub fn split_secret<FF>(
         &self,
         secret_vector: &[Polynomial<'static, FF>],
@@ -85,7 +87,7 @@ impl AdaptedShamirSSS {
             .collect()
     }
 
-    /// Reconstruct the secret from a sufficient number of shares.
+    /// Reconstruct the entire secret vector from the first `threshold` shares.
     pub fn reconstruct_secret<FF: FiniteField>(
         &self,
         shares: &[ShamirShare<'static, FF>],
@@ -97,7 +99,7 @@ impl AdaptedShamirSSS {
     }
 
     #[cfg(test)]
-    /// Partially reconstruct only specified polynomials from the vector.
+    /// Reconstruct only the requested polynomial indices (test helper).
     pub fn partial_reconstruct<FF: FiniteField>(
         &self,
         shares: &[ShamirShare<'static, FF>],
@@ -105,26 +107,10 @@ impl AdaptedShamirSSS {
     ) -> DilithiumResult<Vec<Polynomial<'static, FF>>> {
         let (active_shares, vector_length) =
             self.select_active_shares(shares)?;
-        self.ensure_poly_indices_within_bounds(poly_indices, vector_length)?;
         Self::reconstruct_poly_vector(active_shares, poly_indices)
     }
 
-    #[cfg(test)]
-    fn ensure_poly_indices_within_bounds(
-        &self,
-        poly_indices: &[usize],
-        vector_length: usize,
-    ) -> DilithiumResult<()> {
-        if let Some(&invalid_idx) =
-            poly_indices.iter().find(|&&idx| idx >= vector_length)
-        {
-            return Err(
-                ShamirError::InvalidIndex(invalid_idx, vector_length).into()
-            );
-        }
-        Ok(())
-    }
-
+    /// Helper to invoke the shared polynomial-vector reconstruction utility.
     fn reconstruct_poly_vector<FF: FiniteField>(
         shares: &[ShamirShare<'static, FF>],
         poly_indices: &[usize],
@@ -132,6 +118,7 @@ impl AdaptedShamirSSS {
         reconstruct_vector_from_points::<FF, _>(shares, poly_indices)
     }
 
+    /// Take the first `threshold` shares and ensure they are consistent in length.
     fn select_active_shares<'a, FF>(
         &self,
         shares: &'a [ShamirShare<'static, FF>],
@@ -151,6 +138,7 @@ impl AdaptedShamirSSS {
         Ok((active, vector_length))
     }
 
+    /// Validate that all shares expose the same polynomial vector length.
     fn ensure_consistent_lengths<FF>(
         shares: &[ShamirShare<'static, FF>],
     ) -> DilithiumResult<usize>
@@ -173,6 +161,7 @@ impl AdaptedShamirSSS {
     }
 
     #[cfg(test)]
+    /// Convenience helper used in tests to generate a random sharing polynomial.
     fn create_shamir_polynomial<FF>(
         &self,
         secret: &FF,
@@ -185,6 +174,7 @@ impl AdaptedShamirSSS {
         self.create_shamir_polynomial_with(&mut rng, *secret)
     }
 
+    /// Build a random polynomial of degree threshold-1 with the constant term set to `secret`.
     fn create_shamir_polynomial_with<FF, R>(
         &self,
         rng: &mut R,

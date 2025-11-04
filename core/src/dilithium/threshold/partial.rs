@@ -14,7 +14,7 @@ pub struct PartialSignature<'sign, FF: FiniteField> {
 }
 
 impl<FF: FiniteField> PartialSignature<'static, FF> {
-    /// Initialize partial signature.
+    /// Bundle the per-participant signature artefacts into a single structure.
     pub fn new(
         participant_id: usize,
         z_partial: Vec<Polynomial<'static, FF>>,

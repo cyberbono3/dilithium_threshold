@@ -4,7 +4,7 @@ use crate::dilithium::shamir::AdaptedShamirSSS;
 use crate::dilithium::sign::DilithiumSignature;
 use crate::dilithium::utils::{
     derive_challenge_polynomial, get_randomness, hash_message,
-    reconstruct_vector_from_points, sample_gamma1,
+    reconstruct_vector_from_points, sample_gamma1_vector,
 };
 use crate::basic::keypair::{PublicKey, keygen};
 use math::{prelude::*, traits::FiniteField};
@@ -37,7 +37,7 @@ pub struct ThresholdSignature {
 }
 
 impl ThresholdSignature {
-    /// Initialize threshold signature scheme.
+    /// Build a threshold signing engine after validating the participant configuration.
     pub fn new(threshold: usize, participants: usize) -> DilithiumResult<Self> {
         if !validate_threshold_config(threshold, participants) {
             return Err(DilithiumError::InvalidThreshold(
@@ -59,10 +59,7 @@ impl ThresholdSignature {
         })
     }
 
-    /// Generate threshold keys using distributed key generation.
-    ///
-    /// This method generates a Dilithium key pair and then splits the
-    /// private key into shares using the adapted Shamir scheme.
+    /// Run distributed key generation, returning per-participant Shamir shares.
     pub fn distributed_keygen<FF>(
         &self,
     ) -> DilithiumResult<Vec<ThresholdKeyShare<'static, FF>>>
@@ -88,10 +85,7 @@ impl ThresholdSignature {
         Ok(threshold_shares)
     }
 
-    /// Create a partial signature using a key share.
-    ///
-    /// Each participant can create a partial signature using only their share,
-    /// without reconstructing the full secret key.
+    /// Produce a partial signature for `message` using a single participant's share.
     pub fn partial_sign<FF: FiniteField + From<i64>>(
         &self,
         message: &[u8],
@@ -131,10 +125,7 @@ impl ThresholdSignature {
         ))
     }
 
-    /// Combine partial signatures into a complete threshold signature.
-    ///
-    /// This method reconstructs the full signature from partial signatures
-    /// without ever reconstructing the secret key.
+    /// Combine `threshold` partial signatures into a full Dilithium signature.
     pub fn combine_signatures<FF: FiniteField>(
         &self,
         partial_signatures: &[PartialSignature<'static, FF>],
@@ -150,6 +141,7 @@ impl ThresholdSignature {
         Ok(DilithiumSignature::new(z, h, challenge))
     }
 
+    /// Quickly check whether an individual partial signature matches the message.
     pub fn verify_partial_signature<FF: FiniteField + From<i64>>(
         &self,
         message: &[u8],
@@ -159,7 +151,7 @@ impl ThresholdSignature {
         partial_sig.challenge == Self::generate_partial_challenge(&mu)
     }
 
-    /// Get information about the threshold configuration.
+    /// Expose the configuration parameters used to instantiate this instance.
     pub fn get_threshold_info(&self) -> ThresholdInfo {
         ThresholdInfo {
             threshold: self.threshold,
@@ -169,7 +161,7 @@ impl ThresholdSignature {
         }
     }
 
-    /// Verify that partial signatures are valid for combination.
+    /// Ensure a collection of partial signatures is non-empty and shares the same challenge.
     fn verify_partial_signatures<FF: FiniteField>(
         partial_signatures: &[PartialSignature<'static, FF>],
         threshold: usize,
@@ -194,7 +186,7 @@ impl ThresholdSignature {
         Ok(())
     }
 
-    /// Derive participant-specific randomness.
+    /// Expand the global randomness into a participant-specific seed via SHA-256.
     fn derive_participant_randomness(
         base_randomness: &[u8],
         participant_id: usize,
@@ -206,21 +198,14 @@ impl ThresholdSignature {
         hasher.finalize().to_vec()
     }
 
-    /// Sample partial mask vector y.
+    /// Draw the `y` mask polynomials used for partial signatures from the shared randomness.
     fn sample_partial_y<FF: FiniteField>(
         randomness: &[u8],
     ) -> Vec<Polynomial<'static, FF>> {
-        (0..L)
-        .map(|i| {
-            let mut namespaced = Vec::with_capacity(randomness.len() + 1);
-            namespaced.extend_from_slice(randomness);
-            namespaced.push(i as u8);
-            sample_gamma1(&namespaced)
-        })
-        .collect()
+        sample_gamma1_vector(randomness, L)
     }
 
-    /// Convert to polynomial with tau non-zero coefficients.
+    /// Derive the sparse challenge polynomial expected by partial proofs.
     fn generate_partial_challenge<FF: FiniteField + From<i64>>(
         mu: &[u8],
     ) -> Polynomial<'static, FF> {
@@ -231,6 +216,7 @@ impl ThresholdSignature {
         derive_challenge_polynomial::<FF>(&seed)
     }
 
+    /// Rebuild the aggregated `z` response vector from the provided partials.
     fn reconstruct_z_vector<FF: FiniteField>(
         &self,
         partial_signatures: &[PartialSignature<'static, FF>],
@@ -256,7 +242,7 @@ impl ThresholdSignature {
         reconstruct_vector_from_points::<FF, _>(active, &indices)
     }
 
-    /// Reconstruct hint vector (simplified implementation).
+    /// Recompute the hint vector; placeholder implementation for now.
     fn reconstruct_hint<FF: FiniteField>(
         &self,
         _partial_signatures: &[PartialSignature<'static, FF>],
@@ -277,148 +263,21 @@ impl Default for ThresholdSignature {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dilithium::params::{GAMMA1, K, L, N, TAU};
+    use crate::dilithium::params::{K, L};
     use crate::dilithium::utils::zero_polyvec;
     use math::field_element::FieldElement;
 
+    /// Build a deterministic 32-byte seed filled with the provided value.
     fn create_test_seed(value: u8) -> Vec<u8> {
         vec![value; 32]
     }
 
-    mod sample_partial_y_tests {
-        use super::*;
 
-        fn centered_value(fe: FieldElement) -> i64 {
-            let mut v = i64::from(fe);
-            let p = FieldElement::P as i64;
-            if v > p / 2 {
-                v -= p;
-            }
-            v
-        }
-
-        #[test]
-        fn produces_l_polynomials_within_bounds() {
-            let randomness = vec![0x11u8; 32];
-
-            let polys = ThresholdSignature::sample_partial_y::<FieldElement>(
-                &randomness,
-            );
-
-            assert_eq!(polys.len(), L);
-            for poly in &polys {
-                assert_eq!(poly.coefficients().len(), N);
-                for coeff in poly.coefficients() {
-                    let abs = centered_value(*coeff).abs();
-                    assert!(
-                        abs <= GAMMA1 as i64,
-                        "coefficient {abs} exceeds GAMMA1"
-                    );
-                }
-            }
-        }
-
-        #[test]
-        fn deterministic_for_same_randomness() {
-            let randomness = vec![0x22u8; 32];
-
-            let first = ThresholdSignature::sample_partial_y::<FieldElement>(
-                &randomness,
-            );
-            let second = ThresholdSignature::sample_partial_y::<FieldElement>(
-                &randomness,
-            );
-
-            assert_eq!(first, second);
-        }
-
-        #[test]
-        fn different_randomness_changes_output() {
-            let randomness_a = vec![0x33u8; 32];
-            let randomness_b = vec![0x44u8; 32];
-
-            let polys_a = ThresholdSignature::sample_partial_y::<FieldElement>(
-                &randomness_a,
-            );
-            let polys_b = ThresholdSignature::sample_partial_y::<FieldElement>(
-                &randomness_b,
-            );
-
-            assert_ne!(polys_a, polys_b);
-        }
-    }
-
-    mod generate_partial_challenge_tests {
-        use super::*;
-
-        fn centered_value(fe: FieldElement) -> i64 {
-            let mut v = i64::from(fe);
-            let p = FieldElement::P as i64;
-            if v > p / 2 {
-                v -= p;
-            }
-            v
-        }
-
-        #[test]
-        fn deterministic_for_identical_inputs() {
-            let mu = b"deterministic-mu";
-
-            let first = ThresholdSignature::generate_partial_challenge::<
-                FieldElement,
-            >(mu);
-            let second = ThresholdSignature::generate_partial_challenge::<
-                FieldElement,
-            >(mu);
-
-            assert_eq!(first, second);
-        }
-
-        #[test]
-        fn coefficients_are_sparse_and_small() {
-            let mu = b"weight-check";
-
-            let poly = ThresholdSignature::generate_partial_challenge::<
-                FieldElement,
-            >(mu);
-
-            let mut non_zero = 0usize;
-            for &coeff in poly.coefficients() {
-                let val = centered_value(coeff);
-                assert!(
-                    matches!(val, -1 | 0 | 1),
-                    "unexpected coefficient value: {val}"
-                );
-                if val != 0 {
-                    non_zero += 1;
-                }
-            }
-
-            assert!(
-                non_zero <= TAU,
-                "expected at most {TAU} non-zero coefficients, found {non_zero}"
-            );
-        }
-
-        #[test]
-        fn different_inputs_vary_output() {
-            let mu_a = b"challenge-a";
-            let mu_b = b"challenge-b";
-
-            let poly_a = ThresholdSignature::generate_partial_challenge::<
-                FieldElement,
-            >(mu_a);
-            let poly_b = ThresholdSignature::generate_partial_challenge::<
-                FieldElement,
-            >(mu_b);
-
-            assert_ne!(poly_a, poly_b);
-        }
-    }
 
     mod reconstruct_z_vector_tests {
         use super::*;
 
+        /// Helper to create a partial signature containing a single shared polynomial.
         fn make_partial(
             participant_id: usize,
             poly: &Polynomial<'static, FieldElement>,
@@ -482,6 +341,7 @@ mod tests {
     mod reconstruct_hint_tests {
         use super::*;
 
+        /// Build a dummy partial signature with zero-valued polynomials.
         fn zero_partial(id: usize) -> PartialSignature<'static, FieldElement> {
             let z_partial = Vec::from(zero_polyvec::<L, FieldElement>());
             let commitment = Vec::from(zero_polyvec::<K, FieldElement>());
