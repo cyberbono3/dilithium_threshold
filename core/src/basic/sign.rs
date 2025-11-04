@@ -1,7 +1,7 @@
 use crate::dilithium::error::DilithiumError;
 use crate::dilithium::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N};
 use crate::basic::keypair::{PrivateKey, PublicKey};
-use crate::matrix::hash::shake256;
+use crate::matrix::{hash::shake256, MatrixAExt};
 
 use math::prelude::FieldElement;
 use math::{poly::Polynomial, traits::FiniteField};
@@ -214,7 +214,7 @@ where
     /// Attempt one signing iteration; returns `None` if bounds are violated.
     fn try_with_counter(&self, ctr: u32) -> Option<Signature<'static, FF>> {
         let y = sample_y::<FF>(&self.y_seed, ctr);
-        let w = self.priv_key.a.mul(&y);
+        let w = self.priv_key.a.mul_poly_array(&y);
         let w1 = from_fn(|idx| poly_high(&w[idx]));
         let challenge = derive_challenge(self.msg, &pack_w1_for_hash(&w1));
 
@@ -269,7 +269,7 @@ where
         return false;
     }
 
-    let az = pub_key.a.mul(&sig.z);
+    let az = pub_key.a.mul_poly_array(&sig.z);
     let w1_prime = {
         let az_minus_ct = polyvec_sub_scaled::<FF, K>(&az, &sig.c, &pub_key.t);
         az_minus_ct.map(|poly| poly_high(&poly))

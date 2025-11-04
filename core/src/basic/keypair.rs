@@ -1,6 +1,6 @@
 use crate::dilithium::params::{K, L, N};
 use crate::dilithium::utils::{random_bytes, shake256_squeezed, zero_polyvec};
-use crate::matrix::{MatrixA, expand_a_from_rho};
+use crate::matrix::{MatrixA, MatrixAExt, expand_a_from_rho};
 use math::{poly::Polynomial, traits::FiniteField};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -114,7 +114,7 @@ impl KeypairSeeds {
         let s1 = Self::expand_secret_vector::<L, FF>(&s1);
         let s2 = Self::expand_secret_vector::<K, FF>(&s2);
 
-        let mut t = a.mul(&s1);
+        let mut t = a.mul_poly_array(&s1);
         t.iter_mut()
             .zip(s2.iter())
             .for_each(|(dest, addend)| *dest += addend.clone());
@@ -154,9 +154,10 @@ mod tests {
         let (pk, sk) = keygen::<FieldElement>();
 
         // Shapes
-        assert_eq!(pk.a.rows.len(), K);
-        for i in 0..K {
-            assert_eq!(pk.a.rows[i].len(), L);
+        assert_eq!(pk.a.rows(), K);
+        let pk_rows = pk.a.as_slice();
+        for row in pk_rows {
+            assert_eq!(row.len(), L);
         }
         assert_eq!(pk.t.len(), K);
         assert_eq!(sk.s1.len(), L);
@@ -170,10 +171,13 @@ mod tests {
 
         // pk.a should equal expand_a_from_rho(pk.rho)
         let a_from_rho = expand_a_from_rho(pk.rho);
-        for i in 0..K {
-            for j in 0..L {
+        let pk_rows = pk.a.as_slice();
+        let rho_rows = a_from_rho.as_slice();
+        assert_eq!(pk_rows.len(), rho_rows.len());
+        for (i, (pk_row, rho_row)) in pk_rows.iter().zip(rho_rows).enumerate() {
+            for (j, (pk_val, rho_val)) in pk_row.iter().zip(rho_row).enumerate() {
                 assert_eq!(
-                    pk.a.rows[i][j], a_from_rho.rows[i][j],
+                    pk_val, rho_val,
                     "A mismatch at {},{}",
                     i, j
                 );
@@ -181,10 +185,12 @@ mod tests {
         }
 
         // pk.a and sk.a should match
-        for i in 0..K {
-            for j in 0..L {
+        let sk_rows = sk.a.as_slice();
+        assert_eq!(pk_rows.len(), sk_rows.len());
+        for (i, (pk_row, sk_row)) in pk_rows.iter().zip(sk_rows).enumerate() {
+            for (j, (pk_val, sk_val)) in pk_row.iter().zip(sk_row).enumerate() {
                 assert_eq!(
-                    pk.a.rows[i][j], sk.a.rows[i][j],
+                    pk_val, sk_val,
                     "A(pk) != A(sk) at {},{}",
                     i, j
                 );
@@ -197,7 +203,7 @@ mod tests {
     fn t_equals_a_times_s1_plus_s2() {
         let (pk, sk) = keygen::<FieldElement>();
 
-        let as1 = sk.a.mul(&sk.s1);
+        let as1 = sk.a.mul_poly_array(&sk.s1);
         let expected_t: Vec<_> = as1
             .into_iter()
             .zip(sk.s2.iter())
@@ -217,7 +223,7 @@ mod tests {
         let (pk2, sk2) = keygen_with_seeds::<FieldElement>(rho, s1, s2);
 
         // Matrices and secrets identical
-        assert_eq!(pk1.a.rows, pk2.a.rows);
+        assert_eq!(pk1.a.as_slice(), pk2.a.as_slice());
         for i in 0..K {
             assert_eq!(sk1.s2[i], sk2.s2[i]);
         }
