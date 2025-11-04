@@ -1,9 +1,7 @@
-use crate::hash::shake256;
+use crate::dilithium::params::{K, L, N};
+use crate::dilithium::utils::{random_bytes, shake256_squeezed, zero_polyvec};
 use crate::matrix::{MatrixA, expand_a_from_rho};
-use crate::params::{K, L, N};
-use crate::utils::{random_bytes, zero_polyvec};
 use math::{poly::Polynomial, traits::FiniteField};
-use std::ops::Mul;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PublicKey<'a, FF: FiniteField> {
@@ -43,6 +41,7 @@ impl<'a, FF: FiniteField> PrivateKey<'a, FF> {
 }
 
 /// CBD for η=2 from an XOF stream.
+/// Converts a byte stream into a centered binomial distribution polynomial with eta=2.
 fn cbd_eta2<FF: FiniteField + From<i64>>(
     stream: &[u8],
 ) -> Polynomial<'static, FF> {
@@ -62,66 +61,94 @@ fn cbd_eta2<FF: FiniteField + From<i64>>(
     out.into()
 }
 
-pub fn keygen<FF: FiniteField + From<i64>>()
--> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
-    let rho = random_bytes();
-    let s1_seed = random_bytes();
-    let s2_seed = random_bytes();
-
-    keygen_with_seeds::<FF>(rho, s1_seed, s2_seed)
+#[derive(Debug, Clone, Copy)]
+pub struct KeypairSeeds {
+    pub rho: [u8; 32],
+    pub s1: [u8; 32],
+    pub s2: [u8; 32],
 }
 
-#[inline]
-fn expand_secret_array<const LEN: usize, FF>(
-    seed: impl AsRef<[u8]>,
-) -> [Polynomial<'static, FF>; LEN]
-where
-    FF: math::traits::FiniteField + From<i64>,
-{
-    let seed = seed.as_ref();
-    let mut input = Vec::with_capacity(seed.len() + 2);
-    input.extend_from_slice(seed);
-    input.extend_from_slice(&[0u8; 2]);
-
-    let mut secrets = zero_polyvec::<LEN, FF>();
-    for (j, slot) in secrets.iter_mut().enumerate() {
-        let idx_bytes = (j as u16).to_le_bytes();
-        let offset = input.len() - 2;
-        input[offset..].copy_from_slice(&idx_bytes);
-        let bytes = shake256(2 * N, &input);
-        *slot = cbd_eta2::<FF>(&bytes);
+impl KeypairSeeds {
+    #[inline]
+    /// Generate fresh random seeds for key generation.
+    pub fn random() -> Self {
+        Self {
+            rho: random_bytes(),
+            s1: random_bytes(),
+            s2: random_bytes(),
+        }
     }
 
-    secrets
+    #[inline]
+    /// Assemble seeds from explicit 32-byte inputs.
+    pub const fn new(rho: [u8; 32], s1: [u8; 32], s2: [u8; 32]) -> Self {
+        Self { rho, s1, s2 }
+    }
+
+    /// Expand a seed into a vector of η=2 sampled polynomials.
+    fn expand_secret_vector<const LEN: usize, FF>(
+        seed: &[u8; 32],
+    ) -> [Polynomial<'static, FF>; LEN]
+    where
+        FF: math::traits::FiniteField + From<i64>,
+    {
+        let mut secrets = zero_polyvec::<LEN, FF>();
+        for (index, slot) in secrets.iter_mut().enumerate() {
+            let idx_bytes = (index as u16).to_le_bytes();
+            let bytes = shake256_squeezed(seed, &[&idx_bytes], 2 * N);
+            *slot = cbd_eta2::<FF>(&bytes);
+        }
+
+        secrets
+    }
+
+    /// Consume the seeds to deterministically derive a Dilithium keypair.
+    pub fn into_keypair<FF>(
+        self,
+    ) -> (PublicKey<'static, FF>, PrivateKey<'static, FF>)
+    where
+        FF: math::traits::FiniteField + From<i64>,
+    {
+        let KeypairSeeds { rho, s1, s2 } = self;
+        let a = expand_a_from_rho(rho);
+        let s1 = Self::expand_secret_vector::<L, FF>(&s1);
+        let s2 = Self::expand_secret_vector::<K, FF>(&s2);
+
+        let mut t = a.mul(&s1);
+        t.iter_mut()
+            .zip(s2.iter())
+            .for_each(|(dest, addend)| *dest += addend.clone());
+
+        let public_key = PublicKey::new(a.clone(), t, rho);
+        let private_key = PrivateKey::new(a, s1, s2);
+
+        (public_key, private_key)
+    }
 }
 
+/// Generate a random Dilithium keypair.
+pub fn keygen<FF: FiniteField + From<i64>>()
+-> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
+    KeypairSeeds::random().into_keypair::<FF>()
+}
+
+/// Derive a deterministic keypair from caller supplied seeds.
 pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
     rho: [u8; 32],
     s1_seed: [u8; 32],
     s2_seed: [u8; 32],
 ) -> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
-    let a = expand_a_from_rho(rho);
-    let s1 = expand_secret_array::<L, FF>(s1_seed);
-    let s2 = expand_secret_array::<K, FF>(s2_seed);
-
-    let mut t = a.mul(&s1);
-    t.iter_mut()
-        .zip(s2.iter())
-        .for_each(|(dest, addend)| *dest += addend.clone());
-
-    let public_key = PublicKey::new(a.clone(), t, rho);
-    let private_key = PrivateKey::new(a, s1, s2);
-
-    (public_key, private_key)
+    KeypairSeeds::new(rho, s1_seed, s2_seed).into_keypair::<FF>()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dilithium::params::{K, L};
     use crate::matrix::expand_a_from_rho;
-    use crate::params::{K, L};
     use math::field_element::FieldElement;
 
+    /// Ensure key generation returns structures with expected dimensions.
     #[test]
     fn keygen_shapes_and_secret_bounds() {
         let (pk, sk) = keygen::<FieldElement>();
@@ -136,6 +163,7 @@ mod tests {
         assert_eq!(sk.s2.len(), K);
     }
 
+    /// Confirm the public matrix matches the rho-derived matrix and secret key.
     #[test]
     fn public_matrix_matches_rho_and_secret_matrix() {
         let (pk, sk) = keygen::<FieldElement>();
@@ -164,6 +192,7 @@ mod tests {
         }
     }
 
+    /// Validate that t equals A*s1 + s2 for generated keys.
     #[test]
     fn t_equals_a_times_s1_plus_s2() {
         let (pk, sk) = keygen::<FieldElement>();
@@ -178,6 +207,7 @@ mod tests {
         assert_eq!(pk.t.as_slice(), expected_t.as_slice());
     }
 
+    /// Ensure deterministic key generation when identical seeds are provided.
     #[test]
     fn keygen_is_deterministic_given_seeds() {
         let rho = [3u8; 32];

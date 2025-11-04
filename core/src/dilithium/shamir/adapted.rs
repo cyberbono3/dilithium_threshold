@@ -1,59 +1,14 @@
 use math::{prelude::*, traits::FiniteField};
 
-use crate::{
-    error::{ThresholdError, ThresholdResult},
-    params::validate_threshold_config,
-    traits::PointSource,
-    utils::reconstruct_vector_from_points,
-};
+use crate::dilithium::error::{DilithiumError, DilithiumResult};
+use crate::dilithium::params::validate_threshold_config;
+use crate::dilithium::shamir::error::ShamirError;
+use crate::dilithium::utils::reconstruct_vector_from_points;
 
-use rand::Rng;
+use super::accumulator::ShareAccumulator;
+use super::share::ShamirShare;
 
-/// Adapted Shamir's Secret Sharing
-#[derive(Clone, Debug, PartialEq)]
-pub struct ShamirShare<'a, FF: FiniteField> {
-    pub participant_id: usize,
-    // pub share_vector: PolynomialVector<'a, FF>,
-    pub share_vector: Vec<Polynomial<'a, FF>>,
-}
-
-impl<FF: FiniteField> ShamirShare<'static, FF> {
-    pub fn new(
-        participant_id: usize,
-        share_vector: Vec<Polynomial<'static, FF>>,
-    ) -> ThresholdResult<Self> {
-        if participant_id == 0 {
-            return Err(ThresholdError::InvalidParticipantId(participant_id));
-        }
-
-        Ok(ShamirShare {
-            participant_id,
-            share_vector,
-        })
-    }
-
-    pub fn vector_length(&self) -> usize {
-        self.share_vector.len()
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct Share<FF: FiniteField> {
-    poly_idx: usize,
-    coeff_idx: usize,
-    value: FF,
-}
-
-impl<FF: FiniteField> Share<FF> {
-    const fn new(poly_idx: usize, coeff_idx: usize, value: FF) -> Self {
-        Self {
-            poly_idx,
-            coeff_idx,
-            value,
-        }
-    }
-}
-
+/// Adapted Shamir secret sharing scheme tailored for polynomial vectors.
 #[derive(Debug)]
 pub struct AdaptedShamirSSS {
     threshold: usize,
@@ -61,13 +16,23 @@ pub struct AdaptedShamirSSS {
 }
 
 impl AdaptedShamirSSS {
-    /// Initialize the adapted Shamir scheme.
+    /// Allocate accumulators for each participant with buffers sized to `lengths`.
+    fn share_accumulators<FF: FiniteField>(
+        &self,
+        lengths: &[usize],
+    ) -> Vec<ShareAccumulator<FF>> {
+        (1..=self.participant_number)
+            .map(|pid| ShareAccumulator::new(pid, lengths))
+            .collect()
+    }
+
+    /// Create a sharing scheme for the provided threshold/participant configuration.
     pub fn new(
         threshold: usize,
         participant_number: usize,
-    ) -> ThresholdResult<Self> {
+    ) -> DilithiumResult<Self> {
         if !validate_threshold_config(threshold, participant_number) {
-            return Err(ThresholdError::InvalidThreshold(
+            return Err(DilithiumError::InvalidThreshold(
                 threshold,
                 participant_number,
             ));
@@ -79,131 +44,104 @@ impl AdaptedShamirSSS {
         })
     }
 
-    /// Split a polynomial vector secret into shares.
+    /// Split a vector of polynomials into participant shares.
     pub fn split_secret<FF>(
         &self,
         secret_vector: &[Polynomial<'static, FF>],
-    ) -> ThresholdResult<Vec<ShamirShare<'static, FF>>>
+    ) -> DilithiumResult<Vec<ShamirShare<'static, FF>>>
     where
         FF: FiniteField,
         rand::distributions::Standard: rand::distributions::Distribution<FF>,
     {
-        let vector_length = secret_vector.len();
-        let mut buckets = self.init_share_buckets::<FF>(vector_length);
-
-        for (poly_idx, polynomial) in secret_vector.iter().enumerate() {
-            self.distribute_polynomial(poly_idx, polynomial, &mut buckets);
+        if secret_vector.is_empty() {
+            return Ok(Vec::new());
         }
 
-        self.organize_shares(buckets, vector_length)
-    }
+        let lengths: Vec<usize> = secret_vector
+            .iter()
+            .map(|poly| poly.coefficients().len())
+            .collect();
 
-    fn init_share_buckets<FF>(
-        &self,
-        vector_length: usize,
-    ) -> Vec<Vec<Share<FF>>>
-    where
-        FF: FiniteField,
-    {
-        (0..self.participant_number)
-            .map(|_| Vec::with_capacity(vector_length * N))
+        let mut accumulators: Vec<ShareAccumulator<FF>> =
+            self.share_accumulators(&lengths);
+
+        let mut rng = rand::thread_rng();
+
+        for (poly_idx, polynomial) in secret_vector.iter().enumerate() {
+            for (coeff_idx, &secret_coeff) in
+                polynomial.coefficients().iter().enumerate()
+            {
+                let shamir_poly =
+                    self.create_shamir_polynomial_with(&mut rng, secret_coeff);
+                for (pid, accumulator) in accumulators.iter_mut().enumerate() {
+                    let point = FF::from((pid + 1) as u64);
+                    let value = shamir_poly.evaluate_in_same_field(point);
+                    accumulator.insert(poly_idx, coeff_idx, value);
+                }
+            }
+        }
+
+        accumulators
+            .into_iter()
+            .map(ShareAccumulator::finalize)
             .collect()
     }
 
-    fn distribute_polynomial<FF>(
-        &self,
-        poly_idx: usize,
-        polynomial: &Polynomial<'static, FF>,
-        buckets: &mut [Vec<Share<FF>>],
-    ) where
-        FF: FiniteField,
-        rand::distributions::Standard: rand::distributions::Distribution<FF>,
-    {
-        for (coeff_idx, secret_coeff) in
-            polynomial.coefficients().iter().copied().enumerate()
-        {
-            let shamir_poly = self.create_shamir_polynomial(&secret_coeff);
-            for (pid, bucket) in buckets.iter_mut().enumerate() {
-                let point = FF::from((pid + 1) as u64);
-                let value = shamir_poly.evaluate_in_same_field(point);
-                bucket.push(Share::new(poly_idx, coeff_idx, value));
-            }
-        }
-    }
-
-    /// Reconstruct the secret from a sufficient number of shares.
-    // TODO fix code duplciation with partial_reconstruct
+    /// Reconstruct the entire secret vector from the first `threshold` shares.
     pub fn reconstruct_secret<FF: FiniteField>(
         &self,
         shares: &[ShamirShare<'static, FF>],
-    ) -> ThresholdResult<Vec<Polynomial<'static, FF>>> {
+    ) -> DilithiumResult<Vec<Polynomial<'static, FF>>> {
         let (active_shares, vector_length) =
             self.select_active_shares(shares)?;
         let poly_indices: Vec<usize> = (0..vector_length).collect();
-        self.reconstruct_poly_vector(active_shares, &poly_indices)
+        Self::reconstruct_poly_vector(active_shares, &poly_indices)
     }
 
     #[cfg(test)]
-    /// Partially reconstruct only specified polynomials from the vector.
+    /// Reconstruct only the requested polynomial indices (test helper).
     pub fn partial_reconstruct<FF: FiniteField>(
         &self,
         shares: &[ShamirShare<'static, FF>],
         poly_indices: &[usize],
-    ) -> ThresholdResult<Vec<Polynomial<'static, FF>>> {
+    ) -> DilithiumResult<Vec<Polynomial<'static, FF>>> {
         let (active_shares, vector_length) =
             self.select_active_shares(shares)?;
-        self.ensure_poly_indices_within_bounds(poly_indices, vector_length)?;
-        self.reconstruct_poly_vector(active_shares, poly_indices)
+        Self::reconstruct_poly_vector(active_shares, poly_indices)
     }
 
-    #[cfg(test)]
-    fn ensure_poly_indices_within_bounds(
-        &self,
-        poly_indices: &[usize],
-        vector_length: usize,
-    ) -> ThresholdResult<()> {
-        if let Some(&invalid_idx) =
-            poly_indices.iter().find(|&&idx| idx >= vector_length)
-        {
-            return Err(ThresholdError::InvalidIndex(
-                invalid_idx,
-                vector_length,
-            ));
-        }
-        Ok(())
-    }
-
+    /// Helper to invoke the shared polynomial-vector reconstruction utility.
     fn reconstruct_poly_vector<FF: FiniteField>(
-        &self,
         shares: &[ShamirShare<'static, FF>],
         poly_indices: &[usize],
-    ) -> ThresholdResult<Vec<Polynomial<'static, FF>>> {
+    ) -> DilithiumResult<Vec<Polynomial<'static, FF>>> {
         reconstruct_vector_from_points::<FF, _>(shares, poly_indices)
     }
 
+    /// Take the first `threshold` shares and ensure they are consistent in length.
     fn select_active_shares<'a, FF>(
         &self,
         shares: &'a [ShamirShare<'static, FF>],
-    ) -> ThresholdResult<(&'a [ShamirShare<'static, FF>], usize)>
+    ) -> DilithiumResult<(&'a [ShamirShare<'static, FF>], usize)>
     where
         FF: FiniteField,
     {
         if shares.len() < self.threshold {
-            return Err(ThresholdError::InsufficientShares(
+            return Err(DilithiumError::InsufficientShares(
                 self.threshold,
                 shares.len(),
             ));
         }
 
         let active = &shares[..self.threshold];
-        let vector_length = self.ensure_consistent_lengths(active)?;
+        let vector_length = Self::ensure_consistent_lengths(active)?;
         Ok((active, vector_length))
     }
 
+    /// Validate that all shares expose the same polynomial vector length.
     fn ensure_consistent_lengths<FF>(
-        &self,
         shares: &[ShamirShare<'static, FF>],
-    ) -> ThresholdResult<usize>
+    ) -> DilithiumResult<usize>
     where
         FF: FiniteField,
     {
@@ -216,69 +154,14 @@ impl AdaptedShamirSSS {
             .iter()
             .any(|share| share.vector_length() != expected_length)
         {
-            return Err(ThresholdError::InconsistentShareLengths);
+            return Err(ShamirError::InconsistentShareLengths.into());
         }
 
         Ok(expected_length)
     }
 
-    /// Organize participant shares into ShamirShare objects
-    fn organize_shares<FF: FiniteField>(
-        &self,
-        participant_shares: Vec<Vec<Share<FF>>>,
-        vector_length: usize,
-    ) -> ThresholdResult<Vec<ShamirShare<'static, FF>>> {
-        let mut shares = Vec::with_capacity(self.participant_number);
-
-        for (pid_offset, shares_for_pid) in
-            participant_shares.into_iter().enumerate()
-        {
-            let polynomials =
-                Self::build_share_polynomials(vector_length, &shares_for_pid);
-            shares.push(ShamirShare::new(pid_offset + 1, polynomials)?);
-        }
-
-        Ok(shares)
-    }
-
-    fn build_share_polynomials<FF: FiniteField>(
-        vector_length: usize,
-        shares_for_pid: &[Share<FF>],
-    ) -> Vec<Polynomial<'static, FF>> {
-        let required_lengths =
-            Self::collect_required_lengths(vector_length, shares_for_pid);
-        let mut buffers =
-            Self::allocate_polynomial_buffers::<FF>(&required_lengths);
-
-        for share in shares_for_pid {
-            buffers[share.poly_idx][share.coeff_idx] = share.value;
-        }
-
-        buffers.into_iter().map(Polynomial::from).collect()
-    }
-
-    fn collect_required_lengths<FF: FiniteField>(
-        vector_length: usize,
-        shares_for_pid: &[Share<FF>],
-    ) -> Vec<usize> {
-        let mut per_poly_len = vec![0usize; vector_length];
-        for share in shares_for_pid {
-            let required_len = share.coeff_idx + 1;
-            per_poly_len[share.poly_idx] =
-                per_poly_len[share.poly_idx].max(required_len);
-        }
-        per_poly_len
-    }
-
-    fn allocate_polynomial_buffers<FF: FiniteField>(
-        lengths: &[usize],
-    ) -> Vec<Vec<FF>> {
-        lengths
-            .iter()
-            .map(|&len| vec![FF::default(); len])
-            .collect()
-    }
-
+    #[cfg(test)]
+    /// Convenience helper used in tests to generate a random sharing polynomial.
     fn create_shamir_polynomial<FF>(
         &self,
         secret: &FF,
@@ -288,13 +171,29 @@ impl AdaptedShamirSSS {
         rand::distributions::Standard: rand::distributions::Distribution<FF>,
     {
         let mut rng = rand::thread_rng();
-        let coefficients: Vec<FF> = std::iter::once(*secret)
-            .chain((1..self.threshold).map(|_| rng.r#gen()))
+        self.create_shamir_polynomial_with(&mut rng, *secret)
+    }
+
+    /// Build a random polynomial of degree threshold-1 with the constant term set to `secret`.
+    fn create_shamir_polynomial_with<FF, R>(
+        &self,
+        rng: &mut R,
+        secret: FF,
+    ) -> Polynomial<'static, FF>
+    where
+        FF: FiniteField,
+        R: rand::Rng + ?Sized,
+        rand::distributions::Standard: rand::distributions::Distribution<FF>,
+    {
+        let coefficients: Vec<FF> = std::iter::once(secret)
+            .chain(
+                std::iter::repeat_with(|| rand::Rng::r#gen(rng))
+                    .take(self.threshold.saturating_sub(1)),
+            )
             .collect();
         Polynomial::from(coefficients)
     }
 
-    /// Evaluate polynomial at given point using Horner's method
     #[cfg(test)]
     fn evaluate_polynomial(coeffs: &[i32], x: i32) -> i32 {
         let mut result = 0i64;
@@ -309,25 +208,10 @@ impl AdaptedShamirSSS {
     }
 }
 
-impl<FF: FiniteField> PointSource<FF> for ShamirShare<'static, FF> {
-    fn x(&self) -> FF {
-        // Adjust field name as needed: `id` or `participant_id`.
-        let pid: usize = self.participant_id; // or `self.id`
-        (pid as u64).into()
-    }
-
-    fn poly_at(&self, index: usize) -> Option<&Polynomial<'static, FF>> {
-        self.share_vector.get(index)
-    }
-
-    fn poly_count(&self) -> usize {
-        self.vector_length()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use num_traits::Zero;
 
     impl Default for AdaptedShamirSSS {
         fn default() -> Self {
@@ -338,51 +222,14 @@ mod tests {
         }
     }
 
-    mod shamir_share_tests {
-        use super::*;
-
-        #[test]
-        fn test_share_creation() {
-            let poly1: Polynomial<'_, FieldElement> = poly![1, 2, 3, 4, 5];
-            let poly2: Polynomial<'_, FieldElement> = poly![6, 7, 8, 9, 10];
-            let share_vector = vec![poly1, poly2];
-            let share = ShamirShare::new(1, share_vector.clone()).unwrap();
-
-            assert_eq!(share.participant_id, 1);
-            assert_eq!(share.vector_length(), 2);
-            assert_eq!(share.share_vector, share_vector);
-        }
-
-        #[test]
-        fn test_invalid_participant_id() {
-            let poly1: Polynomial<'_, FieldElement> = poly![1, 2, 3, 4, 5];
-            let share_vector = vec![poly1];
-
-            // Test that participant ID 0 is rejected
-            assert!(ShamirShare::new(0, share_vector.clone()).is_err());
-        }
-
-        #[test]
-        fn test_share_debug_representation() {
-            let poly1: Polynomial<'_, FieldElement> = poly![1, 2, 3];
-            let share_vector = vec![poly1];
-            let share = ShamirShare::new(1, share_vector).unwrap();
-
-            let debug_str = format!("{:?}", share);
-            assert!(debug_str.contains("ShamirShare"));
-            assert!(debug_str.contains("participant_id: 1"));
-        }
-    }
-
     mod adapted_shamir_sss_tests {
-        use num_traits::Zero;
-
         use super::*;
+        use num_traits::Zero;
 
         fn setup_adapted_shamir(
             threshold: usize,
             participants: usize,
-        ) -> ThresholdResult<AdaptedShamirSSS> {
+        ) -> DilithiumResult<AdaptedShamirSSS> {
             AdaptedShamirSSS::new(threshold, participants)
         }
 
@@ -402,110 +249,78 @@ mod tests {
 
         #[test]
         fn ensure_consistent_lengths_empty_slice() {
-            let shamir = AdaptedShamirSSS::default();
-            let len = shamir
-                .ensure_consistent_lengths::<FieldElement>(&[])
-                .expect("empty input should succeed");
+            let len = AdaptedShamirSSS::ensure_consistent_lengths::<
+                FieldElement,
+            >(&[])
+            .expect("empty input should succeed");
             assert_eq!(len, 0);
         }
 
         #[test]
         fn ensure_consistent_lengths_reports_error() {
-            let shamir = AdaptedShamirSSS::default();
             let shares = vec![share_with_length(1, 2), share_with_length(2, 3)];
 
-            let err = shamir
-                .ensure_consistent_lengths::<FieldElement>(&shares)
+            let err =
+                AdaptedShamirSSS::ensure_consistent_lengths::<FieldElement>(
+                    &shares,
+                )
                 .expect_err("mismatched lengths must fail");
-            assert!(matches!(err, ThresholdError::InconsistentShareLengths));
+            assert!(matches!(
+                err,
+                DilithiumError::Shamir(ShamirError::InconsistentShareLengths)
+            ));
         }
 
         #[test]
         fn ensure_consistent_lengths_tracks_length() {
-            let shamir = AdaptedShamirSSS::default();
             let shares = vec![share_with_length(1, 4), share_with_length(2, 4)];
 
-            let len = shamir
-                .ensure_consistent_lengths::<FieldElement>(&shares)
+            let len =
+                AdaptedShamirSSS::ensure_consistent_lengths::<FieldElement>(
+                    &shares,
+                )
                 .expect("consistent lengths should succeed");
             assert_eq!(len, 4);
         }
 
         #[test]
         fn ensure_consistent_lengths_single_share() {
-            let shamir = AdaptedShamirSSS::default();
             let shares = vec![share_with_length(1, 5)];
 
-            let len = shamir
-                .ensure_consistent_lengths::<FieldElement>(&shares)
+            let len =
+                AdaptedShamirSSS::ensure_consistent_lengths::<FieldElement>(
+                    &shares,
+                )
                 .expect("single share should succeed");
             assert_eq!(len, 5);
         }
 
         #[test]
-        fn collect_required_lengths_handles_empty_shares() {
-            let lengths = AdaptedShamirSSS::collect_required_lengths::<
-                FieldElement,
-            >(3, &[]);
-            assert_eq!(lengths, vec![0, 0, 0]);
-        }
-
-        #[test]
-        fn collect_required_lengths_respects_highest_index() {
-            let shares = vec![
-                Share::new(0, 0, FieldElement::from(1)),
-                Share::new(0, 2, FieldElement::from(2)),
-                Share::new(1, 1, FieldElement::from(3)),
-            ];
-
-            let lengths = AdaptedShamirSSS::collect_required_lengths::<
-                FieldElement,
-            >(3, &shares);
-
-            assert_eq!(lengths, vec![3, 2, 0]);
-        }
-
-        #[test]
-        fn collect_required_lengths_ignores_unused_polynomials() {
-            let shares = vec![Share::new(2, 4, FieldElement::from(5))];
-            let lengths = AdaptedShamirSSS::collect_required_lengths::<
-                FieldElement,
-            >(4, &shares);
-
-            assert_eq!(lengths, vec![0, 0, 5, 0]);
-        }
-
-        #[test]
         fn test_invalid_threshold_config() {
-            // Threshold too small
             assert!(matches!(
                 setup_adapted_shamir(1, 5),
-                Err(ThresholdError::InvalidThreshold(1, 5))
+                Err(DilithiumError::InvalidThreshold(1, 5))
             ));
             assert!(matches!(
                 setup_adapted_shamir(0, 5),
-                Err(ThresholdError::InvalidThreshold(0, 5))
+                Err(DilithiumError::InvalidThreshold(0, 5))
             ));
 
-            // Threshold larger than participants
             assert!(matches!(
                 setup_adapted_shamir(6, 5),
-                Err(ThresholdError::InvalidThreshold(6, 5))
+                Err(DilithiumError::InvalidThreshold(6, 5))
             ));
 
-            // Too many participants (assuming max is 255 based on typical limits)
             assert!(matches!(
                 setup_adapted_shamir(3, 300),
-                Err(ThresholdError::InvalidThreshold(3, 300))
+                Err(DilithiumError::InvalidThreshold(3, 300))
             ));
         }
 
-        // TODO fix it
         #[test]
         fn test_secret_splitting() {
             let shamir = AdaptedShamirSSS::default();
 
-            // Create test secret vector
             let coeffs = fe_vec!(1, 2, 3, 4, 5);
             let secret_poly1: Polynomial<'_, FieldElement> =
                 poly!(coeffs.clone());
@@ -517,10 +332,8 @@ mod tests {
 
             let shares = shamir.split_secret(&secret_vector).unwrap();
 
-            // Check we get correct number of shares
             assert_eq!(shares.len(), shamir.participant_number);
 
-            // Check each share has correct participant ID
             for (i, share) in shares.iter().enumerate() {
                 assert_eq!(share.participant_id, i + 1);
                 assert_eq!(share.vector_length(), secret_vector.len());
@@ -531,23 +344,15 @@ mod tests {
         fn test_secret_reconstruction() {
             let shamir = AdaptedShamirSSS::default();
 
-            // Create test secret vector
-            // TODO declare standadlone function
-            let secret_poly1: Polynomial<'_, FieldElement> =
-                poly![1, 2, 3, 4, 5];
-            let secret_poly2: Polynomial<'_, FieldElement> =
-                poly![10, 20, 30, 40, 50];
-            let secret_vector = vec![secret_poly1, secret_poly2];
+            let secret_vector: Vec<Polynomial<'_, FieldElement>> =
+                vec![poly![1, 2, 3, 4, 5], poly![10, 20, 30, 40, 50]];
 
-            // Split secret
             let shares = shamir.split_secret(&secret_vector).unwrap();
 
-            // Reconstruct using exactly threshold shares
             let reconstructed = shamir
                 .reconstruct_secret(&shares[..shamir.threshold])
                 .unwrap();
 
-            // Check reconstruction is correct
             assert_eq!(reconstructed, secret_vector);
         }
 
@@ -561,11 +366,9 @@ mod tests {
 
             let shares = shamir.split_secret(&secret_vector).unwrap();
 
-            // Use all shares
             let reconstructed = shamir.reconstruct_secret(&shares).unwrap();
             assert_eq!(reconstructed, secret_vector);
 
-            // Use threshold + 1 shares
             let reconstructed2 =
                 shamir.reconstruct_secret(&shares[..threshold + 1]).unwrap();
             assert_eq!(reconstructed2, secret_vector);
@@ -580,21 +383,19 @@ mod tests {
 
             let shares = shamir.split_secret(&secret_vector).unwrap();
 
-            // Try with threshold - 1 shares
             let result =
                 shamir.reconstruct_secret(&shares[..shamir.threshold - 1]);
             assert!(matches!(
                 result,
-                Err(ThresholdError::InsufficientShares(required, provided))
+                Err(DilithiumError::InsufficientShares(required, provided))
                     if required == shamir.threshold
                         && provided == shamir.threshold - 1
             ));
 
-            // Try with empty slice
             let empty_shares: &[ShamirShare<FieldElement>] = &[];
             assert!(matches!(
                 shamir.reconstruct_secret(empty_shares),
-                Err(ThresholdError::InsufficientShares(required, 0))
+                Err(DilithiumError::InsufficientShares(required, 0))
                     if required == shamir.threshold
             ));
         }
@@ -604,7 +405,6 @@ mod tests {
             let threshold = 3;
             let shamir = setup_adapted_shamir(threshold, 5).unwrap();
 
-            // Create test secret vector
             let secret_poly1: Polynomial<'_, FieldElement> =
                 poly![1, 2, 3, 4, 5];
             let secret_poly2: Polynomial<'_, FieldElement> =
@@ -614,19 +414,17 @@ mod tests {
 
             let shares = shamir.split_secret(&secret_vector).unwrap();
 
-            // Reconstruct only first polynomial
             let partial = shamir
                 .partial_reconstruct(&shares[..threshold], &[0])
                 .unwrap();
             assert_eq!(partial.len(), 1);
-            assert_eq!(partial.get(0).unwrap(), &secret_poly1);
+            assert_eq!(partial.first(), Some(&secret_poly1));
 
-            // Reconstruct only second polynomial
             let partial2 = shamir
                 .partial_reconstruct(&shares[..threshold], &[1])
                 .unwrap();
             assert_eq!(partial2.len(), 1);
-            assert_eq!(partial2.get(0).unwrap(), &secret_poly2);
+            assert_eq!(partial2.first(), Some(&secret_poly2));
         }
 
         #[test]
@@ -634,7 +432,6 @@ mod tests {
             let threshold = 3;
             let shamir = setup_adapted_shamir(threshold, 5).unwrap();
 
-            // Test with single polynomial
             let single_poly: Polynomial<'_, FieldElement> = poly![42, 17];
             let single_vector = vec![single_poly];
             let shares = shamir.split_secret(&single_vector).unwrap();
@@ -642,7 +439,6 @@ mod tests {
                 shamir.reconstruct_secret(&shares[..threshold]).unwrap();
             assert_eq!(reconstructed, single_vector);
 
-            // Test with longer vector
             let poly1: Polynomial<'_, FieldElement> = poly![1, 2, 3];
             let poly2: Polynomial<'_, FieldElement> = poly![10, 20, 30];
             let poly3: Polynomial<'_, FieldElement> = poly![100, 200, 300];
@@ -658,7 +454,6 @@ mod tests {
             let threshold = 2;
             let shamir = setup_adapted_shamir(threshold, 3).unwrap();
 
-            // Create zero polynomial
             let zero_poly: Polynomial<'_, FieldElement> =
                 poly![FieldElement::default(); N];
             let zero_vector = vec![zero_poly];
@@ -670,8 +465,7 @@ mod tests {
 
             assert_eq!(reconstructed, zero_vector);
 
-            // Check all coefficients are zero
-            let reconstructed_poly = reconstructed.get(0).cloned().unwrap();
+            let reconstructed_poly = reconstructed.first().cloned().unwrap();
             assert!(
                 reconstructed_poly
                     .coefficients()
@@ -682,7 +476,6 @@ mod tests {
 
         #[test]
         fn test_edge_case_thresholds() {
-            // Minimum threshold (2 out of 2)
             let shamir_min = AdaptedShamirSSS::new(2, 2).unwrap();
             let secret_poly: Polynomial<'_, FieldElement> = poly![100, 200];
             let secret_vector = vec![secret_poly];
@@ -691,7 +484,6 @@ mod tests {
             let reconstructed = shamir_min.reconstruct_secret(&shares).unwrap();
             assert_eq!(reconstructed, secret_vector);
 
-            // Large threshold
             let shamir_large = AdaptedShamirSSS::new(10, 15).unwrap();
             let shares_large =
                 shamir_large.split_secret(&secret_vector).unwrap();
@@ -703,14 +495,10 @@ mod tests {
 
         #[test]
         fn test_modular_arithmetic() {
-            // Since mod_inverse and other methods are private, we test them indirectly
-            // through the reconstruction process which relies on correct modular arithmetic
-
             let threshold = 2;
             let shamir = setup_adapted_shamir(threshold, 3).unwrap();
 
-            // Use specific values that test modular arithmetic
-            let poly: Polynomial<'_, FieldElement> = poly![Q - 1, 1, Q - 2]; // Values near modulus
+            let poly: Polynomial<'_, FieldElement> = poly![Q - 1, 1, Q - 2];
             let secret_vector = vec![poly];
 
             let shares = shamir.split_secret(&secret_vector).unwrap();
@@ -729,7 +517,6 @@ mod tests {
 
             let shares = shamir.split_secret(&secret_vector).unwrap();
 
-            // Try different combinations of threshold shares
             let combo1 = shamir
                 .reconstruct_secret(&shares[0..shamir.threshold])
                 .unwrap();
@@ -749,34 +536,26 @@ mod tests {
 
     #[test]
     fn test_create_shamir_polynomial() {
-        use num_traits::Zero;
-        // Test with threshold 2 (minimal case)
         let shamir = AdaptedShamirSSS::new(2, 3).unwrap();
         let secret = FieldElement::new(42u32);
         let poly = shamir.create_shamir_polynomial(&secret);
 
-        // Check polynomial has correct length (equal to threshold)
         assert_eq!(
             poly.coefficients().iter().filter(|&c| !c.is_zero()).count(),
             2
         );
-        // Check first coefficient is the secret
         assert_eq!(poly.coefficients()[0], secret);
 
-        // Test with threshold 5
         let shamir = AdaptedShamirSSS::new(5, 7).unwrap();
         let secret = FieldElement::new(123);
         let poly = shamir.create_shamir_polynomial(&secret);
 
-        // Check polynomial has correct length
         assert_eq!(
             poly.coefficients().iter().filter(|&c| !c.is_zero()).count(),
             5
         );
-        // Check first coefficient is the secret
         assert_eq!(poly.coefficients()[0], secret);
 
-        // Test with zero secret
         let secret = FieldElement::zero();
         let poly = shamir.create_shamir_polynomial(&secret);
         assert_eq!(poly.coefficients()[0], FieldElement::zero());
@@ -785,19 +564,15 @@ mod tests {
             4
         );
 
-        // Test randomness - create multiple polynomials with same secret
         let secret = FieldElement::new(777);
         let poly1 = shamir.create_shamir_polynomial(&secret);
         let poly2 = shamir.create_shamir_polynomial(&secret);
         let poly3 = shamir.create_shamir_polynomial(&secret);
 
-        // All should have same secret
         assert_eq!(poly1.coefficients()[0], secret);
         assert_eq!(poly2.coefficients()[0], secret);
         assert_eq!(poly3.coefficients()[0], secret);
 
-        // But random coefficients should differ (with high probability)
-        // Check at least one differs between poly1 and poly2
         let coeffs_differ = (1..5)
             .any(|i| poly1.coefficients()[i] != poly2.coefficients()[i])
             || (1..5)
@@ -807,7 +582,6 @@ mod tests {
             "Random coefficients should differ between polynomials"
         );
 
-        // Test with large threshold
         let shamir = AdaptedShamirSSS::new(10, 15).unwrap();
         let secret = FieldElement::new(999);
         let poly = shamir.create_shamir_polynomial(&secret);
@@ -818,7 +592,6 @@ mod tests {
         );
         assert_eq!(poly.coefficients()[0], secret);
 
-        // Test negative secret (if FieldElement supports it via From<i32>)
         let secret = FieldElement::from(-42i32);
         let poly = shamir.create_shamir_polynomial(&secret);
         assert_eq!(poly.coefficients()[0], secret);
@@ -826,50 +599,42 @@ mod tests {
 
     #[test]
     fn test_evaluate_polynomial() {
-        // Test constant polynomial: f(x) = 42
         let coeffs = vec![42];
         assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 0), 42);
         assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1), 42);
         assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 10), 42);
 
-        // Test linear polynomial: f(x) = 3 + 2x
         let coeffs = vec![3, 2];
         assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 0), 3);
         assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1), 5);
         assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 2), 7);
         assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 5), 13);
 
-        // Test quadratic polynomial: f(x) = 1 + 2x + 3x^2
         let coeffs = vec![1, 2, 3];
         assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 0), 1);
-        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1), 6); // 1 + 2 + 3
-        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 2), 17); // 1 + 4 + 12
-        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 3), 34); // 1 + 6 + 27
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1), 6);
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 2), 17);
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 3), 34);
 
-        // Test with negative coefficients: f(x) = 10 - 5x + 2x^2
         let coeffs = vec![10, -5, 2];
         assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 0), 10);
-        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1), 7); // 10 - 5 + 2
-        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 2), 8); // 10 - 10 + 8
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1), 7);
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 2), 8);
 
-        // Test with zero coefficients: f(x) = 5 + 0x + 3x^2
         let coeffs = vec![5, 0, 3];
         assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 0), 5);
-        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1), 8); // 5 + 0 + 3
-        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 2), 17); // 5 + 0 + 12
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1), 8);
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 2), 17);
 
-        // Test empty polynomial
         let coeffs = vec![];
         assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 5), 0);
 
-        // Test modular arithmetic with large coefficients
         let large_coeff = Q - 1;
         let coeffs = vec![large_coeff, 2];
         let result = AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1);
         assert_eq!(result, (large_coeff + 2) % Q);
 
-        // Test with large x values
-        let coeffs = vec![1, 1, 1]; // f(x) = 1 + x + x^2
+        let coeffs = vec![1, 1, 1];
         let large_x = 1000;
         let expected = (1 + large_x + large_x * large_x) % Q;
         assert_eq!(
@@ -877,7 +642,6 @@ mod tests {
             expected
         );
 
-        // Verify Horner's method: f(x) = 5 + 3x + 2x^2 + 4x^3
         let coeffs = vec![5, 3, 2, 4];
         let x = 7;
         let manual_result = (5 + 7 * (3 + 7 * (2 + 7 * 4))) % Q;
@@ -886,19 +650,16 @@ mod tests {
             manual_result
         );
 
-        // Test all-zero polynomial
         let coeffs = vec![0, 0, 0, 0];
         assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 0), 0);
         assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 100), 0);
 
-        // Test single high-degree term: f(x) = 7x^3
         let coeffs = vec![0, 0, 0, 7];
         assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 0), 0);
         assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 1), 7);
-        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 2), 56); // 7 * 8
-        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 3), 189); // 7 * 27
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 2), 56);
+        assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 3), 189);
 
-        // Test Shamir property: evaluation at x=0 returns the secret
         let secret = 42;
         let coeffs = vec![secret, 17, 23, 31];
         assert_eq!(AdaptedShamirSSS::evaluate_polynomial(&coeffs, 0), secret);

@@ -9,15 +9,17 @@ use sha3::{
     digest::{ExtendableOutput, Update, XofReader},
 };
 
-use crate::error::{ThresholdError, ThresholdResult};
-use crate::params::GAMMA1;
+use crate::dilithium::error::{DilithiumError, DilithiumResult};
+use crate::dilithium::params::{GAMMA1, N, TAU};
+use crate::dilithium::shamir::error::ShamirError;
 use crate::traits::PointSource;
-use math::{poly::Polynomial, prelude::*, traits::FiniteField};
+use crate::matrix::hash::shake256;
+use math::{poly::Polynomial, traits::FiniteField};
 
 const RANDOMNESS_BYTES: usize = 32;
 const HASH_BYTES: usize = 64;
 
-// Fill byte array of length 32 by random bytes
+/// Produce a fresh 32-byte array filled with cryptographically secure random data.
 pub fn random_bytes() -> [u8; 32] {
     let mut rng = rand::thread_rng();
     let mut tmp = [0u8; 32];
@@ -25,6 +27,7 @@ pub fn random_bytes() -> [u8; 32] {
     tmp
 }
 
+/// Either clone the caller-provided randomness or synthesize a fresh buffer.
 pub fn get_randomness(randomness: Option<&[u8]>) -> Vec<u8> {
     match randomness {
         Some(bytes) => bytes.to_vec(),
@@ -36,6 +39,7 @@ pub fn get_randomness(randomness: Option<&[u8]>) -> Vec<u8> {
     }
 }
 
+/// Obtain a SHAKE256 reader over the supplied message bytes.
 pub fn get_hash_reader(
     message: &[u8],
 ) -> XofReaderCoreWrapper<Shake256ReaderCore> {
@@ -44,11 +48,23 @@ pub fn get_hash_reader(
     hasher.finalize_xof()
 }
 
+/// Hash a message with SHAKE256, returning a fixed-size digest.
 pub fn hash_message(message: &[u8]) -> Vec<u8> {
     let mut reader = get_hash_reader(message);
     let mut output = vec![0u8; HASH_BYTES];
     reader.read(&mut output);
     output
+}
+
+/// Convenience wrapper for SHAKE256 that concatenates `seed` with additional parts.
+pub fn shake256_squeezed(seed: &[u8], parts: &[&[u8]], out_len: usize) -> Vec<u8> {
+    let extra: usize = parts.iter().map(|part| part.len()).sum();
+    let mut input = Vec::with_capacity(seed.len() + extra);
+    input.extend_from_slice(seed);
+    for part in parts {
+        input.extend_from_slice(part);
+    }
+    shake256(out_len, &input)
 }
 
 /// Sample polynomial with coefficients centered in [-GAMMA1, GAMMA1].
@@ -72,18 +88,64 @@ pub fn sample_gamma1<FF: FiniteField>(seed: &[u8]) -> Polynomial<'static, FF> {
     Polynomial::from(coeffs)
 }
 
-// Generic reconstruction from any point providers (removes duplication).
+/// Sample multiple polynomials centered in [-GAMMA1, GAMMA1] using namespaced seeds.
+pub fn sample_gamma1_vector<FF: FiniteField>(
+    seed: &[u8],
+    count: usize,
+) -> Vec<Polynomial<'static, FF>> {
+    (0..count)
+        .map(|index| {
+            let mut namespaced = Vec::with_capacity(seed.len() + 1);
+            namespaced.extend_from_slice(seed);
+            namespaced.push(index as u8);
+            sample_gamma1(&namespaced)
+        })
+        .collect()
+}
+
+/// Derive a TAU-sparse challenge polynomial from the provided seed bytes.
+pub fn derive_challenge_polynomial<FF: FiniteField + From<i64>>(
+    seed: &[u8],
+) -> Polynomial<'static, FF> {
+    let mut stream = shake256(4 * TAU + 1024, seed);
+    let mut used = vec![false; N];
+    let mut coeffs = vec![0i64; N];
+    let mut filled = 0usize;
+    let mut idx = 0usize;
+
+    while filled < TAU {
+        if idx + 3 > stream.len() {
+            stream.extend_from_slice(&shake256(1024, &stream));
+        }
+
+        let position =
+            u16::from_le_bytes([stream[idx], stream[idx + 1]]) as usize % N;
+        let sign = if stream[idx + 2] & 1 == 1 { 1 } else { -1 };
+        idx += 3;
+
+        if !used[position] {
+            used[position] = true;
+            coeffs[position] = sign;
+            filled += 1;
+        }
+    }
+
+    coeffs.into()
+}
+
+
+/// Reconstruct the requested polynomial indices from a set of point providers.
 pub fn reconstruct_vector_from_points<FF, S>(
     items: &[S],
     poly_indices: &[usize],
-) -> ThresholdResult<Vec<Polynomial<'static, FF>>>
+) -> DilithiumResult<Vec<Polynomial<'static, FF>>>
 where
     FF: FiniteField,
     S: PointSource<FF>,
 {
     let reference = items
         .first()
-        .ok_or(ThresholdError::InsufficientShares(1, 0))?;
+        .ok_or(DilithiumError::InsufficientShares(1, 0))?;
     let vector_len = reference.poly_count();
     let xs: Vec<FF> = items.iter().map(|item| item.x()).collect();
 
@@ -92,38 +154,44 @@ where
         .map(|&poly_idx| {
             let template = reference
                 .poly_at(poly_idx)
-                .ok_or(ThresholdError::InvalidIndex(poly_idx, vector_len))?;
+                .ok_or({
+                    ShamirError::InvalidIndex(poly_idx, vector_len)
+                })?;
             let coeff_count = template.coefficients().len();
 
             let polys = items
                 .iter()
                 .map(|item| {
-                    item.poly_at(poly_idx).ok_or(ThresholdError::InvalidIndex(
-                        poly_idx, vector_len,
-                    ))
+                    item.poly_at(poly_idx).ok_or({
+                        ShamirError::InvalidIndex(poly_idx, vector_len)
+                    })
                 })
-                .collect::<ThresholdResult<Vec<_>>>()?;
+                .collect::<Result<Vec<_>, ShamirError>>()?;
 
             let coeffs = (0..coeff_count)
                 .map(|coeff_idx| {
                     let ys = polys
                         .iter()
                         .map(|poly| {
-                            poly.coefficients().get(coeff_idx).copied().ok_or(
-                                ThresholdError::InvalidIndex(
-                                    coeff_idx,
-                                    poly.coefficients().len(),
-                                ),
-                            )
+                            let coeffs = poly.coefficients();
+                            coeffs
+                                .get(coeff_idx)
+                                .copied()
+                                .ok_or({
+                                    ShamirError::InvalidIndex(
+                                        coeff_idx,
+                                        coeffs.len(),
+                                    )
+                                })
                         })
-                        .collect::<ThresholdResult<Vec<_>>>()?;
+                        .collect::<Result<Vec<_>, ShamirError>>()?;
 
                     Ok(interpolate_constant_at_zero(
                         xs.as_slice(),
                         ys.as_slice(),
                     ))
-                })
-                .collect::<ThresholdResult<Vec<_>>>()?;
+        })
+        .collect::<DilithiumResult<Vec<_>>>()?;
 
             Ok(Polynomial::from(coeffs))
         })
@@ -143,13 +211,13 @@ pub fn interpolate_constant_at_zero<FF: FiniteField + Copy + 'static>(
 }
 
 #[inline]
+/// Create an array of zero-initialised polynomials of compile-time length.
 pub fn zero_polyvec<const LEN: usize, FF: FiniteField>()
 -> [Polynomial<'static, FF>; LEN] {
     std::array::from_fn(|_| Polynomial::zero())
 }
 
-/// Return the maximum \ell_\infty norm across a slice of polynomials.
-/// Useful for bound checks; returns 0 for an empty slice.
+/// Return the maximum ℓ∞ norm across a slice of polynomials (0 if empty).
 pub fn polyvec_max_infty_norm<FF: FiniteField>(
     polys: &[Polynomial<'_, FF>],
 ) -> i64 {
@@ -290,8 +358,8 @@ mod tests {
 
     mod reconstruct_vector_from_points_tests {
         use super::*;
-        use crate::error::ThresholdError;
-        use crate::traits::PointSource;
+        use crate::dilithium::error::DilithiumError;
+        use crate::dilithium::shamir::error::ShamirError;
         use math::fe;
 
         #[derive(Clone)]
@@ -354,7 +422,7 @@ mod tests {
 
             assert!(matches!(
                 result,
-                Err(ThresholdError::InsufficientShares(required, provided))
+                Err(DilithiumError::InsufficientShares(required, provided))
                 if required == 1 && provided == 0
             ));
         }
@@ -381,7 +449,9 @@ mod tests {
 
             assert!(matches!(
                 result,
-                Err(ThresholdError::InvalidIndex(index, len))
+                Err(DilithiumError::Shamir(
+                    ShamirError::InvalidIndex(index, len)
+                ))
                 if index == 1 && len == 2
             ));
         }
@@ -409,7 +479,9 @@ mod tests {
 
             assert!(matches!(
                 result,
-                Err(ThresholdError::InvalidIndex(index, len))
+                Err(DilithiumError::Shamir(
+                    ShamirError::InvalidIndex(index, len)
+                ))
                 if index == 1 && len == poly_short.coefficients().len()
             ));
         }

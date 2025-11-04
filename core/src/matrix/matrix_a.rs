@@ -1,10 +1,11 @@
-use crate::hash::shake128;
-use crate::params::{K, L, N};
-use crate::utils::zero_polyvec;
+use super::hash::shake128;
+use crate::dilithium::params::{K, L, N, Q};
+use crate::dilithium::utils::zero_polyvec;
 use math::{poly::Polynomial, traits::FiniteField};
 use num_traits::Zero;
 use std::ops::Mul;
 
+/// Dense polynomial matrix representing the public `A` matrix in Dilithium.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MatrixA<'a, FF: FiniteField> {
     pub rows: Vec<Vec<Polynomial<'a, FF>>>, // K x L
@@ -23,12 +24,12 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
         Self { rows }
     }
 
-    /// Borrow the underlying rows.
+    /// Borrow the underlying row storage.
     pub fn as_slice(&self) -> &[Vec<Polynomial<'static, FF>>] {
         &self.rows
     }
 
-    /// Number of rows.
+    /// Number of rows contained in the matrix.
     pub fn rows(&self) -> usize {
         self.rows.len()
     }
@@ -42,12 +43,12 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
         }
     }
 
-    /// (rows, cols)
+    /// Dimensions of the matrix as `(rows, cols)`.
     pub fn shape(&self) -> (usize, usize) {
         (self.rows(), self.cols())
     }
 
-    /// Create a zero matrix of size (rows x cols).
+    /// Create a zero matrix of size `(rows x cols)`.
     /// TODO implement zero trait for MatrixA
     pub fn zeros(rows: usize, cols: usize) -> Self {
         let mut data = Vec::with_capacity(rows);
@@ -106,10 +107,15 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
     //     self.mul_vector(v)
     // }
 
-    // TODO remove it
-    pub fn mul_vector(
+    /// Multiply the matrix by a polynomial vector, returning the result as a `Vec`.
+    ///
+    /// This performs shape validation and mirrors the behaviour exposed via the `Mul`
+    /// trait implementation but keeps the dynamically-sized return type for callers
+    /// that prefer `Vec` semantics.
+    /// TODO replace it with Mul trait
+    pub fn mul_vector<'b>(
         &self,
-        v: &[Polynomial<'static, FF>],
+        v: &[Polynomial<'b, FF>],
     ) -> Vec<Polynomial<'static, FF>> {
         // Check matrix is not empty
         assert!(!self.rows.is_empty(), "Matrix cannot be empty");
@@ -132,6 +138,17 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
 
         self.rows.iter().map(|row| row_mul(row, v)).collect()
     }
+
+    /// Multiply the matrix by a polynomial vector and return the fixed-size array result.
+    ///
+    /// Essentially a thin wrapper around the `Mul` trait so callers can invoke the
+    /// operation without importing the trait explicitly.
+    pub fn mul<'b>(
+        &self,
+        v: &[Polynomial<'b, FF>; L],
+    ) -> [Polynomial<'static, FF>; K] {
+        self * v
+    }
 }
 
 impl<'a, 'b, FF: FiniteField + 'static> Mul<&[Polynomial<'b, FF>; L]>
@@ -148,6 +165,7 @@ impl<'a, 'b, FF: FiniteField + 'static> Mul<&[Polynomial<'b, FF>; L]>
     }
 }
 
+/// Multiply a single matrix row by the polynomial vector `vec`.
 fn row_mul<'a, 'b, FF: FiniteField>(
     row: &[Polynomial<'a, FF>],
     vec: &[Polynomial<'b, FF>],
@@ -167,9 +185,11 @@ fn row_mul<'a, 'b, FF: FiniteField>(
 }
 
 /// Expand A from rho using SHAKE128 as XOF (educational: uses modulo reduction).
+/// Expand the public matrix `A` from the seed `rho` using SHAKE128 (educational variant).
 pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(
     rho: [u8; 32],
 ) -> MatrixA<'static, FF> {
+    let modulus = Q as u32;
     let mut rows = Vec::with_capacity(K);
     for i in 0..K {
         let mut row = Vec::with_capacity(L);
@@ -184,7 +204,7 @@ pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(
             for t in 0..N {
                 let b = &stream[4 * t..4 * t + 4];
                 let v = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
-                coeffs[t] = v;
+                coeffs[t] = v % modulus;
             }
             row.push(Polynomial::from(coeffs));
         }
@@ -196,8 +216,8 @@ pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::params::{K, L, Q};
-    use crate::utils::zero_polyvec;
+    use crate::dilithium::params::{K, L, Q};
+    use crate::dilithium::utils::zero_polyvec;
     use math::{fe, field_element::FieldElement, poly};
     use num_traits::Zero;
 
