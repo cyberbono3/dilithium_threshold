@@ -13,6 +13,7 @@ where
     read_xof(hasher.finalize_xof(), out_len)
 }
 
+/// Read `out_len` bytes from a streaming XOF reader.
 fn read_xof<R>(mut reader: R, out_len: usize) -> Vec<u8>
 where
     R: XofReader,
@@ -22,10 +23,12 @@ where
     out
 }
 
+/// Convenience wrapper for SHAKE128 that returns `out_len` bytes.
 pub fn shake128(out_len: usize, input: &[u8]) -> Vec<u8> {
     squeeze_xof::<Shake128>(out_len, input)
 }
 
+/// Convenience wrapper for SHAKE256 that returns `out_len` bytes.
 pub fn shake256(out_len: usize, input: &[u8]) -> Vec<u8> {
     squeeze_xof::<Shake256>(out_len, input)
 }

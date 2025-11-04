@@ -5,6 +5,7 @@ use math::{poly::Polynomial, traits::FiniteField};
 use num_traits::Zero;
 use std::ops::Mul;
 
+/// Dense polynomial matrix representing the public `A` matrix in Dilithium.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MatrixA<'a, FF: FiniteField> {
     pub rows: Vec<Vec<Polynomial<'a, FF>>>, // K x L
@@ -23,12 +24,12 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
         Self { rows }
     }
 
-    /// Borrow the underlying rows.
+    /// Borrow the underlying row storage.
     pub fn as_slice(&self) -> &[Vec<Polynomial<'static, FF>>] {
         &self.rows
     }
 
-    /// Number of rows.
+    /// Number of rows contained in the matrix.
     pub fn rows(&self) -> usize {
         self.rows.len()
     }
@@ -42,12 +43,12 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
         }
     }
 
-    /// (rows, cols)
+    /// Dimensions of the matrix as `(rows, cols)`.
     pub fn shape(&self) -> (usize, usize) {
         (self.rows(), self.cols())
     }
 
-    /// Create a zero matrix of size (rows x cols).
+    /// Create a zero matrix of size `(rows x cols)`.
     /// TODO implement zero trait for MatrixA
     pub fn zeros(rows: usize, cols: usize) -> Self {
         let mut data = Vec::with_capacity(rows);
@@ -107,6 +108,10 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
     // }
 
     /// Multiply the matrix by a polynomial vector, returning the result as a `Vec`.
+    ///
+    /// This performs shape validation and mirrors the behaviour exposed via the `Mul`
+    /// trait implementation but keeps the dynamically-sized return type for callers
+    /// that prefer `Vec` semantics.
     /// TODO replace it with Mul trait
     pub fn mul_vector<'b>(
         &self,
@@ -135,6 +140,9 @@ impl<FF: FiniteField> MatrixA<'static, FF> {
     }
 
     /// Multiply the matrix by a polynomial vector and return the fixed-size array result.
+    ///
+    /// Essentially a thin wrapper around the `Mul` trait so callers can invoke the
+    /// operation without importing the trait explicitly.
     pub fn mul<'b>(
         &self,
         v: &[Polynomial<'b, FF>; L],
@@ -157,6 +165,7 @@ impl<'a, 'b, FF: FiniteField + 'static> Mul<&[Polynomial<'b, FF>; L]>
     }
 }
 
+/// Multiply a single matrix row by the polynomial vector `vec`.
 fn row_mul<'a, 'b, FF: FiniteField>(
     row: &[Polynomial<'a, FF>],
     vec: &[Polynomial<'b, FF>],
@@ -176,6 +185,7 @@ fn row_mul<'a, 'b, FF: FiniteField>(
 }
 
 /// Expand A from rho using SHAKE128 as XOF (educational: uses modulo reduction).
+/// Expand the public matrix `A` from the seed `rho` using SHAKE128 (educational variant).
 pub fn expand_a_from_rho<FF: FiniteField + std::convert::From<i64>>(
     rho: [u8; 32],
 ) -> MatrixA<'static, FF> {
