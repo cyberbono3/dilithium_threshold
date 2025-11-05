@@ -301,6 +301,7 @@ mod tests {
         let s1 = [0x24u8; 32];
         let s2 = [0x18u8; 32];
         keygen_with_seeds::<FF>(rho, s1, s2)
+            .expect("key generation should succeed")
     }
 
     /// Alternate deterministic keypair fixture used across tests.
@@ -310,6 +311,7 @@ mod tests {
         let s1 = [0x5Au8; 32];
         let s2 = [0x33u8; 32];
         keygen_with_seeds::<FF>(rho, s1, s2)
+            .expect("key generation should succeed")
     }
 
     mod signing_engine_tests {
@@ -351,10 +353,18 @@ mod tests {
             let message = b"deterministic-engine";
             let seeds = ([0x42u8; 32], [0x24u8; 32], [0x18u8; 32]);
 
-            let (_, priv_key_a) =
-                keygen_with_seeds::<FieldElement>(seeds.0, seeds.1, seeds.2);
-            let (_, priv_key_b) =
-                keygen_with_seeds::<FieldElement>(seeds.0, seeds.1, seeds.2);
+            let (_, priv_key_a) = keygen_with_seeds::<FieldElement>(
+                seeds.0,
+                seeds.1,
+                seeds.2,
+            )
+            .expect("key generation should succeed");
+            let (_, priv_key_b) = keygen_with_seeds::<FieldElement>(
+                seeds.0,
+                seeds.1,
+                seeds.2,
+            )
+            .expect("key generation should succeed");
 
             let engine_a = SigningEngine::new(&priv_key_a, message);
             let engine_b = SigningEngine::new(&priv_key_b, message);

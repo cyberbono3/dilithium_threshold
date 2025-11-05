@@ -68,7 +68,7 @@ impl ThresholdSignature {
         FF: FiniteField + From<i64>,
         rand::distributions::Standard: rand::distributions::Distribution<FF>,
     {
-        let (pub_key, priv_key) = keygen::<FF>();
+        let (pub_key, priv_key) = keygen::<FF>()?;
         let s1_shares = self.shamir_s1.split_secret(&priv_key.s1)?;
         let s2_shares = self.shamir_s2.split_secret(&priv_key.s2)?;
 

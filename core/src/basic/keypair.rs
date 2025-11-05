@@ -1,7 +1,10 @@
 use crate::dilithium::params::{K, L, N};
 use crate::dilithium::utils::{random_bytes, shake256_squeezed, zero_polyvec};
-use crate::matrix::{MatrixA, MatrixAExt, expand_a_from_rho};
-use math::{poly::Polynomial, traits::FiniteField};
+use crate::matrix::{expand_a_from_rho, MatrixA, MatrixAExt};
+use math::{error::MatrixError, poly::Polynomial, traits::FiniteField};
+
+type MatrixResult<FF> =
+    Result<(PublicKey<'static, FF>, PrivateKey<'static, FF>), MatrixError>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PublicKey<'a, FF: FiniteField> {
@@ -103,9 +106,7 @@ impl KeypairSeeds {
     }
 
     /// Consume the seeds to deterministically derive a Dilithium keypair.
-    pub fn into_keypair<FF>(
-        self,
-    ) -> (PublicKey<'static, FF>, PrivateKey<'static, FF>)
+    pub fn into_keypair<FF>(self) -> MatrixResult<FF>
     where
         FF: math::traits::FiniteField + From<i64>,
     {
@@ -114,9 +115,7 @@ impl KeypairSeeds {
         let s1 = Self::expand_secret_vector::<L, FF>(&s1);
         let s2 = Self::expand_secret_vector::<K, FF>(&s2);
 
-        let mut t: [Polynomial<'static, FF>; K] = a
-            .mul_polynomials(&s1)
-            .unwrap_or_else(|err| panic!("matrix-vector multiplication failed: {err}"));
+        let mut t: [Polynomial<'static, FF>; K] = a.mul_polynomials(&s1)?;
         t.iter_mut()
             .zip(s2.iter())
             .for_each(|(dest, addend)| *dest += addend.clone());
@@ -124,13 +123,12 @@ impl KeypairSeeds {
         let public_key = PublicKey::new(a.clone(), t, rho);
         let private_key = PrivateKey::new(a, s1, s2);
 
-        (public_key, private_key)
+        Ok((public_key, private_key))
     }
 }
 
 /// Generate a random Dilithium keypair.
-pub fn keygen<FF: FiniteField + From<i64>>()
--> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
+pub fn keygen<FF: FiniteField + From<i64>>() -> MatrixResult<FF> {
     KeypairSeeds::random().into_keypair::<FF>()
 }
 
@@ -139,7 +137,7 @@ pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
     rho: [u8; 32],
     s1_seed: [u8; 32],
     s2_seed: [u8; 32],
-) -> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
+) -> MatrixResult<FF> {
     KeypairSeeds::new(rho, s1_seed, s2_seed).into_keypair::<FF>()
 }
 
@@ -153,7 +151,8 @@ mod tests {
     /// Ensure key generation returns structures with expected dimensions.
     #[test]
     fn keygen_shapes_and_secret_bounds() {
-        let (pk, sk) = keygen::<FieldElement>();
+        let (pk, sk) =
+            keygen::<FieldElement>().expect("key generation should succeed");
 
         // Shapes
         assert_eq!(pk.a.rows(), K);
@@ -169,7 +168,8 @@ mod tests {
     /// Confirm the public matrix matches the rho-derived matrix and secret key.
     #[test]
     fn public_matrix_matches_rho_and_secret_matrix() {
-        let (pk, sk) = keygen::<FieldElement>();
+        let (pk, sk) =
+            keygen::<FieldElement>().expect("key generation should succeed");
 
         // pk.a should equal expand_a_from_rho(pk.rho)
         let a_from_rho = expand_a_from_rho(pk.rho);
@@ -203,12 +203,13 @@ mod tests {
     /// Validate that t equals A*s1 + s2 for generated keys.
     #[test]
     fn t_equals_a_times_s1_plus_s2() {
-        let (pk, sk) = keygen::<FieldElement>();
+        let (pk, sk) =
+            keygen::<FieldElement>().expect("key generation should succeed");
 
         let as1: [Polynomial<'static, FieldElement>; K] = sk
             .a
             .mul_polynomials(&sk.s1)
-            .unwrap_or_else(|err| panic!("matrix-vector multiplication failed: {err}"));
+            .expect("matrix-vector multiplication should succeed");
         let expected_t: Vec<_> = as1
             .into_iter()
             .zip(sk.s2.iter())
@@ -224,8 +225,10 @@ mod tests {
         let rho = [3u8; 32];
         let s1 = [5u8; 32];
         let s2 = [7u8; 32];
-        let (pk1, sk1) = keygen_with_seeds::<FieldElement>(rho, s1, s2);
-        let (pk2, sk2) = keygen_with_seeds::<FieldElement>(rho, s1, s2);
+        let (pk1, sk1) = keygen_with_seeds::<FieldElement>(rho, s1, s2)
+            .expect("key generation should succeed");
+        let (pk2, sk2) = keygen_with_seeds::<FieldElement>(rho, s1, s2)
+            .expect("key generation should succeed");
 
         // Matrices and secrets identical
         assert_eq!(pk1.a.as_slice(), pk2.a.as_slice());
