@@ -12,6 +12,7 @@ pub enum PolynomialError {
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[non_exhaustive]
+// TODO refactor it
 pub enum MatrixError {
     #[error("Matrix cannot be empty")]
     Empty,
