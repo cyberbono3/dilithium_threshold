@@ -3,7 +3,7 @@ use crate::dilithium::utils::{random_bytes, shake256_squeezed, zero_polyvec};
 use crate::matrix::{expand_a_from_rho, MatrixA, MatrixAExt};
 use math::{error::MatrixError, poly::Polynomial, traits::FiniteField};
 
-type MatrixResult<FF> =
+type KeyPairResult<FF> =
     Result<(PublicKey<'static, FF>, PrivateKey<'static, FF>), MatrixError>;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -106,7 +106,7 @@ impl KeypairSeeds {
     }
 
     /// Consume the seeds to deterministically derive a Dilithium keypair.
-    pub fn into_keypair<FF>(self) -> MatrixResult<FF>
+    pub fn into_keypair<FF>(self) -> KeyPairResult<FF>
     where
         FF: math::traits::FiniteField + From<i64>,
     {
@@ -128,17 +128,15 @@ impl KeypairSeeds {
 }
 
 /// Generate a random Dilithium keypair.
-pub fn keygen<FF: FiniteField + From<i64>>() -> MatrixResult<FF> {
+pub fn keygen<FF: FiniteField + From<i64>>() -> KeyPairResult<FF> {
     KeypairSeeds::random().into_keypair::<FF>()
 }
 
 /// Derive a deterministic keypair from caller supplied seeds.
 pub fn keygen_with_seeds<FF: FiniteField + From<i64>>(
-    rho: [u8; 32],
-    s1_seed: [u8; 32],
-    s2_seed: [u8; 32],
-) -> MatrixResult<FF> {
-    KeypairSeeds::new(rho, s1_seed, s2_seed).into_keypair::<FF>()
+    seeds: KeypairSeeds,
+) -> KeyPairResult<FF> {
+    seeds.into_keypair::<FF>()
 }
 
 #[cfg(test)]
@@ -225,10 +223,15 @@ mod tests {
         let rho = [3u8; 32];
         let s1 = [5u8; 32];
         let s2 = [7u8; 32];
-        let (pk1, sk1) = keygen_with_seeds::<FieldElement>(rho, s1, s2)
-            .expect("key generation should succeed");
-        let (pk2, sk2) = keygen_with_seeds::<FieldElement>(rho, s1, s2)
-            .expect("key generation should succeed");
+        let seeds = KeypairSeeds::new(rho, s1, s2);
+        let (pk1, sk1) = keygen_with_seeds::<FieldElement>(
+            seeds
+        )
+        .expect("key generation should succeed");
+        let (pk2, sk2) = keygen_with_seeds::<FieldElement>(
+            seeds
+        )
+        .expect("key generation should succeed");
 
         // Matrices and secrets identical
         assert_eq!(pk1.a.as_slice(), pk2.a.as_slice());
