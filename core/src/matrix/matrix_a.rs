@@ -48,6 +48,16 @@ pub trait MatrixAExt<FF: FiniteField> {
         Input: AsRef<[Polynomial<'poly, FF>]>,
         Output: MatrixMulOutput<FF>,
         FF: 'poly;
+
+    /// Convenience helper returning `None` when the multiplication fails.
+    fn matrix_mul_output<'poly, Input, Output>(
+        &self,
+        vec: Input,
+    ) -> Option<Output>
+    where
+        Input: AsRef<[Polynomial<'poly, FF>]>,
+        Output: MatrixMulOutput<FF>,
+        FF: 'poly;
 }
 
 impl<FF: FiniteField + 'static> MatrixAExt<FF> for Matrix<'static, FF> {
@@ -87,6 +97,18 @@ impl<FF: FiniteField + 'static> MatrixAExt<FF> for Matrix<'static, FF> {
             .collect();
 
         Output::from_vec(result)
+    }
+
+    fn matrix_mul_output<'poly, Input, Output>(
+        &self,
+        vec: Input,
+    ) -> Option<Output>
+    where
+        Input: AsRef<[Polynomial<'poly, FF>]>,
+        Output: MatrixMulOutput<FF>,
+        FF: 'poly,
+    {
+        self.mul_polynomials(vec).ok()
     }
 }
 

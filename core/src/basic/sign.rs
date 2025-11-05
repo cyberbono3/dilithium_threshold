@@ -215,10 +215,7 @@ where
     fn try_with_counter(&self, ctr: u32) -> Option<Signature<'static, FF>> {
         let y = sample_y::<FF>(&self.y_seed, ctr);
         let w: [Polynomial<'static, FF>; K] =
-            match self.priv_key.a.mul_polynomials(&y) {
-                Ok(result) => result,
-                Err(_) => return None,
-            };
+            self.priv_key.a.matrix_mul_output(&y)?;
         let w1 = from_fn(|idx| poly_high(&w[idx]));
         let challenge = derive_challenge(self.msg, &pack_w1_for_hash(&w1));
 
@@ -273,11 +270,9 @@ where
         return false;
     }
 
-    let az: [Polynomial<'static, FF>; K] =
-        match pub_key.a.mul_polynomials(&sig.z) {
-            Ok(result) => result,
-            Err(_) => return false,
-        };
+    let Some(az) = pub_key.a.matrix_mul_output(&sig.z) else {
+        return false;
+    };
     let w1_prime = {
         let az_minus_ct = polyvec_sub_scaled::<FF, K>(&az, &sig.c, &pub_key.t);
         az_minus_ct.map(|poly| poly_high(&poly))
