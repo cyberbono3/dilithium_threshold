@@ -1,7 +1,7 @@
 use crate::dilithium::error::DilithiumError;
 use crate::dilithium::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N};
 use crate::basic::keypair::{PrivateKey, PublicKey};
-use crate::matrix::hash::shake256;
+use crate::matrix::{hash::shake256, MatrixAExt};
 
 use math::prelude::FieldElement;
 use math::{poly::Polynomial, traits::FiniteField};
@@ -214,7 +214,8 @@ where
     /// Attempt one signing iteration; returns `None` if bounds are violated.
     fn try_with_counter(&self, ctr: u32) -> Option<Signature<'static, FF>> {
         let y = sample_y::<FF>(&self.y_seed, ctr);
-        let w = self.priv_key.a.mul(&y);
+        let w: [Polynomial<'static, FF>; K] =
+            self.priv_key.a.matrix_mul_output(&y)?;
         let w1 = from_fn(|idx| poly_high(&w[idx]));
         let challenge = derive_challenge(self.msg, &pack_w1_for_hash(&w1));
 
@@ -269,7 +270,9 @@ where
         return false;
     }
 
-    let az = pub_key.a.mul(&sig.z);
+    let Some(az) = pub_key.a.matrix_mul_output(&sig.z) else {
+        return false;
+    };
     let w1_prime = {
         let az_minus_ct = polyvec_sub_scaled::<FF, K>(&az, &sig.c, &pub_key.t);
         az_minus_ct.map(|poly| poly_high(&poly))
@@ -292,7 +295,8 @@ mod tests {
         let rho = [0x42u8; 32];
         let s1 = [0x24u8; 32];
         let s2 = [0x18u8; 32];
-        keygen_with_seeds::<FF>(rho, s1, s2)
+        keygen_with_seeds::<FF>(KeypairSeeds::new(rho, s1, s2))
+            .expect("key generation should succeed")
     }
 
     /// Alternate deterministic keypair fixture used across tests.
@@ -301,7 +305,8 @@ mod tests {
         let rho = [0xA5u8; 32];
         let s1 = [0x5Au8; 32];
         let s2 = [0x33u8; 32];
-        keygen_with_seeds::<FF>(rho, s1, s2)
+        keygen_with_seeds::<FF>(KeypairSeeds::new(rho, s1, s2))
+            .expect("key generation should succeed")
     }
 
     mod signing_engine_tests {
@@ -341,12 +346,12 @@ mod tests {
         #[test]
         fn engine_is_deterministic_for_same_inputs() {
             let message = b"deterministic-engine";
-            let seeds = ([0x42u8; 32], [0x24u8; 32], [0x18u8; 32]);
+            let seeds = KeypairSeeds::new([0x42u8; 32], [0x24u8; 32], [0x18u8; 32]);
 
-            let (_, priv_key_a) =
-                keygen_with_seeds::<FieldElement>(seeds.0, seeds.1, seeds.2);
-            let (_, priv_key_b) =
-                keygen_with_seeds::<FieldElement>(seeds.0, seeds.1, seeds.2);
+            let (_, priv_key_a) = keygen_with_seeds::<FieldElement>(seeds)
+                .expect("key generation should succeed");
+            let (_, priv_key_b) = keygen_with_seeds::<FieldElement>(seeds)
+                .expect("key generation should succeed");
 
             let engine_a = SigningEngine::new(&priv_key_a, message);
             let engine_b = SigningEngine::new(&priv_key_b, message);

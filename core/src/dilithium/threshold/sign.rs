@@ -7,6 +7,7 @@ use crate::dilithium::utils::{
     reconstruct_vector_from_points, sample_gamma1_vector,
 };
 use crate::basic::keypair::{PublicKey, keygen};
+use crate::matrix::MatrixAExt;
 use math::{prelude::*, traits::FiniteField};
 use num_traits::Zero;
 use sha2::{Digest, Sha256};
@@ -67,7 +68,7 @@ impl ThresholdSignature {
         FF: FiniteField + From<i64>,
         rand::distributions::Standard: rand::distributions::Distribution<FF>,
     {
-        let (pub_key, priv_key) = keygen::<FF>();
+        let (pub_key, priv_key) = keygen::<FF>()?;
         let s1_shares = self.shamir_s1.split_secret(&priv_key.s1)?;
         let s2_shares = self.shamir_s2.split_secret(&priv_key.s2)?;
 
@@ -101,7 +102,10 @@ impl ThresholdSignature {
         );
         let y_partial = Self::sample_partial_y(&participant_randomness);
 
-        let w_partial = (&key_share.public_key.a) * y_partial.as_slice();
+        let w_partial = key_share
+            .public_key
+            .a
+            .mul_polynomials(y_partial.as_slice())?;
         let challenge = Self::generate_partial_challenge(&mu);
 
         let c_s1: Vec<Polynomial<'static, FF>> = key_share

@@ -1,5 +1,6 @@
 use crate::dilithium::shamir::error::ShamirError;
 use crate::dilithium::threshold::error::ThresholdError;
+use math::error::MatrixError;
 use thiserror::Error;
 
 /// Result type specialized for Dilithium operations.
@@ -21,4 +22,6 @@ pub enum DilithiumError {
     SignatureGenerationFailed,
     #[error(transparent)]
     Threshold(#[from] ThresholdError),
+    #[error(transparent)]
+    Matrix(#[from] MatrixError),
 }
