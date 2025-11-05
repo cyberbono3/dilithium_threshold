@@ -114,7 +114,9 @@ impl KeypairSeeds {
         let s1 = Self::expand_secret_vector::<L, FF>(&s1);
         let s2 = Self::expand_secret_vector::<K, FF>(&s2);
 
-        let mut t = a.mul_poly_array(&s1);
+        let mut t: [Polynomial<'static, FF>; K] = a
+            .mul_polynomials(&s1)
+            .unwrap_or_else(|err| panic!("matrix-vector multiplication failed: {err}"));
         t.iter_mut()
             .zip(s2.iter())
             .for_each(|(dest, addend)| *dest += addend.clone());
@@ -203,7 +205,10 @@ mod tests {
     fn t_equals_a_times_s1_plus_s2() {
         let (pk, sk) = keygen::<FieldElement>();
 
-        let as1 = sk.a.mul_poly_array(&sk.s1);
+        let as1: [Polynomial<'static, FieldElement>; K] = sk
+            .a
+            .mul_polynomials(&sk.s1)
+            .unwrap_or_else(|err| panic!("matrix-vector multiplication failed: {err}"));
         let expected_t: Vec<_> = as1
             .into_iter()
             .zip(sk.s2.iter())

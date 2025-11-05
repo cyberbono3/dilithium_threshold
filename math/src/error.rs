@@ -21,6 +21,10 @@ pub enum MatrixError {
         expected: usize,
         found: usize,
     },
+    #[error(
+        "Matrix multiplication produced {found} entries but expected {expected}"
+    )]
+    OutputLengthMismatch { expected: usize, found: usize },
     #[error("Matrix columns ({matrix_cols}) must match vector length ({vector_len})")]
     VectorShapeMismatch {
         matrix_cols: usize,
