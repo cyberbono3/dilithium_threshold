@@ -21,13 +21,15 @@ impl<FF: FiniteField> MatrixMulOutput<FF> for Vec<Polynomial<'static, FF>> {
     }
 }
 
-impl<FF: FiniteField> MatrixMulOutput<FF> for [Polynomial<'static, FF>; K] {
+impl<FF: FiniteField, const LEN: usize> MatrixMulOutput<FF>
+    for [Polynomial<'static, FF>; LEN]
+{
     fn from_vec(
         vec: Vec<Polynomial<'static, FF>>,
     ) -> Result<Self, MatrixError> {
         vec.try_into().map_err(|vec: Vec<Polynomial<'static, FF>>| {
             MatrixError::OutputLengthMismatch {
-                expected: K,
+                expected: LEN,
                 found: vec.len(),
             }
         })
@@ -67,33 +69,9 @@ impl<FF: FiniteField + 'static> MatrixMulExt<FF> for Matrix<'static, FF> {
         Output: MatrixMulOutput<FF>,
         FF: 'poly,
     {
-        let owned: Vec<Polynomial<'static, FF>> = vec
-            .as_ref()
-            .iter()
-            .map(|poly| Polynomial::from(poly.coefficients().to_vec()))
-            .collect();
-        let cols = self.cols();
-        if cols != owned.len() {
-            return Err(MatrixError::VectorShapeMismatch {
-                matrix_cols: cols,
-                vector_len: owned.len(),
-            });
-        }
-
-        let result = self
-            .as_slice()
-            .iter()
-            .map(|row| {
-                row.iter()
-                    .zip(owned.iter())
-                    .fold(Polynomial::<FF>::zero(), |mut acc, (a_ij, v_j)| {
-                        acc += a_ij.clone() * v_j.clone();
-                        acc
-                    })
-            })
-            .collect();
-
-        Output::from_vec(result)
+        let owned = to_owned(vec.as_ref());
+        ensure_cols_match(self.cols(), owned.len())?;
+        Output::from_vec(multiply_rows(self.as_slice(), &owned))
     }
 
     fn matrix_mul_output<'poly, Input, Output>(
@@ -142,6 +120,45 @@ pub fn expand_a_from_rho<FF: FiniteField + From<i64>>(
         rows.push(row);
     }
     Matrix::new(rows)
+}
+
+fn to_owned<'poly, FF: FiniteField>(
+    slice: &[Polynomial<'poly, FF>],
+) -> Vec<Polynomial<'static, FF>> {
+    slice
+        .iter()
+        .map(|poly| Polynomial::from(poly.coefficients().to_vec()))
+        .collect()
+}
+
+fn ensure_cols_match(
+    matrix_cols: usize,
+    vec_len: usize,
+) -> Result<(), MatrixError> {
+    if matrix_cols != vec_len {
+        return Err(MatrixError::VectorShapeMismatch {
+            matrix_cols,
+            vector_len: vec_len,
+        });
+    }
+    Ok(())
+}
+
+fn multiply_rows<FF: FiniteField>(
+    rows: &[Vec<Polynomial<'static, FF>>],
+    vec: &[Polynomial<'static, FF>],
+) -> Vec<Polynomial<'static, FF>> {
+    rows
+        .iter()
+        .map(|row| {
+            row.iter()
+                .zip(vec.iter())
+                .fold(Polynomial::<FF>::zero(), |mut acc, (a, b)| {
+                    acc += a.clone() * b.clone();
+                    acc
+                })
+        })
+        .collect()
 }
 
 #[cfg(test)]
