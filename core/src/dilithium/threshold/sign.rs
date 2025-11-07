@@ -7,7 +7,7 @@ use crate::dilithium::utils::{
     reconstruct_vector_from_points, sample_gamma1_vector,
 };
 use crate::basic::keypair::{PublicKey, keygen};
-use crate::matrix::MatrixAExt;
+use crate::matrix::MatrixMulExt;
 use math::{prelude::*, traits::FiniteField};
 use num_traits::Zero;
 use sha2::{Digest, Sha256};

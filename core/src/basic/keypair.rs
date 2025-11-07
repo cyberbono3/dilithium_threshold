@@ -1,14 +1,14 @@
 use crate::dilithium::params::{K, L, N};
 use crate::dilithium::utils::{random_bytes, shake256_squeezed, zero_polyvec};
-use crate::matrix::{expand_a_from_rho, MatrixA, MatrixAExt};
-use math::{error::MatrixError, poly::Polynomial, traits::FiniteField};
+use crate::matrix::{MatrixMulExt, expand_a_from_rho};
+use math::{error::MatrixError, poly::Polynomial, traits::FiniteField, Matrix};
 
 type KeyPairResult<FF> =
     Result<(PublicKey<'static, FF>, PrivateKey<'static, FF>), MatrixError>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PublicKey<'a, FF: FiniteField> {
-    pub a: MatrixA<'a, FF>, // uncompressed: include A directly
+    pub a: Matrix<'a, FF>, // uncompressed: include A directly
     pub t: [Polynomial<'a, FF>; K], // t = A*s1 + s2
     pub rho: [u8; 32],      // seed used for A (kept for provenance)
 }
@@ -17,7 +17,7 @@ impl<'a, FF: FiniteField> PublicKey<'a, FF> {
     /// Construct a public key from its parts.
     /// Note: this does not verify that `t == A*s1 + s2`—it just packages fields.
     pub fn new(
-        a: MatrixA<'a, FF>,
+        a: Matrix<'a, FF>,
         t: [Polynomial<'a, FF>; K],
         rho: [u8; 32],
     ) -> Self {
@@ -27,7 +27,7 @@ impl<'a, FF: FiniteField> PublicKey<'a, FF> {
 
 #[derive(Clone, Debug)]
 pub struct PrivateKey<'a, FF: FiniteField> {
-    pub a: MatrixA<'a, FF>, // include A here for convenience
+    pub a: Matrix<'a, FF>, // include A here for convenience
     pub s1: [Polynomial<'a, FF>; L],
     pub s2: [Polynomial<'a, FF>; K],
 }
@@ -35,7 +35,7 @@ pub struct PrivateKey<'a, FF: FiniteField> {
 impl<'a, FF: FiniteField> PrivateKey<'a, FF> {
     /// Construct a secret key from its parts.
     pub fn new(
-        a: MatrixA<'a, FF>,
+        a: Matrix<'a, FF>,
         s1: [Polynomial<'a, FF>; L],
         s2: [Polynomial<'a, FF>; K],
     ) -> Self {

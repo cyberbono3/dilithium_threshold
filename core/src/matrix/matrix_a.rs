@@ -6,9 +6,6 @@ use num_traits::Zero;
 use crate::dilithium::params::{K, L, N, Q};
 use crate::matrix::hash::shake128;
 
-/// Type alias to the shared matrix implementation in the math crate.
-pub type MatrixA<'a, FF> = Matrix<'a, FF>;
-
 /// Types that can be produced from matrix-vector multiplication results.
 pub trait MatrixMulOutput<FF: FiniteField>: Sized {
     fn from_vec(
@@ -38,7 +35,7 @@ impl<FF: FiniteField> MatrixMulOutput<FF> for [Polynomial<'static, FF>; K] {
 }
 
 /// Additional helpers used by the Dilithium core on top of the generic matrix.
-pub trait MatrixAExt<FF: FiniteField> {
+pub trait MatrixMulExt<FF: FiniteField> {
     /// Multiply the matrix by a collection of polynomials and return the requested container.
     fn mul_polynomials<'poly, Input, Output>(
         &self,
@@ -60,7 +57,7 @@ pub trait MatrixAExt<FF: FiniteField> {
         FF: 'poly;
 }
 
-impl<FF: FiniteField + 'static> MatrixAExt<FF> for Matrix<'static, FF> {
+impl<FF: FiniteField + 'static> MatrixMulExt<FF> for Matrix<'static, FF> {
     fn mul_polynomials<'poly, Input, Output>(
         &self,
         vec: Input,
@@ -115,7 +112,7 @@ impl<FF: FiniteField + 'static> MatrixAExt<FF> for Matrix<'static, FF> {
 /// Expand the public matrix `A` from the seed `rho` using SHAKE128 (educational variant).
 pub fn expand_a_from_rho<FF: FiniteField + From<i64>>(
     rho: [u8; 32],
-) -> MatrixA<'static, FF> {
+) -> Matrix<'static, FF> {
     let modulus = Q as u32;
     let mut rows = Vec::with_capacity(K);
     for i in 0..K {
