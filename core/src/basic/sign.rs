@@ -1,7 +1,7 @@
+use crate::basic::keypair::{PrivateKey, PublicKey};
 use crate::dilithium::error::DilithiumError;
 use crate::dilithium::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N};
-use crate::basic::keypair::{PrivateKey, PublicKey};
-use crate::matrix::{hash::shake256, MatrixAExt};
+use crate::matrix::{MatrixMulExt, hash::shake256};
 
 use math::prelude::FieldElement;
 use math::{poly::Polynomial, traits::FiniteField};

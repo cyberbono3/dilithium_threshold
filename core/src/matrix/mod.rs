@@ -1,4 +1,6 @@
 pub mod hash;
-pub mod matrix_a;
+pub mod traits;
+pub mod utils;
 
-pub use matrix_a::{MatrixA, MatrixAExt, expand_a_from_rho};
+pub use traits::MatrixMulExt;
+pub use utils::expand_a_from_rho;
