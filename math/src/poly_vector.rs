@@ -60,7 +60,7 @@ impl<'coeffs, FF: FiniteField> PolynomialVector<'coeffs, FF> {
 
     /// Maximum infinity norm over the contained polynomials.
     pub fn norm_infinity(&self) -> u32 {
-        crate::builders::max_infinity_norm_from_values(
+        crate::utils::max_infinity_norm_from_values(
             self.polys.iter().map(|p| p.norm_infinity()),
         )
     }

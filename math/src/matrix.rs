@@ -70,7 +70,7 @@ impl<FF: FiniteField> Matrix<'static, FF> {
 
     /// Infinity norm over entries, using the polynomial infinity norm.
     pub fn norm_infinity(&self) -> u32 {
-        crate::builders::max_infinity_norm_from_values(
+        crate::utils::max_infinity_norm_from_values(
             self.rows
                 .iter()
                 .flat_map(|row| row.iter())

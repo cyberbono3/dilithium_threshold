@@ -1,7 +1,41 @@
-//! Shared macros for constructing core math primitives.
+//! Shared macros and helpers for constructing core math primitives.
 //!
-//! These macros delegate to the types they create, which keeps the public API
-//! concise and avoids duplicating builder logic across the crate.
+//! These macros delegate to functions in this module, which keeps the public
+//! API concise and avoids duplicating builder logic across the crate.
+
+use crate::{
+    field_element::FieldElement,
+    poly::Polynomial,
+    poly_vector::PolynomialVector,
+    traits::FiniteField,
+};
+
+/// Build a vector by repeating a value that converts into `FieldElement`.
+pub fn repeat_field_element<T>(value: T, count: usize) -> Vec<FieldElement>
+where
+    T: Into<FieldElement> + Copy,
+{
+    (0..count).map(|_| value.into()).collect()
+}
+
+/// Build a polynomial vector by repeating an existing polynomial.
+pub fn repeat_polynomial<FF>(
+    poly: Polynomial<'static, FF>,
+    count: usize,
+) -> PolynomialVector<'static, FF>
+where
+    FF: FiniteField + Clone,
+{
+    PolynomialVector::new(vec![poly; count])
+}
+
+/// Build a zeroed polynomial vector of the requested length.
+pub fn zeroed_vector<FF>(length: usize) -> PolynomialVector<'static, FF>
+where
+    FF: FiniteField,
+{
+    PolynomialVector::zero(length)
+}
 
 /// Simplifies constructing [`FieldElement`](crate::field_element::FieldElement)s.
 ///
@@ -32,7 +66,7 @@ macro_rules! fe {
 #[macro_export]
 macro_rules! fe_vec {
     ($b:expr; $n:expr) => {
-        $crate::builders::repeat_field_element($b, $n)
+        $crate::macros::repeat_field_element($b, $n)
     };
     ($($b:expr),* $(,)?) => {
         vec![$($crate::field_element::FieldElement::from($b)),*]
@@ -101,11 +135,11 @@ macro_rules! poly_vec {
         $crate::poly_vector::PolynomialVector::new($vec)
     };
     (0; $count:expr) => {
-        $crate::builders::zeroed_vector($count)
+        $crate::macros::zeroed_vector($count)
     };
     ($poly:expr; $count:expr) => {{
         let p = $poly;
-        $crate::builders::repeat_polynomial(p, $count)
+        $crate::macros::repeat_polynomial(p, $count)
     }};
     ($($poly:expr),+ $(,)?) => {
         $crate::poly_vector::PolynomialVector::new(vec![$($poly),+])
