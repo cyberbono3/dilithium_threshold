@@ -54,86 +54,6 @@ const PRIMITIVE_ROOTS: phf::Map<u32, u32> = phf_map! {
 #[derive(Debug, Copy, Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FieldElement(u32);
 
-/// Simplifies constructing [FieldElement]s.
-///
-/// The type [`FieldElement`] must be in scope for this macro to work.
-/// See [`FieldElement::from`] for supported types.
-///
-/// # Examples
-///
-/// ```
-/// use math::prelude::*;
-/// let a = fe!(42);
-/// let b = fe!(-12); // correctly translates to `FieldElement::P - 12`
-/// let c = fe!(42 - 12);
-/// assert_eq!(a + b, c);
-///```
-#[macro_export]
-macro_rules! fe {
-    ($value:expr) => {
-        $crate::field_element::FieldElement::from($value)
-    };
-}
-
-/// Simplifies constructing vectors of [FieldElement]s.
-///
-/// The type [`FieldElement`] must be in scope for this macro to work. See also [`fe!`].
-///
-/// # Examples
-///
-/// ```
-/// use math::prelude::*;
-/// let a = fe_vec![1, 2, 3];
-/// let b = vec![fe!(1), fe!(2), fe!(3)];
-/// assert_eq!(a, b);
-/// ```
-///
-/// ```
-/// use math::prelude::*;
-/// let a = fe_vec![42; 15];
-/// let b = vec![fe!(42); 15];
-/// assert_eq!(a, b);
-/// ```
-///
-#[macro_export]
-macro_rules! fe_vec {
-    ($b:expr; $n:expr) => {
-        vec![$crate::field_element::FieldElement::from($b); $n]
-    };
-    ($($b:expr),* $(,)?) => {
-        vec![$($crate::field_element::FieldElement::from($b)),*]
-    };
-}
-
-/// Simplifies constructing arrays of [base field element][FieldElement]s.
-///
-/// The type [`FieldElement`] must be in scope for this macro to work. See also [`fe!`].
-///
-/// # Examples
-///
-/// ```
-/// use math::prelude::*;
-/// let a = fe_array![1, 2, 3];
-/// let b = [fe!(1), fe!(2), fe!(3)];
-/// assert_eq!(a, b);
-/// ```
-///
-/// ```
-/// use math::prelude::*;
-/// let a = fe_array![42; 15];
-/// let b = [fe!(42); 15];
-/// assert_eq!(a, b);
-/// ```
-#[macro_export]
-macro_rules! fe_array {
-    ($b:expr; $n:expr) => {
-        [$crate::field_element::FieldElement::from($b); $n]
-    };
-    ($($b:expr),* $(,)?) => {
-        [$($crate::field_element::FieldElement::from($b)),*]
-    };
-}
-
 impl GetSize for FieldElement {
     fn get_stack_size() -> usize {
         std::mem::size_of::<Self>()
@@ -521,6 +441,22 @@ impl TryFrom<&[u8]> for FieldElement {
     }
 }
 
+impl CanonicalEncoding for FieldElement {
+    fn to_le_bytes(&self) -> Vec<u8> {
+        self.0.to_le_bytes().to_vec()
+    }
+
+    fn centered_absolute_value(&self) -> u32 {
+        let value = self.value();
+        let half_p = FieldElement::P / 2;
+        if value > half_p {
+            FieldElement::P - value
+        } else {
+            value
+        }
+    }
+}
+
 impl Inverse for FieldElement {
     #[inline]
     fn inverse(&self) -> Self {
@@ -566,21 +502,7 @@ impl rand::prelude::Distribution<FieldElement> for rand_distr::Standard {
     }
 }
 
-impl FiniteField for FieldElement {
-    fn to_le_bytes(&self) -> Vec<u8> {
-        self.0.to_le_bytes().to_vec()
-    }
-
-    fn centered_absolute_value(&self) -> u32 {
-        let value = self.value();
-        let half_p = FieldElement::P / 2;
-        if value > half_p {
-            FieldElement::P - value
-        } else {
-            value
-        }
-    }
-}
+impl FiniteField for FieldElement {}
 
 impl Zero for FieldElement {
     #[inline]
@@ -729,6 +651,7 @@ mod b_prime_field_element_test {
     use test_strategy::proptest;
 
     use super::*;
+    use crate::{fe, fe_array, fe_vec};
 
     impl proptest::arbitrary::Arbitrary for FieldElement {
         type Parameters = ();

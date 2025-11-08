@@ -70,12 +70,12 @@ impl<FF: FiniteField> Matrix<'static, FF> {
 
     /// Infinity norm over entries, using the polynomial infinity norm.
     pub fn norm_infinity(&self) -> u32 {
-        self.rows
-            .iter()
-            .flat_map(|r| r.iter())
-            .map(|p| p.norm_infinity())
-            .max()
-            .unwrap_or(0)
+        crate::builders::max_infinity_norm_from_values(
+            self.rows
+                .iter()
+                .flat_map(|row| row.iter())
+                .map(|poly| poly.norm_infinity()),
+        )
     }
 
     /// Fallible matrix–vector multiplication with shape checks.

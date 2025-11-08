@@ -4,42 +4,52 @@ use thiserror::Error;
 
 use crate::field_element::FieldElement;
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum PolynomialError {
-    #[error("сoefficient out of range")]
-    CoefficientOutOfRange,
+pub mod polynomial {
+    use thiserror::Error;
+
+    #[derive(Debug, Clone, PartialEq, Eq, Error)]
+    pub enum Error {
+        #[error("coefficient out of range")]
+        CoefficientOutOfRange,
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[non_exhaustive]
-// TODO refactor it
-pub enum MatrixError {
-    #[error("Matrix cannot be empty")]
-    Empty,
-    #[error("matrix is ragged: row {row} has {found} columns but expected {expected}")]
-    Ragged {
-        row: usize,
-        expected: usize,
-        found: usize,
-    },
-    #[error(
-        "Matrix multiplication produced {found} entries but expected {expected}"
-    )]
-    OutputLengthMismatch { expected: usize, found: usize },
-    #[error("Matrix columns ({matrix_cols}) must match vector length ({vector_len})")]
-    VectorShapeMismatch {
-        matrix_cols: usize,
-        vector_len: usize,
-    },
+pub mod matrix {
+    use thiserror::Error;
+
+    #[derive(Debug, Clone, PartialEq, Eq, Error)]
+    #[non_exhaustive]
+    pub enum Error {
+        #[error("Matrix cannot be empty")]
+        Empty,
+        #[error("matrix is ragged: row {row} has {found} columns but expected {expected}")]
+        Ragged {
+            row: usize,
+            expected: usize,
+            found: usize,
+        },
+        #[error(
+            "Matrix multiplication produced {found} entries but expected {expected}"
+        )]
+        OutputLengthMismatch { expected: usize, found: usize },
+        #[error("Matrix columns ({matrix_cols}) must match vector length ({vector_len})")]
+        VectorShapeMismatch {
+            matrix_cols: usize,
+            vector_len: usize,
+        },
+    }
 }
+
+pub use matrix::Error as MatrixError;
+pub use polynomial::Error as PolynomialError;
 
 /// Common result type used across this crate.
-pub type Result<T, E = Error> = core::result::Result<T, E>;
+pub type Result<T, E = MathError> = core::result::Result<T, E>;
 
 /// Top-level error type to keep error management simple for users.
 #[derive(Debug, Clone, Eq, PartialEq, Error)]
 #[non_exhaustive]
-pub enum Error {
+pub enum MathError {
     #[error(transparent)]
     ParseFieldElement(#[from] ParseFieldElementError),
     #[error(transparent)]
@@ -49,6 +59,8 @@ pub enum Error {
     #[error(transparent)]
     Matrix(#[from] MatrixError),
 }
+
+pub type Error = MathError;
 
 /// Errors returned by NTT/INTT helpers.
 #[derive(Debug, Clone, Eq, PartialEq, Error)]

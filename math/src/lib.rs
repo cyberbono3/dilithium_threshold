@@ -1,5 +1,8 @@
+pub mod builders;
+pub mod constants;
 pub mod error;
 pub mod field_element;
+pub mod macros;
 pub mod matrix;
 pub mod ntt;
 pub mod poly;

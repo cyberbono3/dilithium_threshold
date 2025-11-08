@@ -12,6 +12,7 @@ use std::ops::SubAssign;
 
 use num_traits::ConstOne;
 use num_traits::ConstZero;
+use num_traits::One;
 use num_traits::Zero;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -58,33 +59,74 @@ where
     }
 }
 
-pub trait FiniteField:
+pub trait AddGroup:
     Copy
-    + Debug
-    + Display
-    + Default
-    + Eq
-    + Serialize
-    + DeserializeOwned
-    + Hash
     + ConstZero
-    + ConstOne
+    + Zero
     + Add<Output = Self>
-    + Mul<Output = Self>
     + Sub<Output = Self>
-    + Div<Output = Self>
-    + Neg<Output = Self>
     + AddAssign
-    + MulAssign
-    + MulAssign<FieldElement>
     + SubAssign
-    + CyclicGroupGenerator
-    + PrimitiveRootOfUnity
+{
+}
+
+impl<T> AddGroup for T where
+    T: Copy
+        + ConstZero
+        + Zero
+        + Add<Output = T>
+        + Sub<Output = T>
+        + AddAssign
+        + SubAssign
+{
+}
+
+pub trait MulGroup:
+    Copy + ConstOne + One + Mul<Output = Self> + Div<Output = Self> + MulAssign
+{
+}
+
+impl<T> MulGroup for T where
+    T: Copy + ConstOne + One + Mul<Output = T> + Div<Output = T> + MulAssign
+{
+}
+
+pub trait CanonicalEncoding {
+    fn to_le_bytes(&self) -> Vec<u8>;
+    fn centered_absolute_value(&self) -> u32;
+}
+
+pub trait FieldCore:
+    Debug + Display + Default + Eq + Serialize + DeserializeOwned + Hash
+{
+}
+
+impl<T> FieldCore for T where
+    T: Debug + Display + Default + Eq + Serialize + DeserializeOwned + Hash
+{
+}
+
+pub trait FieldConversions:
+    From<u64> + From<i32> + From<u32> + MulAssign<FieldElement>
+{
+}
+
+impl<T> FieldConversions for T where
+    T: From<u64> + From<i32> + From<u32> + MulAssign<FieldElement>
+{
+}
+
+pub trait FiniteField:
+    AddGroup
+    + MulGroup
+    + FieldCore
+    + CanonicalEncoding
+    + Neg<Output = Self>
     + Inverse
     + ModPowU32
-    + From<u64>
-    + From<i32>
-    + From<u32>
+    + PrimitiveRootOfUnity
+    + CyclicGroupGenerator
+    + FieldConversions
     + Send
     + Sync
 {
@@ -133,6 +175,4 @@ pub trait FiniteField:
     fn square(self) -> Self {
         self * self
     }
-    fn to_le_bytes(&self) -> Vec<u8>;
-    fn centered_absolute_value(&self) -> u32;
 }
