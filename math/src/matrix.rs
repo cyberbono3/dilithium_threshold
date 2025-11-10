@@ -139,8 +139,7 @@ impl<FF: FiniteField> Matrix<'static, FF> {
                 row.iter().zip(v.as_slice()).fold(
                     Polynomial::<FF>::zero(),
                     |mut acc, (a_ij, v_j)| {
-                        // TODO: enable &Polynomial * &Polynomial to avoid clones
-                        acc += a_ij.clone() * v_j.clone();
+                        acc += a_ij * v_j;
                         acc
                     },
                 )
@@ -184,12 +183,14 @@ fn combine_rows<FF: FiniteField>(
         Polynomial<'static, FF>,
     ) -> Polynomial<'static, FF>,
 ) -> Vec<Vec<Polynomial<'static, FF>>> {
-    Matrix::<FF>::ensure_rectangular_rows(&lhs).unwrap_or_else(|err| {
-        panic!("Invalid matrix for element-wise operation: {err}")
-    });
-    Matrix::<FF>::ensure_rectangular_rows(&rhs).unwrap_or_else(|err| {
-        panic!("Invalid matrix for element-wise operation: {err}")
-    });
+    debug_assert!(
+        Matrix::<FF>::ensure_rectangular_rows(&lhs).is_ok(),
+        "Invalid left matrix for element-wise operation"
+    );
+    debug_assert!(
+        Matrix::<FF>::ensure_rectangular_rows(&rhs).is_ok(),
+        "Invalid right matrix for element-wise operation"
+    );
     lhs.into_iter()
         .zip(rhs)
         .map(|(row_a, row_b)| {
@@ -296,7 +297,7 @@ impl<FF: FiniteField> Mul<&Polynomial<'static, FF>> for Matrix<'static, FF> {
             .into_iter()
             .map(|row| {
                 row.into_iter()
-                    .map(|p| p * scalar.clone())
+                    .map(|p| p * scalar)
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();

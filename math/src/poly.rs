@@ -2792,7 +2792,39 @@ where
         self,
         other: Polynomial<'_, FF2>,
     ) -> Polynomial<'static, <FF as Mul<FF2>>::Output> {
-        self.naive_multiply(&other)
+        self.multiply(&other)
+    }
+}
+
+impl<'a, FF, FF2> Mul<&Polynomial<'_, FF2>> for Polynomial<'a, FF>
+where
+    FF: FiniteField + Mul<FF2>,
+    FF2: FiniteField,
+    <FF as Mul<FF2>>::Output: 'static + FiniteField,
+{
+    type Output = Polynomial<'static, <FF as Mul<FF2>>::Output>;
+
+    fn mul(
+        self,
+        other: &Polynomial<'_, FF2>,
+    ) -> Polynomial<'static, <FF as Mul<FF2>>::Output> {
+        self.multiply(other)
+    }
+}
+
+impl<'a, 'b, FF, FF2> Mul<&'b Polynomial<'b, FF2>> for &'a Polynomial<'a, FF>
+where
+    FF: FiniteField + Mul<FF2>,
+    FF2: FiniteField,
+    <FF as Mul<FF2>>::Output: 'static + FiniteField,
+{
+    type Output = Polynomial<'static, <FF as Mul<FF2>>::Output>;
+
+    fn mul(
+        self,
+        other: &'b Polynomial<'b, FF2>,
+    ) -> Polynomial<'static, <FF as Mul<FF2>>::Output> {
+        self.multiply(other)
     }
 }
 
