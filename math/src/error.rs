@@ -54,6 +54,13 @@ pub enum MatrixError {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[non_exhaustive]
+pub enum PolynomialVectorError {
+    #[error("index {index} out of bounds for length {len}")]
+    IndexOutOfBounds { index: usize, len: usize },
+}
+
 /// Errors returned by NTT/INTT helpers.
 #[derive(Debug, Clone, Eq, PartialEq, Error)]
 #[non_exhaustive]

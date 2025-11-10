@@ -146,7 +146,7 @@ impl<FF: FiniteField> Matrix<'static, FF> {
             })
             .collect();
 
-        PolynomialVector::new(polys)
+        PolynomialVector::from_vec(polys)
     }
 }
 
@@ -366,7 +366,7 @@ mod tests {
 
     #[inline]
     fn pv_from_consts(vals: &[u32]) -> PV {
-        PolynomialVector::new(vals.iter().cloned().map(c).collect())
+        PolynomialVector::from_vec(vals.iter().cloned().map(c).collect())
     }
 
     // --------------------------
@@ -574,7 +574,7 @@ mod tests {
             vec![x.clone(), one.clone(), Polynomial::zero()],
             vec![Polynomial::zero(), x.clone(), three.clone()],
         ]);
-        let v = PV::new(vec![one.clone(), two.clone(), three.clone()]);
+        let v = PV::from_vec(vec![one.clone(), two.clone(), three.clone()]);
 
         let out = m.mul_vector(&v);
         assert_eq!(out.len(), 2);
@@ -588,7 +588,7 @@ mod tests {
     )]
     fn mul_vector_panics_on_empty_matrix() {
         let m: Mat = Mat::new(vec![]);
-        let v = PV::new(vec![]);
+        let v = PV::from_vec(vec![]);
         let _ = m.mul_vector(&v);
     }
 
@@ -608,7 +608,7 @@ mod tests {
     fn try_mul_vector_errors_on_empty_or_mismatch() {
         // empty matrix
         let m_empty: Mat = Mat::new(vec![]);
-        let v_empty = PV::new(vec![]);
+        let v_empty = PV::from_vec(vec![]);
         let err = m_empty.try_mul_vector(&v_empty).unwrap_err();
         assert_eq!(
             err,

@@ -12,6 +12,7 @@ use std::ops::MulAssign;
 use std::ops::Neg;
 use std::ops::Rem;
 use std::ops::Sub;
+use std::ops::SubAssign;
 use std::thread::available_parallelism;
 
 use arbitrary::Arbitrary;
@@ -2649,6 +2650,14 @@ where
 
 impl<FF: FiniteField> AddAssign<Polynomial<'_, FF>> for Polynomial<'_, FF> {
     fn add_assign(&mut self, rhs: Polynomial<'_, FF>) {
+        self.add_assign(&rhs);
+    }
+}
+
+impl<'rhs, FF: FiniteField> AddAssign<&Polynomial<'rhs, FF>>
+    for Polynomial<'_, FF>
+{
+    fn add_assign(&mut self, rhs: &Polynomial<'rhs, FF>) {
         let rhs_len = rhs.coefficients.len();
         let self_len = self.coefficients.len();
         let mut self_coefficients =
@@ -2661,6 +2670,38 @@ impl<FF: FiniteField> AddAssign<Polynomial<'_, FF>> for Polynomial<'_, FF> {
 
         if rhs_len > self_len {
             self_coefficients.extend(&rhs.coefficients[self_len..]);
+        }
+
+        self.coefficients = Cow::Owned(self_coefficients);
+    }
+}
+
+impl<FF: FiniteField> SubAssign<Polynomial<'_, FF>> for Polynomial<'_, FF> {
+    fn sub_assign(&mut self, rhs: Polynomial<'_, FF>) {
+        self.sub_assign(&rhs);
+    }
+}
+
+impl<'rhs, FF: FiniteField> SubAssign<&Polynomial<'rhs, FF>>
+    for Polynomial<'_, FF>
+{
+    fn sub_assign(&mut self, rhs: &Polynomial<'rhs, FF>) {
+        let rhs_len = rhs.coefficients.len();
+        let self_len = self.coefficients.len();
+        let mut self_coefficients =
+            std::mem::take(&mut self.coefficients).into_owned();
+
+        for (l, &r) in self_coefficients.iter_mut().zip(rhs.coefficients.iter())
+        {
+            *l -= r;
+        }
+
+        if rhs_len > self_len {
+            self_coefficients.extend(
+                rhs.coefficients[self_len..]
+                    .iter()
+                    .map(|&val| FF::ZERO - val),
+            );
         }
 
         self.coefficients = Cow::Owned(self_coefficients);
