@@ -169,7 +169,7 @@ impl<'de> Deserialize<'de> for FieldElement {
 }
 
 impl FieldElement {
-    pub const BYTES: usize = 4; // Changed from 8 to 4
+    pub const BYTES: usize = 4; 
 
     /// Dilithium prime modulus: 8380417
     pub const P: u32 = 8380417;
@@ -727,6 +727,7 @@ mod b_prime_field_element_test {
     use proptest_arbitrary_interop::arb;
     use serde_json;
     use test_strategy::proptest;
+    use rand::Rng;
 
     use super::*;
 
@@ -1238,40 +1239,71 @@ mod b_prime_field_element_test {
         }
     }
 
-    // Todo fix it
-    // #[test]
-    // fn inverse_or_zero_fe() {
-    //     let zero = FieldElement::ZERO;
-    //     let one = FieldElement::ONE;
-    //     assert_eq!(zero, zero.inverse_or_zero());
+    #[test]
+    fn reduce_unsigned_preserves_values_within_modulus() {
+        let samples = [
+            0u128,
+            1,
+            (FieldElement::P as u128) - 1,
+            (FieldElement::P / 2) as u128,
+        ];
 
-    //     let mut rng = rand::thread_rng();
-    //     let elem: FieldElement = rng.gen();
-    //     if elem.is_zero() {
-    //         assert_eq!(zero, elem.inverse_or_zero())
-    //     } else {
-    //         assert_eq!(one, elem * elem.inverse_or_zero());
-    //     }
-    // }
+        for value in samples {
+            assert_eq!(value as u32, FieldElement::reduce_unsigned(value));
+        }
+    }
 
-    // TODO fix it
-    // #[test]
-    // fn test_random_squares() {
-    //     let mut rng = thread_rng();
-    //     let p = FieldElement::P;
-    //     for _ in 0..100 {
-    //         let a = rng.gen_range(0..p);
-    //         let asq = (((a as u64) * (a as u64)) % (p as u64)) as u32;
-    //         let b = FieldElement::new(a);
-    //         let bsq = FieldElement::new(asq);
-    //         assert_eq!(bsq, b * b);
-    //         assert_eq!(bsq.value(), (b * b).value());
-    //         assert_eq!(b.value(), a);
-    //         assert_eq!(bsq.value(), asq);
-    //     }
-    //     let one = FieldElement::new(1);
-    //     assert_eq!(one, one * one);
-    // }
+    #[test]
+    fn reduce_unsigned_wraps_values_greater_than_modulus() {
+        let p = FieldElement::P as u128;
+        assert_eq!(0, FieldElement::reduce_unsigned(p));
+        assert_eq!(1, FieldElement::reduce_unsigned(p + 1));
+        assert_eq!(
+            (p - 5) as u32,
+            FieldElement::reduce_unsigned((2 * p) - 5)
+        );
+    }
+
+    #[test]
+    fn reduce_unsigned_handles_large_u128_inputs() {
+        let large = u128::MAX;
+        let expected = (large % FieldElement::P as u128) as u32;
+        assert_eq!(expected, FieldElement::reduce_unsigned(large));
+    }
+
+    #[test]
+    fn inverse_or_zero_fe() {
+        let zero = FieldElement::ZERO;
+        let one = FieldElement::ONE;
+        assert_eq!(zero, zero.inverse_or_zero());
+
+        let mut rng = rand::thread_rng();
+        let elem: FieldElement = rng.gen();
+        if elem.is_zero() {
+            assert_eq!(zero, elem.inverse_or_zero())
+        } else {
+            assert_eq!(one, elem * elem.inverse_or_zero());
+        }
+    }
+
+    #[test]
+    fn test_random_squares() {
+        use rand::thread_rng;
+        let mut rng = thread_rng();
+        let p = FieldElement::P;
+        for _ in 0..100 {
+            let a = rng.gen_range(0..p);
+            let asq = (((a as u64) * (a as u64)) % (p as u64)) as u32;
+            let b = FieldElement::new(a);
+            let bsq = FieldElement::new(asq);
+            assert_eq!(bsq, b * b);
+            assert_eq!(bsq.value(), (b * b).value());
+            assert_eq!(b.value(), a);
+            assert_eq!(bsq.value(), asq);
+        }
+        let one = FieldElement::new(1);
+        assert_eq!(one, one * one);
+    }
 
     #[test]
     fn equals() {
@@ -1283,34 +1315,34 @@ mod b_prime_field_element_test {
         assert_eq!(a.value(), b.value());
     }
 
-    //TODO fix it
-    // #[test]
-    // fn test_random_raw() {
 
-    //     let mut rng = rand::thread_rng();
-    //     for _ in 0..100 {
-    //         let e: FieldElement = rng.gen();
-    //         let bytes = e.raw_bytes();
-    //         let c = FieldElement::from_raw_bytes(&bytes);
-    //         assert_eq!(e, c);
+    #[test]
+    fn test_random_raw() {
 
-    //         let mut f = 0u32;
-    //         for (i, b) in bytes.iter().enumerate() {
-    //             f += (*b as u32) << (8 * i);
-    //         }
-    //         assert_eq!(e, FieldElement(f));
+        let mut rng = rand::thread_rng();
+        for _ in 0..100 {
+            let e: FieldElement = rng.gen();
+            let bytes = e.raw_bytes();
+            let c = FieldElement::from_raw_bytes(&bytes);
+            assert_eq!(e, c);
 
-    //         let chunks = e.raw_u16s();
-    //         let g = FieldElement::from_raw_u16s(&chunks);
-    //         assert_eq!(e, g);
+            let mut f = 0u32;
+            for (i, b) in bytes.iter().enumerate() {
+                f += (*b as u32) << (8 * i);
+            }
+            assert_eq!(e, FieldElement(f));
 
-    //         let mut h = 0u32;
-    //         for (i, ch) in chunks.iter().enumerate() {
-    //             h += (*ch as u32) << (16 * i);
-    //         }
-    //         assert_eq!(e, FieldElement(h));
-    //     }
-    // }
+            let chunks = e.raw_u16s();
+            let g = FieldElement::from_raw_u16s(&chunks);
+            assert_eq!(e, g);
+
+            let mut h = 0u32;
+            for (i, ch) in chunks.iter().enumerate() {
+                h += (*ch as u32) << (16 * i);
+            }
+            assert_eq!(e, FieldElement(h));
+        }
+    }
 
     #[test]
     fn test_fixed_inverse() {
@@ -1582,11 +1614,23 @@ mod montyred_tests {
         prop_assert!(result < FieldElement::P);
     }
 
-    #[proptest]
-    fn montyred_is_deterministic(a: u64) {
-        let result1 = FieldElement::montyred(a);
-        let result2 = FieldElement::montyred(a);
-        prop_assert_eq!(result1, result2);
+    #[test]
+    fn montyred_is_deterministic() {
+        let samples = [
+            0u64,
+            1,
+            FieldElement::P as u64,
+            (FieldElement::P as u64) * 2,
+            u32::MAX as u64,
+            u64::MAX,
+            ((FieldElement::P as u64) << 20) | 0xABCDE,
+        ];
+
+        for &value in &samples {
+            let result1 = FieldElement::montyred(value);
+            let result2 = FieldElement::montyred(value);
+            assert_eq!(result1, result2, "value: {value}");
+        }
     }
 
     #[test]
