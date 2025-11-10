@@ -12,6 +12,7 @@ use std::ops::MulAssign;
 use std::ops::Neg;
 use std::ops::Rem;
 use std::ops::Sub;
+use std::ops::SubAssign;
 use std::thread::available_parallelism;
 
 use arbitrary::Arbitrary;
@@ -362,36 +363,10 @@ where
         p2_y_times_dx / dx
     }
 
-    /// Slow square implementation that does not use NTT
+    /// Slow square implementation that does not use NTT.
     #[must_use]
     pub fn slow_square(&self) -> Polynomial<'static, FF> {
-        let degree = self.degree();
-        if degree == -1 {
-            return Polynomial::zero();
-        }
-
-        //let squared_coefficient_len = self.degree() as usize * 2 + 1;
-        let used_len = degree as usize + 1;
-        let squared_coefficient_len = used_len * 2 - 1;
-        let zero = FF::ZERO;
-        let one = FF::ONE;
-        let two = one + one;
-        let mut squared_coefficients = vec![zero; squared_coefficient_len];
-
-        // for i in 0..self.coefficients.len() {
-        for i in 0..used_len {
-            let ci = self.coefficients[i];
-            squared_coefficients[2 * i] += ci * ci;
-
-            // TODO: Review.
-            //for j in i + 1..self.coefficients.len() {
-            for j in i + 1..used_len {
-                let cj = self.coefficients[j];
-                squared_coefficients[i + j] += two * ci * cj;
-            }
-        }
-
-        Polynomial::new(squared_coefficients)
+        self.square()
     }
 
     /// Only `pub` to allow benchmarking; not considered part of the public API.
@@ -842,21 +817,25 @@ where
     #[must_use]
     pub fn fast_pow(&self, pow: u32) -> Polynomial<'static, FF> {
         // special case: 0^0 = 1
-        let Some(bit_length) = pow.checked_ilog2() else {
+        if pow == 0 {
             return Polynomial::one();
-        };
+        }
 
-        if self.degree() < 0 {
+        let mut base = self.clone().into_owned();
+        if base.is_zero() {
             return Polynomial::zero();
         }
 
-        // square-and-multiply
+        let mut exponent = pow;
         let mut acc = Polynomial::one();
-        for i in 0..=bit_length {
-            acc = acc.square();
-            let bit_is_set = (pow >> (bit_length - i) & 1) == 1;
-            if bit_is_set {
-                acc = self.multiply(&acc);
+
+        while exponent > 0 {
+            if exponent & 1 == 1 {
+                acc = acc.multiply(&base);
+            }
+            exponent >>= 1;
+            if exponent > 0 {
+                base = base.square();
             }
         }
 
@@ -2564,9 +2543,11 @@ where
     ///
     /// See also [`Self::new_borrowed`].
     pub fn new(coeffs: Vec<FF>) -> Self {
-        Self {
+        let mut poly = Self {
             coefficients: std::borrow::Cow::Owned(coeffs),
-        }
+        };
+        poly.normalize();
+        poly
     }
 
     /// `x^n`
@@ -2597,8 +2578,11 @@ where
 {
     /// Like [`Self::new`], but without owning the coefficients.
     pub fn new_borrowed(coeffs: &'coeffs [FF]) -> Self {
-        let coefficients = Cow::Borrowed(coeffs);
-        Self { coefficients }
+        let mut poly = Self {
+            coefficients: Cow::Borrowed(coeffs),
+        };
+        poly.normalize();
+        poly
     }
 }
 
@@ -2649,6 +2633,14 @@ where
 
 impl<FF: FiniteField> AddAssign<Polynomial<'_, FF>> for Polynomial<'_, FF> {
     fn add_assign(&mut self, rhs: Polynomial<'_, FF>) {
+        self.add_assign(&rhs);
+    }
+}
+
+impl<'rhs, FF: FiniteField> AddAssign<&Polynomial<'rhs, FF>>
+    for Polynomial<'_, FF>
+{
+    fn add_assign(&mut self, rhs: &Polynomial<'rhs, FF>) {
         let rhs_len = rhs.coefficients.len();
         let self_len = self.coefficients.len();
         let mut self_coefficients =
@@ -2661,6 +2653,38 @@ impl<FF: FiniteField> AddAssign<Polynomial<'_, FF>> for Polynomial<'_, FF> {
 
         if rhs_len > self_len {
             self_coefficients.extend(&rhs.coefficients[self_len..]);
+        }
+
+        self.coefficients = Cow::Owned(self_coefficients);
+    }
+}
+
+impl<FF: FiniteField> SubAssign<Polynomial<'_, FF>> for Polynomial<'_, FF> {
+    fn sub_assign(&mut self, rhs: Polynomial<'_, FF>) {
+        self.sub_assign(&rhs);
+    }
+}
+
+impl<'rhs, FF: FiniteField> SubAssign<&Polynomial<'rhs, FF>>
+    for Polynomial<'_, FF>
+{
+    fn sub_assign(&mut self, rhs: &Polynomial<'rhs, FF>) {
+        let rhs_len = rhs.coefficients.len();
+        let self_len = self.coefficients.len();
+        let mut self_coefficients =
+            std::mem::take(&mut self.coefficients).into_owned();
+
+        for (l, &r) in self_coefficients.iter_mut().zip(rhs.coefficients.iter())
+        {
+            *l -= r;
+        }
+
+        if rhs_len > self_len {
+            self_coefficients.extend(
+                rhs.coefficients[self_len..]
+                    .iter()
+                    .map(|&val| FF::ZERO - val),
+            );
         }
 
         self.coefficients = Cow::Owned(self_coefficients);
@@ -2792,7 +2816,39 @@ where
         self,
         other: Polynomial<'_, FF2>,
     ) -> Polynomial<'static, <FF as Mul<FF2>>::Output> {
-        self.naive_multiply(&other)
+        self.multiply(&other)
+    }
+}
+
+impl<'a, FF, FF2> Mul<&Polynomial<'_, FF2>> for Polynomial<'a, FF>
+where
+    FF: FiniteField + Mul<FF2>,
+    FF2: FiniteField,
+    <FF as Mul<FF2>>::Output: 'static + FiniteField,
+{
+    type Output = Polynomial<'static, <FF as Mul<FF2>>::Output>;
+
+    fn mul(
+        self,
+        other: &Polynomial<'_, FF2>,
+    ) -> Polynomial<'static, <FF as Mul<FF2>>::Output> {
+        self.multiply(other)
+    }
+}
+
+impl<'a, 'b, FF, FF2> Mul<&'b Polynomial<'b, FF2>> for &'a Polynomial<'a, FF>
+where
+    FF: FiniteField + Mul<FF2>,
+    FF2: FiniteField,
+    <FF as Mul<FF2>>::Output: 'static + FiniteField,
+{
+    type Output = Polynomial<'static, <FF as Mul<FF2>>::Output>;
+
+    fn mul(
+        self,
+        other: &'b Polynomial<'b, FF2>,
+    ) -> Polynomial<'static, <FF as Mul<FF2>>::Output> {
+        self.multiply(other)
     }
 }
 
@@ -3181,6 +3237,9 @@ mod test_polynomials {
         let shifted_poly = poly.clone().shift_coefficients(shift);
         let mut expected_coefficients = vec![FieldElement::ZERO; shift];
         expected_coefficients.extend(poly.coefficients.to_vec());
+        if expected_coefficients.iter().all(FieldElement::is_zero) {
+            expected_coefficients.clear();
+        }
         prop_assert_eq!(
             expected_coefficients,
             shifted_poly.coefficients.to_vec()
@@ -3191,12 +3250,18 @@ mod test_polynomials {
     fn any_polynomial_to_the_power_of_zero_is_one(poly: FePoly) {
         let poly_to_the_zero = poly.pow(0);
         prop_assert_eq!(Polynomial::one(), poly_to_the_zero);
+
+        let poly_fast_pow_zero = poly.fast_pow(0);
+        prop_assert_eq!(Polynomial::one(), poly_fast_pow_zero);
     }
 
     #[proptest]
     fn any_polynomial_to_the_power_one_is_itself(poly: FePoly) {
         let poly_to_the_one = poly.pow(1);
-        prop_assert_eq!(poly, poly_to_the_one);
+        prop_assert_eq!(poly.clone(), poly_to_the_one);
+
+        let poly_fast_pow_one = poly.fast_pow(1);
+        prop_assert_eq!(poly, poly_fast_pow_one);
     }
 
     #[proptest]
@@ -3234,7 +3299,7 @@ mod test_polynomials {
         let fast_actual = poly.fast_pow(exponent);
         let mut expected = Polynomial::one();
         for _ in 0..exponent {
-            expected = expected.clone() * poly.clone();
+            expected = expected.multiply(&poly);
         }
 
         prop_assert_eq!(expected.clone(), actual);

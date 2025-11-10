@@ -20,6 +20,8 @@ pub struct Matrix<'coeffs, FF: FiniteField> {
     rows: Vec<Vec<Polynomial<'coeffs, FF>>>,
 }
 
+const MATRIX_VECTOR_OP: &str = "matrix-vector multiplication";
+
 impl<FF: FiniteField> Matrix<'static, FF> {
     /// Construct a new matrix from rows. Panics if rows have differing lengths.
     pub fn new(rows: Vec<Vec<Polynomial<'static, FF>>>) -> Self {
@@ -106,13 +108,18 @@ impl<FF: FiniteField> Matrix<'static, FF> {
         vector_len: usize,
     ) -> core::result::Result<(), MatrixError> {
         if self.rows.is_empty() {
-            return Err(MatrixError::Empty);
+            return Err(MatrixError::Empty {
+                operation: MATRIX_VECTOR_OP,
+            });
         }
 
         let expected_cols = self.ensure_rectangular()?;
+        let matrix_rows = self.rows.len();
 
         if expected_cols != vector_len {
             return Err(MatrixError::VectorShapeMismatch {
+                operation: MATRIX_VECTOR_OP,
+                matrix_rows,
                 matrix_cols: expected_cols,
                 vector_len,
             });
@@ -132,15 +139,14 @@ impl<FF: FiniteField> Matrix<'static, FF> {
                 row.iter().zip(v.as_slice()).fold(
                     Polynomial::<FF>::zero(),
                     |mut acc, (a_ij, v_j)| {
-                        // TODO: enable &Polynomial * &Polynomial to avoid clones
-                        acc += a_ij.clone() * v_j.clone();
+                        acc += a_ij * v_j;
                         acc
                     },
                 )
             })
             .collect();
 
-        PolynomialVector::new(polys)
+        PolynomialVector::from_vec(polys)
     }
 }
 
@@ -177,12 +183,14 @@ fn combine_rows<FF: FiniteField>(
         Polynomial<'static, FF>,
     ) -> Polynomial<'static, FF>,
 ) -> Vec<Vec<Polynomial<'static, FF>>> {
-    Matrix::<FF>::ensure_rectangular_rows(&lhs).unwrap_or_else(|err| {
-        panic!("Invalid matrix for element-wise operation: {err}")
-    });
-    Matrix::<FF>::ensure_rectangular_rows(&rhs).unwrap_or_else(|err| {
-        panic!("Invalid matrix for element-wise operation: {err}")
-    });
+    debug_assert!(
+        Matrix::<FF>::ensure_rectangular_rows(&lhs).is_ok(),
+        "Invalid left matrix for element-wise operation"
+    );
+    debug_assert!(
+        Matrix::<FF>::ensure_rectangular_rows(&rhs).is_ok(),
+        "Invalid right matrix for element-wise operation"
+    );
     lhs.into_iter()
         .zip(rhs)
         .map(|(row_a, row_b)| {
@@ -289,7 +297,7 @@ impl<FF: FiniteField> Mul<&Polynomial<'static, FF>> for Matrix<'static, FF> {
             .into_iter()
             .map(|row| {
                 row.into_iter()
-                    .map(|p| p * scalar.clone())
+                    .map(|p| p * scalar)
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
@@ -358,7 +366,7 @@ mod tests {
 
     #[inline]
     fn pv_from_consts(vals: &[u32]) -> PV {
-        PolynomialVector::new(vals.iter().cloned().map(c).collect())
+        PolynomialVector::from_vec(vals.iter().cloned().map(c).collect())
     }
 
     // --------------------------
@@ -566,7 +574,7 @@ mod tests {
             vec![x.clone(), one.clone(), Polynomial::zero()],
             vec![Polynomial::zero(), x.clone(), three.clone()],
         ]);
-        let v = PV::new(vec![one.clone(), two.clone(), three.clone()]);
+        let v = PV::from_vec(vec![one.clone(), two.clone(), three.clone()]);
 
         let out = m.mul_vector(&v);
         assert_eq!(out.len(), 2);
@@ -575,17 +583,17 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Matrix cannot be empty")]
+    #[should_panic(
+        expected = "matrix cannot be empty during matrix-vector multiplication"
+    )]
     fn mul_vector_panics_on_empty_matrix() {
         let m: Mat = Mat::new(vec![]);
-        let v = PV::new(vec![]);
+        let v = PV::from_vec(vec![]);
         let _ = m.mul_vector(&v);
     }
 
     #[test]
-    #[should_panic(
-        expected = "Matrix columns (3) must match vector length (2)"
-    )]
+    #[should_panic(expected = "matrix/vector shape mismatch during matrix-vector multiplication")]
     fn mul_vector_panics_on_mismatched_shapes() {
         let m = Mat::new(vec![vec![c(1), c(2), c(3)], vec![c(4), c(5), c(6)]]);
         let v = pv_from_consts(&[7, 8]); // length 2, but matrix has 3 columns
@@ -600,9 +608,14 @@ mod tests {
     fn try_mul_vector_errors_on_empty_or_mismatch() {
         // empty matrix
         let m_empty: Mat = Mat::new(vec![]);
-        let v_empty = PV::new(vec![]);
+        let v_empty = PV::from_vec(vec![]);
         let err = m_empty.try_mul_vector(&v_empty).unwrap_err();
-        assert_eq!(err, MathError::Matrix(MatrixError::Empty));
+        assert_eq!(
+            err,
+            MathError::Matrix(MatrixError::Empty {
+                operation: super::MATRIX_VECTOR_OP
+            })
+        );
 
         // column/length mismatch
         let m = Mat::new(vec![vec![c(1), c(2), c(3)], vec![c(4), c(5), c(6)]]);
@@ -611,6 +624,8 @@ mod tests {
         assert_eq!(
             err2,
             MathError::Matrix(MatrixError::VectorShapeMismatch {
+                operation: super::MATRIX_VECTOR_OP,
+                matrix_rows: 2,
                 matrix_cols: 3,
                 vector_len: 2
             })

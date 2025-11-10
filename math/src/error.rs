@@ -4,35 +4,6 @@ use thiserror::Error;
 
 use crate::field_element::FieldElement;
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum PolynomialError {
-    #[error("сoefficient out of range")]
-    CoefficientOutOfRange,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[non_exhaustive]
-// TODO refactor it
-pub enum MatrixError {
-    #[error("Matrix cannot be empty")]
-    Empty,
-    #[error("matrix is ragged: row {row} has {found} columns but expected {expected}")]
-    Ragged {
-        row: usize,
-        expected: usize,
-        found: usize,
-    },
-    #[error(
-        "Matrix multiplication produced {found} entries but expected {expected}"
-    )]
-    OutputLengthMismatch { expected: usize, found: usize },
-    #[error("Matrix columns ({matrix_cols}) must match vector length ({vector_len})")]
-    VectorShapeMismatch {
-        matrix_cols: usize,
-        vector_len: usize,
-    },
-}
-
 /// Common result type used across this crate.
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
@@ -44,10 +15,50 @@ pub enum Error {
     ParseFieldElement(#[from] ParseFieldElementError),
     #[error(transparent)]
     Ntt(#[from] NttError),
-    #[error("polynomial error: {0:?}")]
+    #[error(transparent)]
     Polynomial(PolynomialError),
     #[error(transparent)]
     Matrix(#[from] MatrixError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[non_exhaustive]
+pub enum PolynomialError {
+    #[error("coefficient out of range")]
+    CoefficientOutOfRange,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[non_exhaustive]
+pub enum MatrixError {
+    #[error("matrix cannot be empty during {operation}")]
+    Empty { operation: &'static str },
+    #[error("matrix is ragged: row {row} has {found} columns but expected {expected}")]
+    Ragged {
+        row: usize,
+        expected: usize,
+        found: usize,
+    },
+    #[error(
+        "Matrix multiplication produced {found} entries but expected {expected}"
+    )]
+    OutputLengthMismatch { expected: usize, found: usize },
+    #[error(
+        "matrix/vector shape mismatch during {operation}: matrix is {matrix_rows}x{matrix_cols} but vector length is {vector_len}"
+    )]
+    VectorShapeMismatch {
+        operation: &'static str,
+        matrix_rows: usize,
+        matrix_cols: usize,
+        vector_len: usize,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[non_exhaustive]
+pub enum PolynomialVectorError {
+    #[error("index {index} out of bounds for length {len}")]
+    IndexOutOfBounds { index: usize, len: usize },
 }
 
 /// Errors returned by NTT/INTT helpers.
