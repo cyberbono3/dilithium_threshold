@@ -64,20 +64,32 @@ impl<FF: FiniteField + MulAssign<FieldElement> + 'static> ZerofierTree<FF> {
     const RECURSION_CUTOFF_THRESHOLD: usize = 16;
 
     pub fn new_from_domain(domain: &[FF]) -> Self {
-        Self::build(domain)
+        Self::new_from_domain_with_cutoff(
+            domain,
+            Self::RECURSION_CUTOFF_THRESHOLD,
+        )
     }
 
-    fn build(domain: &[FF]) -> Self {
+    /// Construct a zerofier tree using a custom cutoff for leaf sizes.
+    ///
+    /// `cutoff` determines the maximum number of points a leaf may hold before
+    /// the recursion stops splitting the domain. Values below 1 are treated as 1.
+    pub fn new_from_domain_with_cutoff(domain: &[FF], cutoff: usize) -> Self {
+        let cutoff = cutoff.max(1);
+        Self::build(domain, cutoff)
+    }
+
+    fn build(domain: &[FF], cutoff: usize) -> Self {
         if domain.is_empty() {
             return ZerofierTree::Padding;
         }
-        if domain.len() <= Self::RECURSION_CUTOFF_THRESHOLD {
+        if domain.len() <= cutoff {
             return ZerofierTree::Leaf(Leaf::new(domain.to_vec()));
         }
 
         let mid = domain.len() / 2;
-        let left = Self::build(&domain[..mid]);
-        let right = Self::build(&domain[mid..]);
+        let left = Self::build(&domain[..mid], cutoff);
+        let right = Self::build(&domain[mid..], cutoff);
         Self::combine(left, right)
     }
 
@@ -152,6 +164,17 @@ mod test {
             _ => panic!("expected branch"),
         }
     }
+
+    #[test]
+    fn custom_cutoff_is_respected() {
+        let points = domain_points(0..8);
+        match ZerofierTree::new_from_domain_with_cutoff(&points, points.len())
+        {
+            ZerofierTree::Leaf(leaf) => assert_eq!(leaf.points, points),
+            _ => panic!("expected single leaf when cutoff >= len"),
+        }
+    }
+
     #[proptest]
     fn zerofier_tree_root_is_multiple_of_children(
         #[strategy(vec(arb(), 2*ZerofierTree::<FieldElement>::RECURSION_CUTOFF_THRESHOLD))]
