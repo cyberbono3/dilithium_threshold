@@ -42,7 +42,7 @@ impl<FF: FiniteField> MatrixMulOutput<FF> for PolynomialVector<'static, FF> {
     fn from_vec(
         vec: Vec<Polynomial<'static, FF>>,
     ) -> Result<Self, MatrixError> {
-        Ok(PolynomialVector::new(vec))
+        Ok(PolynomialVector::from_vec(vec))
     }
 }
 

@@ -90,7 +90,10 @@ use num_traits::Zero;
 /// assert_eq!(pv[0], poly![1, 2]);
 ///
 /// let zeros: PolynomialVector<'static, FieldElement> = poly_vec![0; 3];
-/// assert!(zeros.iter().all(|p| p.coefficients().is_empty()));
+/// assert!(zeros
+///     .as_slice()
+///     .iter()
+///     .all(|p| p.coefficients().is_empty()));
 /// ```
 #[macro_export]
 macro_rules! poly_vec {

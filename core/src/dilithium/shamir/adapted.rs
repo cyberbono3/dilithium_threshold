@@ -330,7 +330,7 @@ mod tests {
             assert_eq!(secret_poly2.coefficients().len(), coeffs.len());
             let secret_vector = poly_vec!(secret_poly1, secret_poly2);
 
-            let shares = shamir.split_secret(&secret_vector).unwrap();
+            let shares = shamir.split_secret(secret_vector.as_slice()).unwrap();
 
             assert_eq!(shares.len(), shamir.participant_number);
 
@@ -381,7 +381,7 @@ mod tests {
             let secret_poly: Polynomial<'_, FieldElement> = poly![100, 200];
             let secret_vector = poly_vec!(vec![secret_poly]);
 
-            let shares = shamir.split_secret(&secret_vector).unwrap();
+            let shares = shamir.split_secret(secret_vector.as_slice()).unwrap();
 
             let result =
                 shamir.reconstruct_secret(&shares[..shamir.threshold - 1]);
@@ -412,7 +412,7 @@ mod tests {
             let secret_vector =
                 poly_vec!(secret_poly1.clone(), secret_poly2.clone());
 
-            let shares = shamir.split_secret(&secret_vector).unwrap();
+            let shares = shamir.split_secret(secret_vector.as_slice()).unwrap();
 
             let partial = shamir
                 .partial_reconstruct(&shares[..threshold], &[0])
