@@ -186,6 +186,16 @@ fn log2_pow2_usize(n: usize) -> usize {
     n.ilog2() as usize
 }
 
+#[inline]
+fn validate_ntt_length(len: usize) -> core::result::Result<u32, NttError> {
+    let len_u32 =
+        u32::try_from(len).map_err(|_| NttError::TooLarge(len))?;
+    if len_u32 != 0 && !len_u32.is_power_of_two() {
+        return Err(NttError::NonPowerOfTwo(len));
+    }
+    Ok(len_u32)
+}
+
 /// Perform an in‑place NTT/INTT on a slice (fallible, no panics).
 ///
 /// This is the internal workhorse behind [`try_ntt`] (forward transform)
@@ -254,11 +264,7 @@ where
     FF: FiniteField + MulAssign<FieldElement>,
 {
     let n_usize = x.len();
-    let n_u32 =
-        u32::try_from(n_usize).map_err(|_| NttError::TooLarge(n_usize))?;
-    if n_u32 != 0 && !n_u32.is_power_of_two() {
-        return Err(NttError::NonPowerOfTwo(n_usize).into());
-    }
+    let n_u32 = validate_ntt_length(n_usize)?;
     if n_u32 == 0 {
         return Ok(()); // nothing to do
     }
@@ -325,6 +331,7 @@ mod fast_ntt_attempt_tests {
     use test_strategy::proptest;
 
     use super::*;
+    use crate::error::{Error as MathError, NttError};
     use crate::field_element::other::random_elements;
     use crate::prelude::*;
     use crate::traits::PrimitiveRootOfUnity;
@@ -547,6 +554,33 @@ mod fast_ntt_attempt_tests {
             }
             assert_eq!(a1, a2);
         }
+    }
+
+    #[test]
+    fn try_ntt_rejects_non_power_of_two_length() {
+        let mut data = fe_vec![1, 2, 3];
+        let err = try_ntt(&mut data).unwrap_err();
+        assert!(matches!(
+            err,
+            MathError::Ntt(NttError::NonPowerOfTwo(3))
+        ));
+    }
+
+    #[test]
+    fn try_ntt_reports_missing_primitive_root() {
+        let mut data = vec![FieldElement::ZERO; 1 << 14]; // length 16384
+        let err = try_ntt(&mut data).unwrap_err();
+        assert!(matches!(
+            err,
+            MathError::Ntt(NttError::MissingPrimitiveRoot(16384))
+        ));
+    }
+
+    #[test]
+    fn validate_length_errors_when_too_large() {
+        let oversized = (u32::MAX as usize).saturating_add(1);
+        let err = validate_ntt_length(oversized).unwrap_err();
+        assert!(matches!(err, NttError::TooLarge(len) if len == oversized));
     }
 }
 
