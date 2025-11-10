@@ -20,6 +20,8 @@ pub struct Matrix<'coeffs, FF: FiniteField> {
     rows: Vec<Vec<Polynomial<'coeffs, FF>>>,
 }
 
+const MATRIX_VECTOR_OP: &str = "matrix-vector multiplication";
+
 impl<FF: FiniteField> Matrix<'static, FF> {
     /// Construct a new matrix from rows. Panics if rows have differing lengths.
     pub fn new(rows: Vec<Vec<Polynomial<'static, FF>>>) -> Self {
@@ -106,13 +108,18 @@ impl<FF: FiniteField> Matrix<'static, FF> {
         vector_len: usize,
     ) -> core::result::Result<(), MatrixError> {
         if self.rows.is_empty() {
-            return Err(MatrixError::Empty);
+            return Err(MatrixError::Empty {
+                operation: MATRIX_VECTOR_OP,
+            });
         }
 
         let expected_cols = self.ensure_rectangular()?;
+        let matrix_rows = self.rows.len();
 
         if expected_cols != vector_len {
             return Err(MatrixError::VectorShapeMismatch {
+                operation: MATRIX_VECTOR_OP,
+                matrix_rows,
                 matrix_cols: expected_cols,
                 vector_len,
             });
@@ -575,7 +582,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Matrix cannot be empty")]
+    #[should_panic(
+        expected = "matrix cannot be empty during matrix-vector multiplication"
+    )]
     fn mul_vector_panics_on_empty_matrix() {
         let m: Mat = Mat::new(vec![]);
         let v = PV::new(vec![]);
@@ -583,9 +592,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(
-        expected = "Matrix columns (3) must match vector length (2)"
-    )]
+    #[should_panic(expected = "matrix/vector shape mismatch during matrix-vector multiplication")]
     fn mul_vector_panics_on_mismatched_shapes() {
         let m = Mat::new(vec![vec![c(1), c(2), c(3)], vec![c(4), c(5), c(6)]]);
         let v = pv_from_consts(&[7, 8]); // length 2, but matrix has 3 columns
@@ -602,7 +609,12 @@ mod tests {
         let m_empty: Mat = Mat::new(vec![]);
         let v_empty = PV::new(vec![]);
         let err = m_empty.try_mul_vector(&v_empty).unwrap_err();
-        assert_eq!(err, MathError::Matrix(MatrixError::Empty));
+        assert_eq!(
+            err,
+            MathError::Matrix(MatrixError::Empty {
+                operation: super::MATRIX_VECTOR_OP
+            })
+        );
 
         // column/length mismatch
         let m = Mat::new(vec![vec![c(1), c(2), c(3)], vec![c(4), c(5), c(6)]]);
@@ -611,6 +623,8 @@ mod tests {
         assert_eq!(
             err2,
             MathError::Matrix(MatrixError::VectorShapeMismatch {
+                operation: super::MATRIX_VECTOR_OP,
+                matrix_rows: 2,
                 matrix_cols: 3,
                 vector_len: 2
             })

@@ -14,13 +14,18 @@ pub fn to_owned_polynomials<'poly, FF: FiniteField>(
         .collect()
 }
 
+const MATRIX_POLY_OP: &str = "matrix polynomial multiplication";
+
 /// Ensure the matrix column count matches the vector length.
 pub fn ensure_cols_match(
+    matrix_rows: usize,
     matrix_cols: usize,
     vec_len: usize,
 ) -> Result<(), math::error::MatrixError> {
     if matrix_cols != vec_len {
         return Err(math::error::MatrixError::VectorShapeMismatch {
+            operation: MATRIX_POLY_OP,
+            matrix_rows,
             matrix_cols,
             vector_len: vec_len,
         });

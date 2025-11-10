@@ -80,7 +80,7 @@ impl<FF: FiniteField + 'static> MatrixMulExt<FF> for Matrix<'static, FF> {
         FF: 'poly,
     {
         let owned = to_owned_polynomials(vec.as_ref());
-        ensure_cols_match(self.cols(), owned.len())?;
+        ensure_cols_match(self.rows(), self.cols(), owned.len())?;
         Output::from_vec(multiply_rows(self.as_slice(), &owned))
     }
 

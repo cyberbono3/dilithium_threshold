@@ -323,7 +323,7 @@ mod tests {
 
             let coeffs = fe_vec!(1, 2, 3, 4, 5);
             let secret_poly1: Polynomial<'_, FieldElement> =
-                poly!(coeffs.clone());
+                Polynomial::from(coeffs.clone());
             assert_eq!(secret_poly1.coefficients().len(), coeffs.len());
             let secret_poly2: Polynomial<'_, FieldElement> =
                 poly![10, 20, 30, 40, 50];
