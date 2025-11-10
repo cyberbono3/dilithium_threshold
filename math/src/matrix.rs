@@ -343,6 +343,7 @@ mod tests {
         poly::Polynomial,
         poly_vector::PolynomialVector,
     };
+    use crate::{poly, poly_vec};
     use num_traits::Zero;
     use std::convert::TryInto;
 
@@ -353,7 +354,7 @@ mod tests {
 
     #[inline]
     fn c(v: u32) -> Poly {
-        Polynomial::from(vec![v])
+        poly!(v)
     }
 
     #[inline]
@@ -412,8 +413,8 @@ mod tests {
     #[test]
     fn shape_rows_cols_work() {
         let m = Mat::new(vec![
-            vec![c(1), Polynomial::from(vec![2u32, 3u32])],
-            vec![Polynomial::from(vec![4u32, 5u32, 6u32]), c(7)],
+            vec![c(1), poly!(2u32, 3u32)],
+            vec![poly!(4u32, 5u32, 6u32), c(7)],
         ]);
         assert_eq!(m.rows(), 2);
         assert_eq!(m.cols(), 2);
@@ -432,8 +433,8 @@ mod tests {
     fn indexing_and_mutation() {
         let mut m = Mat::zeros(2, 2);
         assert!(m[1][0].is_zero());
-        m[1][0] = Polynomial::from(vec![5u32, 6u32]);
-        assert_eq!(m[1][0], Polynomial::from(vec![5u32, 6u32]));
+        m[1][0] = poly!(5u32, 6u32);
+        assert_eq!(m[1][0], poly!(5u32, 6u32));
     }
 
     // --------------------------
@@ -450,8 +451,8 @@ mod tests {
     fn norm_infinity_nonempty() {
         // Entries with max centered abs coeffs: [1,2,3] -> 3, [1] -> 1, [4,10] -> 10, [3] -> 3
         let m = Mat::new(vec![
-            vec![Polynomial::from(vec![1u32, 2u32, 3u32]), c(1)],
-            vec![Polynomial::from(vec![4u32, 10u32]), c(3)],
+            vec![poly!(1u32, 2u32, 3u32), c(1)],
+            vec![poly!(4u32, 10u32), c(3)],
         ]);
         assert_eq!(m.norm_infinity(), 10);
     }
@@ -483,8 +484,8 @@ mod tests {
     fn elementwise_sub() {
         let a = Mat::new(vec![
             vec![
-                Polynomial::from(vec![10u32]),
-                Polynomial::from(vec![20u32, 1u32]),
+                poly!(10u32),
+                poly!(20u32, 1u32),
             ],
             vec![c(30), c(40)],
         ]);
@@ -492,7 +493,7 @@ mod tests {
         let d = a - b;
         assert_eq!(d[0][0], c(3));
         //  (20 + x) - 5 = (15 + x)
-        assert_eq!(d[0][1], Polynomial::from(vec![15u32, 1u32]));
+        assert_eq!(d[0][1], poly!(15u32, 1u32));
         assert_eq!(d[1][0], c(18));
         assert_eq!(d[1][1], c(0));
     }
@@ -512,12 +513,12 @@ mod tests {
     #[test]
     fn scalar_multiply_by_constant_poly() {
         let m = Mat::new(vec![
-            vec![Polynomial::from(vec![1u32, 1u32]), c(3)],
+            vec![poly!(1u32, 1u32), c(3)],
             vec![c(4), c(5)],
         ]);
         let s = c(2);
         let out = m.clone() * &s;
-        assert_eq!(out[0][0], Polynomial::from(vec![2u32, 2u32]));
+        assert_eq!(out[0][0], poly!(2u32, 2u32));
         assert_eq!(out[0][1], c(6));
         assert_eq!(out[1][0], c(8));
         assert_eq!(out[1][1], c(10));
@@ -578,7 +579,7 @@ mod tests {
     #[should_panic(expected = "Matrix cannot be empty")]
     fn mul_vector_panics_on_empty_matrix() {
         let m: Mat = Mat::new(vec![]);
-        let v = PV::new(vec![]);
+        let v: PV = poly_vec![];
         let _ = m.mul_vector(&v);
     }
 
@@ -600,7 +601,7 @@ mod tests {
     fn try_mul_vector_errors_on_empty_or_mismatch() {
         // empty matrix
         let m_empty: Mat = Mat::new(vec![]);
-        let v_empty = PV::new(vec![]);
+        let v_empty: PV = poly_vec![];
         let err = m_empty.try_mul_vector(&v_empty).unwrap_err();
         assert_eq!(err, MathError::Matrix(MatrixError::Empty));
 

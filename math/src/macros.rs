@@ -104,8 +104,8 @@ macro_rules! poly {
     () => {{
         $crate::prelude::Polynomial::zero()
     }};
-    ($arr:expr) => {{
-        $crate::prelude::Polynomial::from($arr)
+    ($value:expr) => {{
+        $crate::prelude::Polynomial::from(($value,))
     }};
     ($val:expr; $count:expr) => {{
         let value = $val;

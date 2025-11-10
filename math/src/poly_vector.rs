@@ -284,19 +284,12 @@ where
 mod tests {
     use super::*;
     use crate::prelude::*;
-
-    fn poly_from_u32s(coeffs: &[u32]) -> Polynomial<'static, FieldElement> {
-        let elems = coeffs
-            .iter()
-            .copied()
-            .map(FieldElement::from)
-            .collect::<Vec<_>>();
-        Polynomial::from(elems)
-    }
+    use crate::{poly, poly_vec};
+    type Poly = Polynomial<'static, FieldElement>;
 
     #[test]
     fn collect_into_polynomial_vector() {
-        let polys = vec![poly_from_u32s(&[1]), poly_from_u32s(&[2])];
+        let polys: Vec<Poly> = vec![poly!(1u32), poly!(2u32)];
         let vec: PolynomialVector<'static, FieldElement> =
             polys.clone().into_iter().collect();
         assert_eq!(vec.len(), polys.len());
@@ -305,39 +298,37 @@ mod tests {
 
     #[test]
     fn extend_appends_polynomials() {
-        let mut vec = PolynomialVector::from_vec(vec![
-            poly_from_u32s(&[1]),
-            poly_from_u32s(&[2]),
-        ]);
-        vec.extend(vec![poly_from_u32s(&[3]), poly_from_u32s(&[4])]);
+        let mut vec: PolynomialVector<'static, FieldElement> =
+            PolynomialVector::from_vec(vec![poly!(1u32), poly!(2u32)]);
+        vec.extend(vec![poly!(3u32), poly!(4u32)]);
         assert_eq!(vec.len(), 4);
-        assert_eq!(vec[0], poly_from_u32s(&[1]));
-        assert_eq!(vec[3], poly_from_u32s(&[4]));
+        assert_eq!(vec[0], poly!(1u32));
+        assert_eq!(vec[3], poly!(4u32));
     }
 
     #[test]
     fn into_iter_consumes_vector() {
-        let vec = PolynomialVector::from_vec(vec![
-            poly_from_u32s(&[5]),
-            poly_from_u32s(&[6]),
-        ]);
+        let vec: PolynomialVector<'static, FieldElement> =
+            PolynomialVector::from_vec(vec![poly!(5u32), poly!(6u32)]);
         let collected: Vec<_> = vec.into_iter().collect();
-        assert_eq!(collected, vec![poly_from_u32s(&[5]), poly_from_u32s(&[6])]);
+        assert_eq!(
+            collected,
+            vec![poly!(5u32), poly!(6u32)]
+        );
     }
 
     #[test]
     fn norm_infinity_empty_is_zero() {
-        let vec: PolynomialVector<'static, FieldElement> =
-            PolynomialVector::new(Vec::new());
+        let vec: PolynomialVector<'static, FieldElement> = poly_vec![];
         assert_eq!(0, vec.norm_infinity());
     }
 
     #[test]
     fn norm_infinity_reports_max_coeff_norm() {
-        let polys = vec![
-            poly_from_u32s(&[1, 2, 3]),    // max |coeff| = 3
-            poly_from_u32s(&[10, 20]),     // max = 20
-            poly_from_u32s(&[4, 5, 6, 7]), // max = 7
+        let polys: Vec<Poly> = vec![
+            poly!(1u32, 2u32, 3u32),    // max |coeff| = 3
+            poly!(10u32, 20u32),        // max = 20
+            poly!(4u32, 5u32, 6u32, 7u32), // max = 7
         ];
         let vec = PolynomialVector::from_vec(polys);
         assert_eq!(20, vec.norm_infinity());

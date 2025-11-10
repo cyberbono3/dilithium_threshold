@@ -2475,6 +2475,15 @@ where
         Self::new(coefficients.into_iter().map(|c| c.into()).collect())
     }
 }
+impl<FF, E> From<(E,)> for Polynomial<'static, FF>
+where
+    FF: FiniteField,
+    E: Into<FF>,
+{
+    fn from((value,): (E,)) -> Self {
+        Self::new(vec![value.into()])
+    }
+}
 
 // impl From<XFieldElement> for Polynomial<'static, FieldElement> {
 //     fn from(xfe: XFieldElement) -> Self {
@@ -4267,8 +4276,8 @@ mod test_polynomials {
         #[strategy(Just(Polynomial::new(#_a_coefficients)))] a: FePoly,
     ) {
         let mut full_modulus_coefficients = b_coefficients.clone();
-        full_modulus_coefficients.resize(m + n + 1, FieldElement::from(0));
-        *full_modulus_coefficients.last_mut().unwrap() = FieldElement::from(1);
+        full_modulus_coefficients.resize(m + n + 1, fe!(0));
+        *full_modulus_coefficients.last_mut().unwrap() = fe!(1);
         let full_modulus = Polynomial::new(full_modulus_coefficients);
 
         let long_remainder = a.reduce_long_division(&full_modulus);
@@ -4290,8 +4299,8 @@ mod test_polynomials {
             [5, 6, 3].into_iter().map(FieldElement::new).collect_vec();
         let m = full_modulus_coefficients.len();
         let n = 2;
-        full_modulus_coefficients.resize(m + n + 1, FieldElement::from(0));
-        *full_modulus_coefficients.last_mut().unwrap() = FieldElement::from(1);
+        full_modulus_coefficients.resize(m + n + 1, fe!(0));
+        *full_modulus_coefficients.last_mut().unwrap() = fe!(1);
         let full_modulus = Polynomial::new(full_modulus_coefficients);
 
         let long_remainder = a.reduce_long_division(&full_modulus);
@@ -4319,14 +4328,14 @@ mod test_polynomials {
         }
         let n = (b_coefficients.len() + 1).next_power_of_two();
         let mut full_modulus_coefficients = b_coefficients.clone();
-        full_modulus_coefficients.resize(n + 1, FieldElement::from(0));
-        *full_modulus_coefficients.last_mut().unwrap() = FieldElement::from(1);
+        full_modulus_coefficients.resize(n + 1, fe!(0));
+        *full_modulus_coefficients.last_mut().unwrap() = fe!(1);
         let full_modulus = Polynomial::new(full_modulus_coefficients);
 
         let long_remainder = a.reduce_long_division(&full_modulus);
 
         let mut shift_ntt = b_coefficients.clone();
-        shift_ntt.resize(n, FieldElement::from(0));
+        shift_ntt.resize(n, fe!(0));
         ntt(&mut shift_ntt);
         let structured_remainder =
             a.reduce_by_ntt_friendly_modulus(&shift_ntt, m);
@@ -4343,14 +4352,14 @@ mod test_polynomials {
     //     let b_coefficients = vec![FieldElement::new(944892804900)];
     //     let n = (b_coefficients.len() + 1).next_power_of_two();
     //     let mut full_modulus_coefficients = b_coefficients.clone();
-    //     full_modulus_coefficients.resize(n + 1, FieldElement::from(0));
-    //     *full_modulus_coefficients.last_mut().unwrap() = FieldElement::from(1);
+    //     full_modulus_coefficients.resize(n + 1, fe!(0));
+    //     *full_modulus_coefficients.last_mut().unwrap() = fe!(1);
     //     let full_modulus = Polynomial::new(full_modulus_coefficients);
 
     //     let long_remainder = a.reduce_long_division(&full_modulus);
 
     //     let mut shift_ntt = b_coefficients.clone();
-    //     shift_ntt.resize(n, FieldElement::from(0));
+    //     shift_ntt.resize(n, fe!(0));
     //     ntt(&mut shift_ntt);
     //     let structured_remainder =
     //         a.reduce_by_ntt_friendly_modulus(&shift_ntt, m);
