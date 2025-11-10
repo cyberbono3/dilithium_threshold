@@ -168,8 +168,7 @@ mod test {
     #[test]
     fn custom_cutoff_is_respected() {
         let points = domain_points(0..8);
-        match ZerofierTree::new_from_domain_with_cutoff(&points, points.len())
-        {
+        match ZerofierTree::new_from_domain_with_cutoff(&points, points.len()) {
             ZerofierTree::Leaf(leaf) => assert_eq!(leaf.points, points),
             _ => panic!("expected single leaf when cutoff >= len"),
         }

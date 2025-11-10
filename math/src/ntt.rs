@@ -188,8 +188,7 @@ fn log2_pow2_usize(n: usize) -> usize {
 
 #[inline]
 fn validate_ntt_length(len: usize) -> core::result::Result<u32, NttError> {
-    let len_u32 =
-        u32::try_from(len).map_err(|_| NttError::TooLarge(len))?;
+    let len_u32 = u32::try_from(len).map_err(|_| NttError::TooLarge(len))?;
     if len_u32 != 0 && !len_u32.is_power_of_two() {
         return Err(NttError::NonPowerOfTwo(len));
     }
@@ -560,10 +559,7 @@ mod fast_ntt_attempt_tests {
     fn try_ntt_rejects_non_power_of_two_length() {
         let mut data = fe_vec![1, 2, 3];
         let err = try_ntt(&mut data).unwrap_err();
-        assert!(matches!(
-            err,
-            MathError::Ntt(NttError::NonPowerOfTwo(3))
-        ));
+        assert!(matches!(err, MathError::Ntt(NttError::NonPowerOfTwo(3))));
     }
 
     #[test]

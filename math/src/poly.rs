@@ -418,7 +418,7 @@ where
             acc = acc.slow_square();
             let bit_is_set = (pow >> (bit_length - i) & 1) == 1;
             if bit_is_set {
-                acc = acc * self.clone();
+                acc *= self;
             }
         }
 
@@ -2631,6 +2631,30 @@ where
     }
 }
 
+impl<'rhs, FF> Add<&Polynomial<'rhs, FF>> for Polynomial<'_, FF>
+where
+    FF: FiniteField + 'static,
+{
+    type Output = Polynomial<'static, FF>;
+
+    fn add(self, other: &Polynomial<'rhs, FF>) -> Self::Output {
+        let mut owned = self.into_owned();
+        owned.add_assign(other);
+        owned
+    }
+}
+
+impl<'lhs, 'rhs, FF> Add<&Polynomial<'rhs, FF>> for &'lhs Polynomial<'lhs, FF>
+where
+    FF: FiniteField + 'static,
+{
+    type Output = Polynomial<'static, FF>;
+
+    fn add(self, other: &Polynomial<'rhs, FF>) -> Self::Output {
+        self.clone().add(other)
+    }
+}
+
 impl<FF: FiniteField> AddAssign<Polynomial<'_, FF>> for Polynomial<'_, FF> {
     fn add_assign(&mut self, rhs: Polynomial<'_, FF>) {
         self.add_assign(&rhs);
@@ -2833,6 +2857,16 @@ where
         other: &Polynomial<'_, FF2>,
     ) -> Polynomial<'static, <FF as Mul<FF2>>::Output> {
         self.multiply(other)
+    }
+}
+
+impl<'a, FF> MulAssign<&Polynomial<'_, FF>> for Polynomial<'a, FF>
+where
+    FF: FiniteField + 'static,
+{
+    fn mul_assign(&mut self, rhs: &Polynomial<'_, FF>) {
+        let product = (self.clone() * rhs).into_owned();
+        *self = product;
     }
 }
 

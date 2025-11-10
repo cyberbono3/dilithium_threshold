@@ -12,8 +12,8 @@ use sha3::{
 use crate::dilithium::error::{DilithiumError, DilithiumResult};
 use crate::dilithium::params::{GAMMA1, N, TAU};
 use crate::dilithium::shamir::error::ShamirError;
-use crate::traits::PointSource;
 use crate::matrix::hash::shake256;
+use crate::traits::PointSource;
 use math::{poly::Polynomial, traits::FiniteField};
 
 const RANDOMNESS_BYTES: usize = 32;
@@ -57,7 +57,11 @@ pub fn hash_message(message: &[u8]) -> Vec<u8> {
 }
 
 /// Convenience wrapper for SHAKE256 that concatenates `seed` with additional parts.
-pub fn shake256_squeezed(seed: &[u8], parts: &[&[u8]], out_len: usize) -> Vec<u8> {
+pub fn shake256_squeezed(
+    seed: &[u8],
+    parts: &[&[u8]],
+    out_len: usize,
+) -> Vec<u8> {
     let extra: usize = parts.iter().map(|part| part.len()).sum();
     let mut input = Vec::with_capacity(seed.len() + extra);
     input.extend_from_slice(seed);
@@ -133,7 +137,6 @@ pub fn derive_challenge_polynomial<FF: FiniteField + From<i64>>(
     coeffs.into()
 }
 
-
 /// Reconstruct the requested polynomial indices from a set of point providers.
 pub fn reconstruct_vector_from_points<FF, S>(
     items: &[S],
@@ -154,9 +157,7 @@ where
         .map(|&poly_idx| {
             let template = reference
                 .poly_at(poly_idx)
-                .ok_or({
-                    ShamirError::InvalidIndex(poly_idx, vector_len)
-                })?;
+                .ok_or({ ShamirError::InvalidIndex(poly_idx, vector_len) })?;
             let coeff_count = template.coefficients().len();
 
             let polys = items
@@ -174,15 +175,12 @@ where
                         .iter()
                         .map(|poly| {
                             let coeffs = poly.coefficients();
-                            coeffs
-                                .get(coeff_idx)
-                                .copied()
-                                .ok_or({
-                                    ShamirError::InvalidIndex(
-                                        coeff_idx,
-                                        coeffs.len(),
-                                    )
-                                })
+                            coeffs.get(coeff_idx).copied().ok_or({
+                                ShamirError::InvalidIndex(
+                                    coeff_idx,
+                                    coeffs.len(),
+                                )
+                            })
                         })
                         .collect::<Result<Vec<_>, ShamirError>>()?;
 
@@ -190,8 +188,8 @@ where
                         xs.as_slice(),
                         ys.as_slice(),
                     ))
-        })
-        .collect::<DilithiumResult<Vec<_>>>()?;
+                })
+                .collect::<DilithiumResult<Vec<_>>>()?;
 
             Ok(Polynomial::from(coeffs))
         })

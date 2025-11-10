@@ -1,5 +1,5 @@
-use crate::dilithium::shamir::ShamirShare;
 use crate::basic::keypair::PublicKey;
+use crate::dilithium::shamir::ShamirShare;
 use math::traits::FiniteField;
 
 /// Threshold participant's key material and associated public key.

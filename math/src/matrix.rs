@@ -295,11 +295,7 @@ impl<FF: FiniteField> Mul<&Polynomial<'static, FF>> for Matrix<'static, FF> {
         let rows = self
             .rows
             .into_iter()
-            .map(|row| {
-                row.into_iter()
-                    .map(|p| p * scalar)
-                    .collect::<Vec<_>>()
-            })
+            .map(|row| row.into_iter().map(|p| p * scalar).collect::<Vec<_>>())
             .collect::<Vec<_>>();
         Self { rows }
     }
@@ -578,8 +574,8 @@ mod tests {
 
         let out = m.mul_vector(&v);
         assert_eq!(out.len(), 2);
-        assert_eq!(out[0], x.clone() + two.clone()); // x + 2
-        assert_eq!(out[1], (x * two.clone()) + c(9)); // 2x + 9
+        assert_eq!(out[0], x.clone() + &two); // x + 2
+        assert_eq!(out[1], (x * &two) + c(9)); // 2x + 9
     }
 
     #[test]
@@ -593,7 +589,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "matrix/vector shape mismatch during matrix-vector multiplication")]
+    #[should_panic(
+        expected = "matrix/vector shape mismatch during matrix-vector multiplication"
+    )]
     fn mul_vector_panics_on_mismatched_shapes() {
         let m = Mat::new(vec![vec![c(1), c(2), c(3)], vec![c(4), c(5), c(6)]]);
         let v = pv_from_consts(&[7, 8]); // length 2, but matrix has 3 columns

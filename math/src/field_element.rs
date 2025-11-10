@@ -169,7 +169,7 @@ impl<'de> Deserialize<'de> for FieldElement {
 }
 
 impl FieldElement {
-    pub const BYTES: usize = 4; 
+    pub const BYTES: usize = 4;
 
     /// Dilithium prime modulus: 8380417
     pub const P: u32 = 8380417;
@@ -725,9 +725,9 @@ mod b_prime_field_element_test {
     use itertools::izip;
     use proptest::prelude::*;
     use proptest_arbitrary_interop::arb;
+    use rand::Rng;
     use serde_json;
     use test_strategy::proptest;
-    use rand::Rng;
 
     use super::*;
 
@@ -1258,10 +1258,7 @@ mod b_prime_field_element_test {
         let p = FieldElement::P as u128;
         assert_eq!(0, FieldElement::reduce_unsigned(p));
         assert_eq!(1, FieldElement::reduce_unsigned(p + 1));
-        assert_eq!(
-            (p - 5) as u32,
-            FieldElement::reduce_unsigned((2 * p) - 5)
-        );
+        assert_eq!((p - 5) as u32, FieldElement::reduce_unsigned((2 * p) - 5));
     }
 
     #[test]
@@ -1315,10 +1312,8 @@ mod b_prime_field_element_test {
         assert_eq!(a.value(), b.value());
     }
 
-
     #[test]
     fn test_random_raw() {
-
         let mut rng = rand::thread_rng();
         for _ in 0..100 {
             let e: FieldElement = rng.gen();
