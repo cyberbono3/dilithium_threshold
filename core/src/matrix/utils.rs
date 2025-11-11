@@ -43,7 +43,7 @@ pub fn multiply_rows<FF: FiniteField>(
             row.iter().zip(vec.iter()).fold(
                 Polynomial::<FF>::zero(),
                 |mut acc, (a, b)| {
-                    acc += a.clone() * b.clone();
+                    acc += a * b;
                     acc
                 },
             )
