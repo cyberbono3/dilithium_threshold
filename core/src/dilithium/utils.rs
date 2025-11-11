@@ -157,7 +157,7 @@ where
         .map(|&poly_idx| {
             let template = reference
                 .poly_at(poly_idx)
-                .ok_or({ ShamirError::InvalidIndex(poly_idx, vector_len) })?;
+                .ok_or(ShamirError::InvalidIndex(poly_idx, vector_len) )?;
             let coeff_count = template.coefficients().len();
 
             let polys = items
