@@ -324,45 +324,6 @@ where
         self.evaluate::<FF, FF>(x)
     }
 
-    pub fn are_colinear_3(p0: (FF, FF), p1: (FF, FF), p2: (FF, FF)) -> bool {
-        if p0.0 == p1.0 || p1.0 == p2.0 || p2.0 == p0.0 {
-            return false;
-        }
-
-        let dy = p0.1 - p1.1;
-        let dx = p0.0 - p1.0;
-
-        dx * (p2.1 - p0.1) == dy * (p2.0 - p0.0)
-    }
-
-    pub fn are_colinear(points: &[(FF, FF)]) -> bool {
-        if points.len() < 3 {
-            return false;
-        }
-
-        if !points.iter().map(|(x, _)| x).all_unique() {
-            return false;
-        }
-
-        // Find 1st degree polynomial through first two points
-        let (p0_x, p0_y) = points[0];
-        let (p1_x, p1_y) = points[1];
-        let a = (p0_y - p1_y) / (p0_x - p1_x);
-        let b = p0_y - a * p0_x;
-
-        points.iter().skip(2).all(|&(x, y)| a * x + b == y)
-    }
-
-    pub fn get_colinear_y(p0: (FF, FF), p1: (FF, FF), p2_x: FF) -> FF {
-        assert_ne!(p0.0, p1.0, "Line must not be parallel to y-axis");
-        let dy = p0.1 - p1.1;
-        let dx = p0.0 - p1.0;
-        let p2_y_times_dx = dy * (p2_x - p0.0) + dx * p0.1;
-
-        // Can we implement this without division?
-        p2_y_times_dx / dx
-    }
-
     /// Slow square implementation that does not use NTT.
     #[must_use]
     pub fn slow_square(&self) -> Polynomial<'static, FF> {
@@ -399,8 +360,6 @@ where
     }
 
     /// Multiply `self` with itself `pow` times.
-    ///
-    /// Similar to [`Self::fast_pow`], but slower and slightly more general.
     #[must_use]
     pub fn pow(&self, pow: u32) -> Polynomial<'static, FF> {
         // special case: 0^0 = 1
@@ -562,54 +521,6 @@ where
         (quot, rem)
     }
 
-    /// Extended Euclidean algorithm with polynomials. Computes the greatest
-    /// common divisor `gcd` as a monic polynomial, as well as the corresponding
-    /// Bézout coefficients `a` and `b`, satisfying `gcd = a·x + b·y`
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use math::prelude::Polynomial;
-    /// # use math::prelude::FieldElement;
-    /// let x = Polynomial::<FieldElement>::from([1, 0, 1]);
-    /// let y = Polynomial::<FieldElement>::from([1, 1]);
-    /// let (gcd, a, b) = Polynomial::xgcd(x.clone(), y.clone());
-    /// assert_eq!(gcd, a * x + b * y);
-    /// ```
-    pub fn xgcd(
-        x: Self,
-        y: Polynomial<'_, FF>,
-    ) -> (
-        Polynomial<'static, FF>,
-        Polynomial<'static, FF>,
-        Polynomial<'static, FF>,
-    ) {
-        let mut x = x.into_owned();
-        let mut y = y.into_owned();
-        let (mut a_factor, mut a1) = (Polynomial::one(), Polynomial::zero());
-        let (mut b_factor, mut b1) = (Polynomial::zero(), Polynomial::one());
-
-        while !y.is_zero() {
-            let (quotient, remainder) = x.naive_divide(&y);
-            let c = a_factor - quotient.clone() * a1.clone();
-            let d = b_factor - quotient * b1.clone();
-
-            x = y;
-            y = remainder;
-            a_factor = a1;
-            a1 = c;
-            b_factor = b1;
-            b1 = d;
-        }
-
-        // normalize result to ensure the gcd, _i.e._, `x` has leading coefficient 1
-        let lc = x.leading_coefficient().unwrap_or(FF::ONE);
-        let normalize = |poly: Self| poly.scalar_mul(lc.inverse());
-
-        let [x, a, b] = [x, a_factor, b_factor].map(normalize);
-        (x, a, b)
-    }
-
     /// Given a polynomial f(X), find the polynomial g(X) of degree at most n
     /// such that f(X) * g(X) = 1 mod X^{n+1} where n is the precision.
     /// # Panics
@@ -699,11 +610,6 @@ where
     /// is slower and switches to [INTT](ntt::intt)-then-[reduce](Self::reduce).
     const FAST_MODULAR_COSET_INTERPOLATE_CUTOFF_THRESHOLD_PREFER_INTT: usize =
         1 << 17;
-
-    /// Regulates when to prefer the [Fast coset extrapolation](Self::fast_coset_extrapolate)
-    /// over the [naïve method](Self::naive_coset_extrapolate). Threshold found
-    /// using `cargo criterion --bench extrapolation`.
-    const FAST_COSET_EXTRAPOLATE_THRESHOLD: usize = 100;
 
     /// Inside `formal_power_series_inverse`, when to multiply naively and when
     /// to use NTT-based multiplication. Use benchmark
@@ -809,37 +715,6 @@ where
         }
 
         Polynomial::new(squared_coefficients)
-    }
-
-    /// Multiply `self` with itself `pow` times.
-    ///
-    /// Similar to [`Self::pow`], but faster and slightly less general.
-    #[must_use]
-    pub fn fast_pow(&self, pow: u32) -> Polynomial<'static, FF> {
-        // special case: 0^0 = 1
-        if pow == 0 {
-            return Polynomial::one();
-        }
-
-        let mut base = self.clone().into_owned();
-        if base.is_zero() {
-            return Polynomial::zero();
-        }
-
-        let mut exponent = pow;
-        let mut acc = Polynomial::one();
-
-        while exponent > 0 {
-            if exponent & 1 == 1 {
-                acc = acc.multiply(&base);
-            }
-            exponent >>= 1;
-            if exponent > 0 {
-                base = base.square();
-            }
-        }
-
-        acc
     }
 
     /// Multiply `self` by `other`.
@@ -1598,25 +1473,6 @@ where
         }
     }
 
-    /// Any fast interpolation will use NTT, so this is mainly used for testing/integrity
-    /// purposes. This also means that it is not pivotal that this function has an optimal
-    /// runtime.
-    #[doc(hidden)]
-    pub fn lagrange_interpolate_zipped(points: &[(FF, FF)]) -> Self {
-        assert!(
-            !points.is_empty(),
-            "interpolation must happen through more than zero points"
-        );
-        assert!(
-            points.iter().map(|x| x.0).all_unique(),
-            "Repeated x values received. Got: {points:?}",
-        );
-
-        let xs: Vec<FF> = points.iter().map(|x| x.0.to_owned()).collect();
-        let ys: Vec<FF> = points.iter().map(|x| x.1.to_owned()).collect();
-        Self::lagrange_interpolate(&xs, &ys)
-    }
-
     #[doc(hidden)]
     pub fn lagrange_interpolate(domain: &[FF], values: &[FF]) -> Self {
         debug_assert!(
@@ -2259,245 +2115,6 @@ where
         interpolant.reduce(modulus)
     }
 
-    /// Extrapolate a Reed-Solomon codeword, defined relative to a coset of the
-    /// subgroup of order n (codeword length), in new points.
-    pub fn coset_extrapolate(
-        domain_offset: FieldElement,
-        codeword: &[FF],
-        points: &[FF],
-    ) -> Vec<FF> {
-        if points.len() < Self::FAST_COSET_EXTRAPOLATE_THRESHOLD {
-            Self::fast_coset_extrapolate(domain_offset, codeword, points)
-        } else {
-            Self::naive_coset_extrapolate(domain_offset, codeword, points)
-        }
-    }
-
-    fn naive_coset_extrapolate_preprocessing(
-        points: &[FF],
-    ) -> (ZerofierTree<FF>, Vec<FF>, usize) {
-        let zerofier_tree = ZerofierTree::new_from_domain(points);
-        let (shift_coefficients, tail_length) =
-            Self::shift_factor_ntt_with_tail_length(&zerofier_tree.zerofier());
-        (zerofier_tree, shift_coefficients, tail_length)
-    }
-
-    fn naive_coset_extrapolate(
-        domain_offset: FieldElement,
-        codeword: &[FF],
-        points: &[FF],
-    ) -> Vec<FF> {
-        let mut coefficients = codeword.to_vec();
-        intt(&mut coefficients);
-        let interpolant =
-            Polynomial::new(coefficients).scale(<u32 as Into<FF>>::into(
-                domain_offset.inverse().value(),
-            ));
-        interpolant.batch_evaluate(points)
-    }
-
-    fn fast_coset_extrapolate(
-        domain_offset: FieldElement,
-        codeword: &[FF],
-        points: &[FF],
-    ) -> Vec<FF> {
-        let zerofier_tree = ZerofierTree::new_from_domain(points);
-        let minimal_interpolant = Self::fast_modular_coset_interpolate(
-            codeword,
-            domain_offset,
-            &zerofier_tree.zerofier(),
-        );
-        minimal_interpolant.divide_and_conquer_batch_evaluate(&zerofier_tree)
-    }
-
-    /// Extrapolate many Reed-Solomon codewords, defined relative to the same
-    /// coset of the subgroup of order `codeword_length`, in the same set of
-    /// new points.
-    ///
-    /// # Example
-    /// ```
-    /// # use math::prelude::*;
-    /// let n = 1 << 5;
-    /// let domain_offset = fe!(7);
-    /// let codewords = [fe_vec![3; n], fe_vec![2; n]].concat();
-    /// let points = fe_vec![0, 1];
-    /// assert_eq!(
-    ///     fe_vec![3, 3, 2, 2],
-    ///     Polynomial::<FieldElement>::batch_coset_extrapolate(
-    ///         domain_offset,
-    ///         n,
-    ///         &codewords,
-    ///         &points
-    ///     )
-    /// );
-    /// ```
-    ///
-    /// # Panics
-    /// Panics if the `codeword_length` is not a power of two.
-    pub fn batch_coset_extrapolate(
-        domain_offset: FieldElement,
-        codeword_length: usize,
-        codewords: &[FF],
-        points: &[FF],
-    ) -> Vec<FF> {
-        if points.len() < Self::FAST_COSET_EXTRAPOLATE_THRESHOLD {
-            Self::batch_fast_coset_extrapolate(
-                domain_offset,
-                codeword_length,
-                codewords,
-                points,
-            )
-        } else {
-            Self::batch_naive_coset_extrapolate(
-                domain_offset,
-                codeword_length,
-                codewords,
-                points,
-            )
-        }
-    }
-
-    fn batch_fast_coset_extrapolate(
-        domain_offset: FieldElement,
-        codeword_length: usize,
-        codewords: &[FF],
-        points: &[FF],
-    ) -> Vec<FF> {
-        let n = codeword_length;
-
-        let zerofier_tree = ZerofierTree::new_from_domain(points);
-        let modulus = zerofier_tree.zerofier();
-        let preprocessing_data =
-            Self::fast_modular_coset_interpolate_preprocess(
-                codeword_length,
-                domain_offset,
-                &modulus,
-            );
-
-        (0..codewords.len() / n)
-            .flat_map(|i| {
-                let codeword = &codewords[i * n..(i + 1) * n];
-                let minimal_interpolant =
-                    Self::fast_modular_coset_interpolate_with_zerofiers_and_ntt_friendly_multiple(
-                        codeword,
-                        domain_offset,
-                        &modulus,
-                        &preprocessing_data,
-                    );
-                minimal_interpolant.divide_and_conquer_batch_evaluate(&zerofier_tree)
-            })
-            .collect()
-    }
-
-    fn batch_naive_coset_extrapolate(
-        domain_offset: FieldElement,
-        codeword_length: usize,
-        codewords: &[FF],
-        points: &[FF],
-    ) -> Vec<FF> {
-        let (zerofier_tree, shift_coefficients, tail_length) =
-            Self::naive_coset_extrapolate_preprocessing(points);
-        let n = codeword_length;
-
-        (0..codewords.len() / n)
-            .flat_map(|i| {
-                let mut coefficients = codewords[i * n..(i + 1) * n].to_vec();
-                intt(&mut coefficients);
-                Polynomial::new(coefficients)
-                    .scale(<u32 as Into<FF>>::into(
-                        domain_offset.inverse().value(),
-                    ))
-                    .reduce_by_ntt_friendly_modulus(
-                        &shift_coefficients,
-                        tail_length,
-                    )
-                    .divide_and_conquer_batch_evaluate(&zerofier_tree)
-            })
-            .collect()
-    }
-
-    /// Parallel version of [`batch_coset_extrapolate`](Self::batch_coset_extrapolate).
-    pub fn par_batch_coset_extrapolate(
-        domain_offset: FieldElement,
-        codeword_length: usize,
-        codewords: &[FF],
-        points: &[FF],
-    ) -> Vec<FF> {
-        if points.len() < Self::FAST_COSET_EXTRAPOLATE_THRESHOLD {
-            Self::par_batch_fast_coset_extrapolate(
-                domain_offset,
-                codeword_length,
-                codewords,
-                points,
-            )
-        } else {
-            Self::par_batch_naive_coset_extrapolate(
-                domain_offset,
-                codeword_length,
-                codewords,
-                points,
-            )
-        }
-    }
-
-    fn par_batch_fast_coset_extrapolate(
-        domain_offset: FieldElement,
-        codeword_length: usize,
-        codewords: &[FF],
-        points: &[FF],
-    ) -> Vec<FF> {
-        let n = codeword_length;
-
-        let zerofier_tree = ZerofierTree::new_from_domain(points);
-        let modulus = zerofier_tree.zerofier();
-        let preprocessing_data =
-            Self::fast_modular_coset_interpolate_preprocess(
-                codeword_length,
-                domain_offset,
-                &modulus,
-            );
-
-        (0..codewords.len() / n)
-            .into_par_iter()
-            .flat_map(|i| {
-                let codeword = &codewords[i * n..(i + 1) * n];
-                let minimal_interpolant =
-                    Self::fast_modular_coset_interpolate_with_zerofiers_and_ntt_friendly_multiple(
-                        codeword,
-                        domain_offset,
-                        &modulus,
-                        &preprocessing_data,
-                    );
-                minimal_interpolant.divide_and_conquer_batch_evaluate(&zerofier_tree)
-            })
-            .collect()
-    }
-
-    fn par_batch_naive_coset_extrapolate(
-        domain_offset: FieldElement, //FieldElement changed to FF and scale
-        codeword_length: usize,
-        codewords: &[FF],
-        points: &[FF],
-    ) -> Vec<FF> {
-        let (zerofier_tree, shift_coefficients, tail_length) =
-            Self::naive_coset_extrapolate_preprocessing(points);
-        let n = codeword_length;
-
-        (0..codewords.len() / n)
-            .into_par_iter()
-            .flat_map(|i| {
-                let mut coefficients = codewords[i * n..(i + 1) * n].to_vec();
-                intt(&mut coefficients);
-                Polynomial::new(coefficients)
-                    .scale(FF::from(domain_offset.inverse().value()))
-                    .reduce_by_ntt_friendly_modulus(
-                        &shift_coefficients,
-                        tail_length,
-                    )
-                    .divide_and_conquer_batch_evaluate(&zerofier_tree)
-            })
-            .collect()
-    }
 }
 
 impl<const N: usize, FF, E> From<[E; N]> for Polynomial<'static, FF>
@@ -3113,110 +2730,6 @@ mod test_polynomials {
     }
 
     #[proptest]
-    fn slow_lagrange_interpolation(
-        polynomial: FePoly,
-        #[strategy(Just(#polynomial.coefficients.len().max(1)))]
-        _min_points: usize,
-        #[any(size_range(#_min_points..8 * #_min_points).lift())] points: Vec<
-            FieldElement,
-        >,
-    ) {
-        let evaluations = points
-            .into_iter()
-            .map(|x| (x, polynomial.evaluate(x)))
-            .collect_vec();
-        let interpolation_polynomial =
-            Polynomial::lagrange_interpolate_zipped(&evaluations);
-        prop_assert_eq!(polynomial, interpolation_polynomial);
-    }
-
-    #[proptest]
-    fn three_colinear_points_are_colinear(
-        p0: (FieldElement, FieldElement),
-        #[filter(#p0.0 != #p1.0)] p1: (FieldElement, FieldElement),
-        #[filter(#p0.0 != #p2_x && #p1.0 != #p2_x)] p2_x: FieldElement,
-    ) {
-        let line = Polynomial::lagrange_interpolate_zipped(&[p0, p1]);
-        let p2 = (p2_x, line.evaluate(p2_x));
-        prop_assert!(Polynomial::are_colinear_3(p0, p1, p2));
-    }
-
-    #[proptest]
-    fn three_non_colinear_points_are_not_colinear(
-        p0: (FieldElement, FieldElement),
-        #[filter(#p0.0 != #p1.0)] p1: (FieldElement, FieldElement),
-        #[filter(#p0.0 != #p2_x && #p1.0 != #p2_x)] p2_x: FieldElement,
-        #[filter(!#disturbance.is_zero())] disturbance: FieldElement,
-    ) {
-        let line = Polynomial::lagrange_interpolate_zipped(&[p0, p1]);
-        let p2 = (p2_x, line.evaluate_in_same_field(p2_x) + disturbance);
-        prop_assert!(!Polynomial::are_colinear_3(p0, p1, p2));
-    }
-
-    #[proptest]
-    fn colinearity_check_needs_at_least_three_points(
-        p0: (FieldElement, FieldElement),
-        #[filter(#p0.0 != #p1.0)] p1: (FieldElement, FieldElement),
-    ) {
-        prop_assert!(!Polynomial::<FieldElement>::are_colinear(&[]));
-        prop_assert!(!Polynomial::are_colinear(&[p0]));
-        prop_assert!(!Polynomial::are_colinear(&[p0, p1]));
-    }
-
-    #[proptest]
-    fn colinearity_check_with_repeated_points_fails(
-        p0: (FieldElement, FieldElement),
-        #[filter(#p0.0 != #p1.0)] p1: (FieldElement, FieldElement),
-    ) {
-        prop_assert!(!Polynomial::are_colinear(&[p0, p1, p1]));
-    }
-
-    #[proptest]
-    fn colinear_points_are_colinear(
-        p0: (FieldElement, FieldElement),
-        #[filter(#p0.0 != #p1.0)] p1: (FieldElement, FieldElement),
-        #[filter(!#additional_points_xs.contains(&#p0.0))]
-        #[filter(!#additional_points_xs.contains(&#p1.0))]
-        #[filter(#additional_points_xs.iter().all_unique())]
-        #[any(size_range(1..100).lift())]
-        additional_points_xs: Vec<FieldElement>,
-    ) {
-        let line = Polynomial::lagrange_interpolate_zipped(&[p0, p1]);
-        let additional_points = additional_points_xs
-            .into_iter()
-            .map(|x| (x, line.evaluate(x)))
-            .collect_vec();
-        let all_points =
-            [p0, p1].into_iter().chain(additional_points).collect_vec();
-        prop_assert!(Polynomial::are_colinear(&all_points));
-    }
-
-    #[test]
-    #[should_panic(expected = "Line must not be parallel to y-axis")]
-    fn getting_point_on_invalid_line_fails() {
-        let one = FieldElement::ONE;
-        let two = one + one;
-        let three = two + one;
-        Polynomial::<FieldElement>::get_colinear_y(
-            (one, one),
-            (one, three),
-            two,
-        );
-    }
-
-    #[proptest]
-    fn point_on_line_and_colinear_point_are_identical(
-        p0: (FieldElement, FieldElement),
-        #[filter(#p0.0 != #p1.0)] p1: (FieldElement, FieldElement),
-        x: FieldElement,
-    ) {
-        let line = Polynomial::lagrange_interpolate_zipped(&[p0, p1]);
-        let y = line.evaluate_in_same_field(x);
-        let y_from_get_point_on_line = Polynomial::get_colinear_y(p0, p1, x);
-        prop_assert_eq!(y, y_from_get_point_on_line);
-    }
-
-    #[proptest]
     fn shifting_polynomial_coefficients_by_zero_is_the_same_as_not_shifting_it(
         poly: FePoly,
     ) {
@@ -3284,18 +2797,12 @@ mod test_polynomials {
     fn any_polynomial_to_the_power_of_zero_is_one(poly: FePoly) {
         let poly_to_the_zero = poly.pow(0);
         prop_assert_eq!(Polynomial::one(), poly_to_the_zero);
-
-        let poly_fast_pow_zero = poly.fast_pow(0);
-        prop_assert_eq!(Polynomial::one(), poly_fast_pow_zero);
     }
 
     #[proptest]
     fn any_polynomial_to_the_power_one_is_itself(poly: FePoly) {
         let poly_to_the_one = poly.pow(1);
         prop_assert_eq!(poly.clone(), poly_to_the_one);
-
-        let poly_fast_pow_one = poly.fast_pow(1);
-        prop_assert_eq!(poly, poly_fast_pow_one);
     }
 
     #[proptest]
@@ -3330,14 +2837,12 @@ mod test_polynomials {
     #[proptest]
     fn pow_arbitrary_test(poly: FePoly, #[strategy(0u32..15)] exponent: u32) {
         let actual = poly.pow(exponent);
-        let fast_actual = poly.fast_pow(exponent);
         let mut expected = Polynomial::one();
         for _ in 0..exponent {
             expected = expected.multiply(&poly);
         }
 
-        prop_assert_eq!(expected.clone(), actual);
-        prop_assert_eq!(expected, fast_actual);
+        prop_assert_eq!(expected, actual);
     }
 
     #[proptest]
@@ -3696,12 +3201,6 @@ mod test_polynomials {
 
     #[test]
     #[should_panic(expected = "zero points")]
-    fn zipped_lagrange_interpolation_through_no_points_is_impossible() {
-        let _ = Polynomial::<FieldElement>::lagrange_interpolate_zipped(&[]);
-    }
-
-    #[test]
-    #[should_panic(expected = "zero points")]
     fn fast_interpolation_through_no_points_is_impossible() {
         let _ = Polynomial::<FieldElement>::fast_interpolate(&[], &[]);
     }
@@ -3713,16 +3212,6 @@ mod test_polynomials {
         let domain = fe_array![1, 2, 3];
         let points = fe_array![1, 2];
         let _ = Polynomial::interpolate(&domain, &points);
-    }
-
-    #[test]
-    #[should_panic(expected = "Repeated")]
-    fn zipped_lagrange_interpolate_using_repeated_domain_points_is_impossible()
-    {
-        let domain = fe_array![1, 1, 2];
-        let points = fe_array![1, 2, 3];
-        let zipped = domain.into_iter().zip(points).collect_vec();
-        let _ = Polynomial::lagrange_interpolate_zipped(&zipped);
     }
 
     #[proptest]
@@ -4032,22 +3521,6 @@ mod test_polynomials {
         let b_poly = Polynomial::from_constant(b);
         let (_, remainder) = a.naive_divide(&b_poly);
         prop_assert_eq!(Polynomial::zero(), remainder);
-    }
-
-    #[test]
-    fn xgcd_does_not_panic_on_input_zero() {
-        let zero = Polynomial::<FieldElement>::zero;
-        let (gcd, a, b) = Polynomial::xgcd(zero(), zero());
-        assert_eq!(zero(), gcd);
-        println!("a = {a}");
-        println!("b = {b}");
-    }
-
-    #[proptest]
-    fn xgcd_b_field_pol_test(x: FePoly, y: FePoly) {
-        let (gcd, a, b) = Polynomial::xgcd(x.clone(), y.clone());
-        // Bezout relation
-        prop_assert_eq!(gcd, a * x + b * y);
     }
 
     #[proptest]
@@ -4713,94 +4186,6 @@ mod test_polynomials {
                 &values, offset, &modulus
             ),
         )
-    }
-
-    // TODOI fix it
-    // #[proptest(cases = 100)]
-    // fn coset_extrapolation_methods_agree_with_interpolate_then_evaluate(
-    //     #[strategy(0usize..10)] _logn: usize,
-    //     #[strategy(Just(1 << #_logn))] n: usize,
-    //     #[strategy(vec(arb(), #n))] values: Vec<FieldElement>,
-    //     #[strategy(arb())] offset: FieldElement,
-    //     #[strategy(vec(arb(), 1..1000))] points: Vec<FieldElement>,
-    // ) {
-    //     let omega = FieldElement::primitive_root_of_unity(n as u32).unwrap();
-    //     let domain = (0..n)
-    //         .scan(offset, |acc: &mut FieldElement, _| {
-    //             let yld = *acc;
-    //             *acc *= omega;
-    //             Some(yld)
-    //         })
-    //         .collect_vec();
-    //     let fast_coset_extrapolation =
-    //         Polynomial::fast_coset_extrapolate(offset, &values, &points);
-    //     let naive_coset_extrapolation =
-    //         Polynomial::naive_coset_extrapolate(offset, &values, &points);
-    //     let interpolation_then_evaluation =
-    //         Polynomial::interpolate(&domain, &values).batch_evaluate(&points);
-    //     prop_assert_eq!(
-    //         fast_coset_extrapolation.clone(),
-    //         naive_coset_extrapolation
-    //     );
-    //     prop_assert_eq!(
-    //         fast_coset_extrapolation,
-    //         interpolation_then_evaluation
-    //     );
-    // }
-
-    #[proptest]
-    fn coset_extrapolate_and_batch_coset_extrapolate_agree(
-        #[strategy(1usize..10)] _logn: usize,
-        #[strategy(Just(1<<#_logn))] n: usize,
-        #[strategy(0usize..5)] _m: usize,
-        #[strategy(vec(arb(), #_m*#n))] codewords: Vec<FieldElement>,
-        #[strategy(vec(arb(), 0..20))] points: Vec<FieldElement>,
-    ) {
-        let offset = FieldElement::new(7);
-
-        let one_by_one_dispatch = codewords
-            .chunks(n)
-            .flat_map(|chunk| {
-                Polynomial::coset_extrapolate(offset, chunk, &points)
-            })
-            .collect_vec();
-        let batched_dispatch =
-            Polynomial::batch_coset_extrapolate(offset, n, &codewords, &points);
-        let par_batched_dispatch = Polynomial::par_batch_coset_extrapolate(
-            offset, n, &codewords, &points,
-        );
-        prop_assert_eq!(one_by_one_dispatch.clone(), batched_dispatch);
-        prop_assert_eq!(one_by_one_dispatch, par_batched_dispatch);
-
-        let one_by_one_fast = codewords
-            .chunks(n)
-            .flat_map(|chunk| {
-                Polynomial::fast_coset_extrapolate(offset, chunk, &points)
-            })
-            .collect_vec();
-        let batched_fast = Polynomial::batch_fast_coset_extrapolate(
-            offset, n, &codewords, &points,
-        );
-        let par_batched_fast = Polynomial::par_batch_fast_coset_extrapolate(
-            offset, n, &codewords, &points,
-        );
-        prop_assert_eq!(one_by_one_fast.clone(), batched_fast);
-        prop_assert_eq!(one_by_one_fast, par_batched_fast);
-
-        let one_by_one_naive = codewords
-            .chunks(n)
-            .flat_map(|chunk| {
-                Polynomial::naive_coset_extrapolate(offset, chunk, &points)
-            })
-            .collect_vec();
-        let batched_naive = Polynomial::batch_naive_coset_extrapolate(
-            offset, n, &codewords, &points,
-        );
-        let par_batched_naive = Polynomial::par_batch_naive_coset_extrapolate(
-            offset, n, &codewords, &points,
-        );
-        prop_assert_eq!(one_by_one_naive.clone(), batched_naive);
-        prop_assert_eq!(one_by_one_naive, par_batched_naive);
     }
 
     #[test]
