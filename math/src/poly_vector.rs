@@ -343,7 +343,7 @@ impl<FF: FiniteField> Mul for PolynomialVector<'static, FF> {
         let polys = self
             .polys
             .into_iter()
-            .zip(other.polys.into_iter())
+            .zip(other.polys)
             .map(|(a, b)| a * b)
             .collect();
 

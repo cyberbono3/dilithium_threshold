@@ -119,9 +119,9 @@ impl<FF: FiniteField> One for Polynomial<'static, FF> {
         Self::new(vec![FF::ONE])
     }
 
-    fn is_one(&self) -> bool {
-        self.degree() == 0 && self.coefficients[0].is_one()
-    }
+    // fn is_one(&self) -> bool {
+    //     self.degree() == 0 && self.coefficients[0].is_one()
+    // }
 }
 
 /// Data produced by the preprocessing phase of a batch modular interpolation.
@@ -1187,7 +1187,7 @@ where
         for _ in 0..u32::min(num_rounds, switch_point) {
             let sub = f.multiply(&f).multiply(&self);
             f.scalar_mul_mut(FF::from(2));
-            f = f - sub;
+            f -= sub;
         }
 
         // if we already have the required precision, terminate early
@@ -2114,7 +2114,6 @@ where
         // 7. Reduce by modulus and return.
         interpolant.reduce(modulus)
     }
-
 }
 
 impl<const N: usize, FF, E> From<[E; N]> for Polynomial<'static, FF>

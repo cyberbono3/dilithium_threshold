@@ -267,6 +267,7 @@ where
 /// 1) compute w1' = HighBits(Az - c t, 2*GAMMA2)
 /// 2) check ||z||_∞ < GAMMA1 - BETA
 /// 3) check c == H(M || pack(w1'))
+///
 /// Returns true when the signature is valid.
 pub fn verify<
     FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64> + 'static,
@@ -384,8 +385,7 @@ mod tests {
             let (_, mut priv_key) = keypair_fixture_1::<FieldElement>();
 
             for poly in priv_key.s1.iter_mut() {
-                let coeffs =
-                    vec![FieldElement::from((GAMMA1 + BETA + 1) as i64); N];
+                let coeffs = vec![FieldElement::from(GAMMA1 + BETA + 1); N];
                 *poly = coeffs.into();
             }
 
