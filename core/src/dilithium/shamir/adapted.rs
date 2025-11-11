@@ -105,8 +105,7 @@ impl AdaptedShamirSSS {
         shares: &[ShamirShare<'static, FF>],
         poly_indices: &[usize],
     ) -> DilithiumResult<Vec<Polynomial<'static, FF>>> {
-        let (active_shares, vector_length) =
-            self.select_active_shares(shares)?;
+        let (active_shares, _) = self.select_active_shares(shares)?;
         Self::reconstruct_poly_vector(active_shares, poly_indices)
     }
 

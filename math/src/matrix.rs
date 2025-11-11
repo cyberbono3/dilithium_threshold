@@ -313,7 +313,6 @@ impl<FF: FiniteField> Mul<&PolynomialVector<'static, FF>>
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

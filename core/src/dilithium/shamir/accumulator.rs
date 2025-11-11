@@ -52,7 +52,6 @@ mod tests {
     use super::*;
     use crate::dilithium::error::DilithiumError;
     use crate::dilithium::shamir::error::ShamirError;
-    use math::prelude::*;
     use num_traits::Zero;
 
     #[test]

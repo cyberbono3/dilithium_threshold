@@ -1187,7 +1187,7 @@ where
         for _ in 0..u32::min(num_rounds, switch_point) {
             let sub = f.multiply(&f).multiply(&self);
             f.scalar_mul_mut(FF::from(2));
-            f = f - sub;
+            f -= sub;
         }
 
         // if we already have the required precision, terminate early
@@ -2114,7 +2114,6 @@ where
         // 7. Reduce by modulus and return.
         interpolant.reduce(modulus)
     }
-
 }
 
 impl<const N: usize, FF, E> From<[E; N]> for Polynomial<'static, FF>

@@ -229,13 +229,12 @@ impl ThresholdSignature {
             return Err(DilithiumError::InsufficientShares(1, 0));
         }
 
-        let active =
-            partial_signatures.get(..self.threshold).ok_or_else(|| {
-                DilithiumError::InvalidThreshold(
-                    self.threshold,
-                    partial_signatures.len(),
-                )
-            })?;
+        let active = partial_signatures.get(..self.threshold).ok_or(
+            DilithiumError::InvalidThreshold(
+                self.threshold,
+                partial_signatures.len(),
+            ),
+        )?;
 
         let vector_length = active
             .first()

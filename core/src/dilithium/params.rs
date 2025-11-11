@@ -83,31 +83,35 @@ pub struct DilithiumConfig {
     pub gamma2: u32,
 }
 
+/// Helper container with literal parameters used to build [`DilithiumConfig`] instances.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DilithiumConfigValues {
+    pub n: usize,
+    pub q: i64,
+    pub d: u32,
+    pub k: usize,
+    pub l: usize,
+    pub eta: u32,
+    pub tau: usize,
+    pub beta: u32,
+    pub gamma1: u32,
+    pub gamma2: u32,
+}
+
 impl DilithiumConfig {
     /// Create a new parameter set from literal values (const-friendly).
-    pub const fn from_values(
-        n: usize,
-        q: i64,
-        d: u32,
-        k: usize,
-        l: usize,
-        eta: u32,
-        tau: usize,
-        beta: u32,
-        gamma1: u32,
-        gamma2: u32,
-    ) -> Self {
+    pub const fn from_values(values: DilithiumConfigValues) -> Self {
         Self {
-            n,
-            q,
-            d,
-            k,
-            l,
-            eta,
-            tau,
-            beta,
-            gamma1,
-            gamma2,
+            n: values.n,
+            q: values.q,
+            d: values.d,
+            k: values.k,
+            l: values.l,
+            eta: values.eta,
+            tau: values.tau,
+            beta: values.beta,
+            gamma1: values.gamma1,
+            gamma2: values.gamma2,
         }
     }
 
@@ -145,30 +149,49 @@ impl TryFrom<usize> for DilithiumConfig {
 }
 
 /// Round-3 / ML-DSA-44 (Dilithium-2) parameter set (educational, uncompressed).
-const DILITHIUM_L2_CONFIG: DilithiumConfig = DilithiumConfig::from_values(
-    256,       // n
-    8_380_417, // q
-    13,        // d
-    4,         // k
-    4,         // l
-    2,         // eta
-    39,        // tau
-    78,        // beta
-    131_072,   // gamma1
-    95_232,    // gamma2
-);
+const DILITHIUM_L2_CONFIG: DilithiumConfig =
+    DilithiumConfig::from_values(DilithiumConfigValues {
+        n: 256,
+        q: 8_380_417,
+        d: 13,
+        k: 4,
+        l: 4,
+        eta: 2,
+        tau: 39,
+        beta: 78,
+        gamma1: 131_072,
+        gamma2: 95_232,
+    });
 
 /// Round-3 / ML-DSA-65 (Dilithium-3) parameter set (educational, uncompressed).
-const DILITHIUM_L3_CONFIG: DilithiumConfig = DilithiumConfig::from_values(
-    256, // n
-    8_380_417, 13, 6, 5, 4, 49, 196, 524_288, 261_888,
-);
+const DILITHIUM_L3_CONFIG: DilithiumConfig =
+    DilithiumConfig::from_values(DilithiumConfigValues {
+        n: 256,
+        q: 8_380_417,
+        d: 13,
+        k: 6,
+        l: 5,
+        eta: 4,
+        tau: 49,
+        beta: 196,
+        gamma1: 524_288,
+        gamma2: 261_888,
+    });
 
 /// Round-3 / ML-DSA-87 (Dilithium-5) parameter set (educational, uncompressed).
-const DILITHIUM_L5_CONFIG: DilithiumConfig = DilithiumConfig::from_values(
-    256, // n
-    8_380_417, 13, 8, 7, 2, 60, 120, 524_288, 261_888,
-);
+const DILITHIUM_L5_CONFIG: DilithiumConfig =
+    DilithiumConfig::from_values(DilithiumConfigValues {
+        n: 256,
+        q: 8_380_417,
+        d: 13,
+        k: 8,
+        l: 7,
+        eta: 2,
+        tau: 60,
+        beta: 120,
+        gamma1: 524_288,
+        gamma2: 261_888,
+    });
 
 /// Default parameter set backing the module-level constants.
 pub const DEFAULT_CONFIG: DilithiumConfig = DILITHIUM_L2_CONFIG;
@@ -212,12 +235,8 @@ mod tests {
 
     #[test]
     fn security_level_iteration_is_complete() {
-        let from_const: Vec<_> =
-            SUPPORTED_SECURITY_LEVELS.iter().copied().collect();
-        let from_helper: Vec<_> = DilithiumConfig::supported_levels()
-            .iter()
-            .copied()
-            .collect();
+        let from_const: Vec<_> = SUPPORTED_SECURITY_LEVELS.to_vec();
+        let from_helper: Vec<_> = DilithiumConfig::supported_levels().to_vec();
         assert_eq!(from_const, from_helper);
         assert_eq!(from_const.len(), EXPECTED_LEVEL_CONFIGS.len());
         for level in &from_const {
