@@ -103,7 +103,7 @@ macro_rules! poly {
         $crate::prelude::Polynomial::from(vec![$($coeff),+])
     }};
 }
-// TODO
+
 impl<FF: FiniteField> Zero for Polynomial<'static, FF> {
     fn zero() -> Self {
         Self::new(vec![])
@@ -119,9 +119,9 @@ impl<FF: FiniteField> One for Polynomial<'static, FF> {
         Self::new(vec![FF::ONE])
     }
 
-    // fn is_one(&self) -> bool {
-    //     self.degree() == 0 && self.coefficients[0].is_one()
-    // }
+    fn is_one(&self) -> bool {
+        self.degree() == 0 && self.coefficients[0].is_one()
+    }
 }
 
 /// Data produced by the preprocessing phase of a batch modular interpolation.
