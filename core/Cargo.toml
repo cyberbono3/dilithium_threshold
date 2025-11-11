@@ -1,5 +1,5 @@
 [package]
-name = "logic"
+name = "core"
 version = "0.1.0"
 edition = "2024"
 
@@ -13,7 +13,14 @@ sha2 = "0.10"
 arbitrary = { version = "1", features = ["derive"] }
 thiserror = "2.0.12"
 
+[dev-dependencies]
+criterion = "0.5"
+
 [dev-dependencies.cargo-husky]
 version = "1"
 default-features = false
 features = ["user-hooks"]
+
+[[bench]]
+name = "sign"
+harness = false
