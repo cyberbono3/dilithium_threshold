@@ -313,13 +313,6 @@ impl<FF: FiniteField> Mul<&PolynomialVector<'static, FF>>
     }
 }
 
-/// Convenience free functions with the same naming pattern used in `poly_vector.rs`.
-pub fn try_matrix_vector_multiply<FF: FiniteField>(
-    m: &Matrix<'static, FF>,
-    v: &PolynomialVector<'static, FF>,
-) -> Result<PolynomialVector<'static, FF>> {
-    m.try_mul_vector(v)
-}
 
 #[cfg(test)]
 mod tests {
@@ -633,7 +626,7 @@ mod tests {
 
         let out_trait = (&m * &v).expect("trait mul");
 
-        let out_ok = super::try_matrix_vector_multiply(&m, &v).unwrap();
+        let out_ok = m.try_mul_vector(&v).unwrap();
         assert_eq!(out_ok, out_trait);
     }
 
