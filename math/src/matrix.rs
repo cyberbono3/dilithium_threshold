@@ -321,13 +321,6 @@ pub fn try_matrix_vector_multiply<FF: FiniteField>(
     m.try_mul_vector(v)
 }
 
-pub fn matrix_vector_multiply<FF: FiniteField>(
-    m: &Matrix<'static, FF>,
-    v: &PolynomialVector<'static, FF>,
-) -> Result<PolynomialVector<'static, FF>> {
-    m.try_mul_vector(v)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -639,8 +632,6 @@ mod tests {
         let v = pv_from_consts(&[5, 6]);
 
         let out_trait = (&m * &v).expect("trait mul");
-        let out_free = super::matrix_vector_multiply(&m, &v).expect("free fn");
-        assert_eq!(out_trait, out_free);
 
         let out_ok = super::try_matrix_vector_multiply(&m, &v).unwrap();
         assert_eq!(out_ok, out_trait);
