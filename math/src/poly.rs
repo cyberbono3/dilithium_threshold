@@ -103,7 +103,7 @@ macro_rules! poly {
         $crate::prelude::Polynomial::from(vec![$($coeff),+])
     }};
 }
-
+// TODO
 impl<FF: FiniteField> Zero for Polynomial<'static, FF> {
     fn zero() -> Self {
         Self::new(vec![])
