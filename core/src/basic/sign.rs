@@ -82,7 +82,8 @@ mod utils {
         for (j, slot) in out.iter_mut().enumerate() {
             let idx_bytes = (j as u16).to_le_bytes();
             let ctr_bytes = ctr.to_le_bytes();
-            let bytes = shake256_squeezed(seed, &[&idx_bytes, &ctr_bytes], 3 * N);
+            let bytes =
+                shake256_squeezed(seed, &[&idx_bytes, &ctr_bytes], 3 * N);
             let mut coeffs = [0i64; N];
             for (i, chunk) in bytes.chunks_exact(3).take(N).enumerate() {
                 let v = (chunk[0] as i64)
@@ -109,16 +110,21 @@ mod utils {
     }
 
     #[inline]
-    fn polyvec_add_scaled_with_sign<FF: FiniteField + 'static, const LEN: usize>(
+    fn polyvec_add_scaled_with_sign<
+        FF: FiniteField + 'static,
+        const LEN: usize,
+    >(
         base: &[Polynomial<'static, FF>; LEN],
         scale: &Polynomial<'_, FF>,
         mult: &[Polynomial<'static, FF>; LEN],
         negate: bool,
     ) -> [Polynomial<'static, FF>; LEN] {
         let mut dest = zero_polyvec::<LEN, FF>();
-        for ((slot, base_poly), mult_poly) in dest.iter_mut().zip(base).zip(mult) {
+        for ((slot, base_poly), mult_poly) in
+            dest.iter_mut().zip(base).zip(mult)
+        {
             slot.clone_from(base_poly);
-            let mut scaled = mult_poly.clone() * scale.clone();
+            let mut scaled = mult_poly * scale;
             if negate {
                 scaled = -scaled;
             }
@@ -129,7 +135,10 @@ mod utils {
 
     /// Compute element-wise addition of `base` and `scale * mult`.
     #[inline]
-    pub(super) fn polyvec_add_scaled<FF: FiniteField + 'static, const LEN: usize>(
+    pub(super) fn polyvec_add_scaled<
+        FF: FiniteField + 'static,
+        const LEN: usize,
+    >(
         base: &[Polynomial<'static, FF>; LEN],
         scale: &Polynomial<'_, FF>,
         mult: &[Polynomial<'static, FF>; LEN],
@@ -139,7 +148,10 @@ mod utils {
 
     /// Compute element-wise subtraction of `scale * mult` from `base`.
     #[inline]
-    pub(super) fn polyvec_sub_scaled<FF: FiniteField + 'static, const LEN: usize>(
+    pub(super) fn polyvec_sub_scaled<
+        FF: FiniteField + 'static,
+        const LEN: usize,
+    >(
         base: &[Polynomial<'static, FF>; LEN],
         scale: &Polynomial<'_, FF>,
         mult: &[Polynomial<'static, FF>; LEN],
@@ -285,8 +297,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*; // brings sign/verify + private helpers into scope
-    use crate::dilithium::params::{BETA, GAMMA1, L, N};
     use crate::basic::keypair::*;
+    use crate::dilithium::params::{BETA, GAMMA1, L, N};
     use math::field_element::FieldElement;
 
     /// Deterministic fixture producing a reproducible keypair.
@@ -346,7 +358,8 @@ mod tests {
         #[test]
         fn engine_is_deterministic_for_same_inputs() {
             let message = b"deterministic-engine";
-            let seeds = KeypairSeeds::new([0x42u8; 32], [0x24u8; 32], [0x18u8; 32]);
+            let seeds =
+                KeypairSeeds::new([0x42u8; 32], [0x24u8; 32], [0x18u8; 32]);
 
             let (_, priv_key_a) = keygen_with_seeds::<FieldElement>(seeds)
                 .expect("key generation should succeed");
@@ -557,9 +570,7 @@ mod tests {
             let scale = Polynomial::from(vec![FieldElement::from(2i32)]);
 
             let result = super::utils::polyvec_add_scaled::<FieldElement, 2>(
-                &base,
-                &scale,
-                &mult,
+                &base, &scale, &mult,
             );
 
             let expected = [
@@ -583,9 +594,7 @@ mod tests {
             let scale = Polynomial::from(vec![FieldElement::from(3i32)]);
 
             let result = super::utils::polyvec_sub_scaled::<FieldElement, 2>(
-                &base,
-                &scale,
-                &mult,
+                &base, &scale, &mult,
             );
 
             let expected = [
@@ -649,7 +658,7 @@ mod tests {
         let mut plus_one = [0i64; N];
         plus_one[0] = 1;
         let add1: Polynomial<'static, FieldElement> = plus_one.into();
-        sig.z[0] = sig.z[0].clone() + add1;
+        sig.z[0] += &add1;
 
         assert!(
             !super::verify::<FieldElement>(&pub_key, msg, &sig),

@@ -1,18 +1,14 @@
 use math::{
-    error::MatrixError,
-    poly::Polynomial,
-    poly_vector::PolynomialVector,
-    traits::FiniteField,
-    Matrix,
+    Matrix, error::MatrixError, poly::Polynomial,
+    poly_vector::PolynomialVector, traits::FiniteField,
 };
 
 use super::utils::{ensure_cols_match, multiply_rows, to_owned_polynomials};
 
 /// Types that can be produced from matrix-vector multiplication results.
 pub trait MatrixMulOutput<FF: FiniteField>: Sized {
-    fn from_vec(
-        vec: Vec<Polynomial<'static, FF>>,
-    ) -> Result<Self, MatrixError>;
+    fn from_vec(vec: Vec<Polynomial<'static, FF>>)
+    -> Result<Self, MatrixError>;
 }
 
 impl<FF: FiniteField> MatrixMulOutput<FF> for Vec<Polynomial<'static, FF>> {

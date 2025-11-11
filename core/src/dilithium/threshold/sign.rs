@@ -1,3 +1,4 @@
+use crate::basic::keypair::{PublicKey, keygen};
 use crate::dilithium::error::{DilithiumError, DilithiumResult};
 use crate::dilithium::params::{L, validate_threshold_config};
 use crate::dilithium::shamir::AdaptedShamirSSS;
@@ -6,7 +7,6 @@ use crate::dilithium::utils::{
     derive_challenge_polynomial, get_randomness, hash_message,
     reconstruct_vector_from_points, sample_gamma1_vector,
 };
-use crate::basic::keypair::{PublicKey, keygen};
 use crate::matrix::MatrixMulExt;
 use math::{prelude::*, traits::FiniteField};
 use num_traits::Zero;
@@ -276,8 +276,6 @@ mod tests {
         vec![value; 32]
     }
 
-
-
     mod reconstruct_z_vector_tests {
         use super::*;
 
@@ -419,18 +417,18 @@ mod tests {
             let mut b = make_partial(2);
             b.challenge = Polynomial::from(vec![fe!(1)]);
 
-        let err = ThresholdSignature::verify_partial_signatures::<
-            FieldElement,
-        >(&[a, b], 2)
-        .unwrap_err();
+            let err = ThresholdSignature::verify_partial_signatures::<
+                FieldElement,
+            >(&[a, b], 2)
+            .unwrap_err();
 
-        assert!(matches!(
-            err,
-            DilithiumError::Threshold(
-                ThresholdError::PartialSignatureChallengeMismatch
-            )
-        ));
-    }
+            assert!(matches!(
+                err,
+                DilithiumError::Threshold(
+                    ThresholdError::PartialSignatureChallengeMismatch
+                )
+            ));
+        }
 
         #[test]
         fn accepts_matching_partials() {

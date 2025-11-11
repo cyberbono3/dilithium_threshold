@@ -13,7 +13,7 @@ use num_traits::Zero;
 ///
 /// This mirrors the style and ergonomics of `PolynomialVector`:
 /// - 'static lifetime for owned coefficient storage in mutating/arith ops
-/// - fallible (`try_*`) and panicking variants for shape-checked operations
+/// - fallible (`try_*`) operations for shape-checked behavior
 /// - standard operator trait impls where ergonomic
 #[derive(Clone, Debug, PartialEq)]
 pub struct Matrix<'coeffs, FF: FiniteField> {
@@ -91,16 +91,6 @@ impl<FF: FiniteField> Matrix<'static, FF> {
     ) -> Result<PolynomialVector<'static, FF>> {
         self.validate_vector_multiplication(v.len())?;
         Ok(self.mul_vector_inner(v))
-    }
-
-    /// Panicking matrix–vector multiplication (asserts on shape mismatch).
-    pub fn mul_vector(
-        &self,
-        v: &PolynomialVector<'static, FF>,
-    ) -> PolynomialVector<'static, FF> {
-        self.validate_vector_multiplication(v.len())
-            .unwrap_or_else(|err| panic!("{err}"));
-        self.mul_vector_inner(v)
     }
 
     fn validate_vector_multiplication(
@@ -295,11 +285,7 @@ impl<FF: FiniteField> Mul<&Polynomial<'static, FF>> for Matrix<'static, FF> {
         let rows = self
             .rows
             .into_iter()
-            .map(|row| {
-                row.into_iter()
-                    .map(|p| p * scalar)
-                    .collect::<Vec<_>>()
-            })
+            .map(|row| row.into_iter().map(|p| p * scalar).collect::<Vec<_>>())
             .collect::<Vec<_>>();
         Self { rows }
     }
@@ -309,10 +295,10 @@ impl<FF: FiniteField> Mul<&Polynomial<'static, FF>> for Matrix<'static, FF> {
 impl<FF: FiniteField> Mul<PolynomialVector<'static, FF>>
     for Matrix<'static, FF>
 {
-    type Output = PolynomialVector<'static, FF>;
+    type Output = Result<PolynomialVector<'static, FF>>;
 
     fn mul(self, v: PolynomialVector<'static, FF>) -> Self::Output {
-        self.mul_vector(&v)
+        self.try_mul_vector(&v)
     }
 }
 
@@ -320,27 +306,13 @@ impl<FF: FiniteField> Mul<PolynomialVector<'static, FF>>
 impl<FF: FiniteField> Mul<&PolynomialVector<'static, FF>>
     for &Matrix<'static, FF>
 {
-    type Output = PolynomialVector<'static, FF>;
+    type Output = Result<PolynomialVector<'static, FF>>;
 
     fn mul(self, v: &PolynomialVector<'static, FF>) -> Self::Output {
-        self.mul_vector(v)
+        self.try_mul_vector(v)
     }
 }
 
-/// Convenience free functions with the same naming pattern used in `poly_vector.rs`.
-pub fn try_matrix_vector_multiply<FF: FiniteField>(
-    m: &Matrix<'static, FF>,
-    v: &PolynomialVector<'static, FF>,
-) -> Result<PolynomialVector<'static, FF>> {
-    m.try_mul_vector(v)
-}
-
-pub fn matrix_vector_multiply<FF: FiniteField>(
-    m: &Matrix<'static, FF>,
-    v: &PolynomialVector<'static, FF>,
-) -> PolynomialVector<'static, FF> {
-    m.mul_vector(v)
-}
 
 #[cfg(test)]
 mod tests {
@@ -548,7 +520,7 @@ mod tests {
         let m = Mat::new(vec![vec![c(1), c(2), c(3)], vec![c(4), c(5), c(6)]]);
         let v = pv_from_consts(&[7, 8, 9]);
 
-        let out = m.mul_vector(&v);
+        let out = (&m * &v).expect("matrix * vector succeeds");
         assert_eq!(out.len(), 2);
         // Row 0: 1*7 + 2*8 + 3*9 = 50
         assert_eq!(out[0], c(50));
@@ -556,7 +528,7 @@ mod tests {
         assert_eq!(out[1], c(122));
 
         // operator form should agree
-        let out2 = m.clone() * v.clone();
+        let out2 = (m.clone() * v.clone()).expect("owned operands");
         assert_eq!(out2, out);
     }
 
@@ -576,28 +548,39 @@ mod tests {
         ]);
         let v = PV::from_vec(vec![one.clone(), two.clone(), three.clone()]);
 
-        let out = m.mul_vector(&v);
+        let out = (&m * &v).expect("matrix * vector succeeds");
         assert_eq!(out.len(), 2);
-        assert_eq!(out[0], x.clone() + two.clone()); // x + 2
-        assert_eq!(out[1], (x * two.clone()) + c(9)); // 2x + 9
+        assert_eq!(out[0], x.clone() + &two); // x + 2
+        assert_eq!(out[1], (x * &two) + c(9)); // 2x + 9
     }
 
     #[test]
-    #[should_panic(
-        expected = "matrix cannot be empty during matrix-vector multiplication"
-    )]
-    fn mul_vector_panics_on_empty_matrix() {
+    fn mul_vector_errors_on_empty_matrix() {
         let m: Mat = Mat::new(vec![]);
         let v = PV::from_vec(vec![]);
-        let _ = m.mul_vector(&v);
+        let err = (&m * &v).unwrap_err();
+        assert_eq!(
+            err,
+            MathError::Matrix(MatrixError::Empty {
+                operation: super::MATRIX_VECTOR_OP
+            })
+        );
     }
 
     #[test]
-    #[should_panic(expected = "matrix/vector shape mismatch during matrix-vector multiplication")]
-    fn mul_vector_panics_on_mismatched_shapes() {
+    fn mul_vector_errors_on_mismatched_shapes() {
         let m = Mat::new(vec![vec![c(1), c(2), c(3)], vec![c(4), c(5), c(6)]]);
         let v = pv_from_consts(&[7, 8]); // length 2, but matrix has 3 columns
-        let _ = m.mul_vector(&v);
+        let err = (&m * &v).unwrap_err();
+        assert_eq!(
+            err,
+            MathError::Matrix(MatrixError::VectorShapeMismatch {
+                operation: super::MATRIX_VECTOR_OP,
+                matrix_rows: 2,
+                matrix_cols: 3,
+                vector_len: 2
+            })
+        );
     }
 
     // --------------------------
@@ -637,26 +620,23 @@ mod tests {
     // --------------------------
 
     #[test]
-    fn wrapper_free_functions_match_methods() {
+    fn wrapper_free_functions_match_trait_impl() {
         let m = Mat::new(vec![vec![c(1), c(2)], vec![c(3), c(4)]]);
         let v = pv_from_consts(&[5, 6]);
 
-        let out_method = m.mul_vector(&v);
-        let out_free = super::matrix_vector_multiply(&m, &v);
-        assert_eq!(out_method, out_free);
+        let out_trait = (&m * &v).expect("trait mul");
 
-        // fallible wrapper
-        let out_ok = super::try_matrix_vector_multiply(&m, &v).unwrap();
-        assert_eq!(out_ok, out_method);
+        let out_ok = m.try_mul_vector(&v).unwrap();
+        assert_eq!(out_ok, out_trait);
     }
 
     #[test]
-    fn try_mul_vector_success_matches_panicking_version() {
+    fn try_mul_vector_matches_trait_impl() {
         let m = Mat::new(vec![vec![c(2), c(0)], vec![c(1), c(3)]]);
         let v = pv_from_consts(&[4, 5]);
         let ok = m.try_mul_vector(&v).expect("mul succeeds");
-        let panicking = m.mul_vector(&v);
-        assert_eq!(ok, panicking);
+        let via_trait = (&m * &v).expect("trait mul");
+        assert_eq!(ok, via_trait);
     }
 
     #[test]

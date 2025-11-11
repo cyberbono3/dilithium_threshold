@@ -1,7 +1,7 @@
 use crate::dilithium::params::{K, L, N};
 use crate::dilithium::utils::{random_bytes, shake256_squeezed, zero_polyvec};
 use crate::matrix::{MatrixMulExt, expand_a_from_rho};
-use math::{error::MatrixError, poly::Polynomial, traits::FiniteField, Matrix};
+use math::{Matrix, error::MatrixError, poly::Polynomial, traits::FiniteField};
 
 type KeyPairResult<FF> =
     Result<(PublicKey<'static, FF>, PrivateKey<'static, FF>), MatrixError>;
@@ -10,7 +10,7 @@ type KeyPairResult<FF> =
 pub struct PublicKey<'a, FF: FiniteField> {
     pub a: Matrix<'a, FF>, // uncompressed: include A directly
     pub t: [Polynomial<'a, FF>; K], // t = A*s1 + s2
-    pub rho: [u8; 32],      // seed used for A (kept for provenance)
+    pub rho: [u8; 32],     // seed used for A (kept for provenance)
 }
 
 impl<'a, FF: FiniteField> PublicKey<'a, FF> {
@@ -118,7 +118,7 @@ impl KeypairSeeds {
         let mut t: [Polynomial<'static, FF>; K] = a.mul_polynomials(&s1)?;
         t.iter_mut()
             .zip(s2.iter())
-            .for_each(|(dest, addend)| *dest += addend.clone());
+            .for_each(|(dest, addend)| *dest += addend);
 
         let public_key = PublicKey::new(a.clone(), t, rho);
         let private_key = PrivateKey::new(a, s1, s2);
@@ -175,12 +175,9 @@ mod tests {
         let rho_rows = a_from_rho.as_slice();
         assert_eq!(pk_rows.len(), rho_rows.len());
         for (i, (pk_row, rho_row)) in pk_rows.iter().zip(rho_rows).enumerate() {
-            for (j, (pk_val, rho_val)) in pk_row.iter().zip(rho_row).enumerate() {
-                assert_eq!(
-                    pk_val, rho_val,
-                    "A mismatch at {},{}",
-                    i, j
-                );
+            for (j, (pk_val, rho_val)) in pk_row.iter().zip(rho_row).enumerate()
+            {
+                assert_eq!(pk_val, rho_val, "A mismatch at {},{}", i, j);
             }
         }
 
@@ -189,11 +186,7 @@ mod tests {
         assert_eq!(pk_rows.len(), sk_rows.len());
         for (i, (pk_row, sk_row)) in pk_rows.iter().zip(sk_rows).enumerate() {
             for (j, (pk_val, sk_val)) in pk_row.iter().zip(sk_row).enumerate() {
-                assert_eq!(
-                    pk_val, sk_val,
-                    "A(pk) != A(sk) at {},{}",
-                    i, j
-                );
+                assert_eq!(pk_val, sk_val, "A(pk) != A(sk) at {},{}", i, j);
             }
         }
     }
@@ -204,14 +197,13 @@ mod tests {
         let (pk, sk) =
             keygen::<FieldElement>().expect("key generation should succeed");
 
-        let as1: [Polynomial<'static, FieldElement>; K] = sk
-            .a
-            .mul_polynomials(&sk.s1)
-            .expect("matrix-vector multiplication should succeed");
+        let as1: [Polynomial<'static, FieldElement>; K] =
+            sk.a.mul_polynomials(&sk.s1)
+                .expect("matrix-vector multiplication should succeed");
         let expected_t: Vec<_> = as1
             .into_iter()
             .zip(sk.s2.iter())
-            .map(|(a_row, s2_row)| a_row + s2_row.clone())
+            .map(|(a_row, s2_row)| a_row + s2_row)
             .collect();
 
         assert_eq!(pk.t.as_slice(), expected_t.as_slice());
@@ -224,14 +216,10 @@ mod tests {
         let s1 = [5u8; 32];
         let s2 = [7u8; 32];
         let seeds = KeypairSeeds::new(rho, s1, s2);
-        let (pk1, sk1) = keygen_with_seeds::<FieldElement>(
-            seeds
-        )
-        .expect("key generation should succeed");
-        let (pk2, sk2) = keygen_with_seeds::<FieldElement>(
-            seeds
-        )
-        .expect("key generation should succeed");
+        let (pk1, sk1) = keygen_with_seeds::<FieldElement>(seeds)
+            .expect("key generation should succeed");
+        let (pk2, sk2) = keygen_with_seeds::<FieldElement>(seeds)
+            .expect("key generation should succeed");
 
         // Matrices and secrets identical
         assert_eq!(pk1.a.as_slice(), pk2.a.as_slice());

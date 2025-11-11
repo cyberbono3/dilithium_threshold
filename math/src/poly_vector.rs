@@ -339,12 +339,13 @@ impl<FF: FiniteField> Mul for PolynomialVector<'static, FF> {
     type Output = Self;
 
     fn mul(self, other: Self) -> Self::Output {
-        let polys = combine_owned_vectors(
-            self.polys,
-            other.polys,
-            "multiplication",
-            |a, b| a * b,
-        );
+        expect_same_len(self.polys.len(), other.polys.len(), "multiplication");
+        let polys = self
+            .polys
+            .into_iter()
+            .zip(other.polys.into_iter())
+            .map(|(a, b)| a * b)
+            .collect();
 
         Self { polys }
     }
@@ -357,21 +358,46 @@ fn expect_same_len(lhs: usize, rhs: usize, context: &str) {
     );
 }
 
-fn combine_owned_vectors<FF, F>(
-    lhs: Vec<Polynomial<'static, FF>>,
-    rhs: Vec<Polynomial<'static, FF>>,
-    context: &str,
-    mut op: F,
-) -> Vec<Polynomial<'static, FF>>
-where
-    FF: FiniteField,
-    F: FnMut(
-        Polynomial<'static, FF>,
-        Polynomial<'static, FF>,
-    ) -> Polynomial<'static, FF>,
+impl<FF: FiniteField> Mul<u64> for PolynomialVector<'static, FF> {
+    type Output = PolynomialVector<'static, FF>;
+
+    fn mul(self, scalar: u64) -> Self::Output {
+        let scalar_ff = FF::from(scalar);
+
+        let polys = self
+            .polys
+            .iter()
+            .map(|p| {
+                let scaled_coeffs: Vec<FF> =
+                    p.coefficients().iter().map(|&c| c * scalar_ff).collect();
+                Polynomial::new(scaled_coeffs)
+            })
+            .collect();
+
+        PolynomialVector { polys }
+    }
+}
+
+impl<FF: FiniteField> Mul<Polynomial<'static, FF>>
+    for PolynomialVector<'static, FF>
 {
-    expect_same_len(lhs.len(), rhs.len(), context);
-    lhs.into_iter().zip(rhs).map(|(a, b)| op(a, b)).collect()
+    type Output = Self;
+
+    fn mul(self, poly: Polynomial<'static, FF>) -> Self {
+        self * &poly
+    }
+}
+
+impl<FF: FiniteField> Mul<&Polynomial<'static, FF>>
+    for PolynomialVector<'static, FF>
+{
+    type Output = Self;
+
+    fn mul(self, poly: &Polynomial<'static, FF>) -> Self {
+        Self {
+            polys: self.polys.into_iter().map(|p| p * poly).collect(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -482,7 +508,7 @@ mod tests {
             poly_from_u32s(&[9, 10]),
         ]);
 
-        let sum = a.clone() + b.clone();
+        let sum = a.clone() + &b;
         assert_eq!(sum[0], poly_from_u32s(&[7, 9, 11]));
         assert_eq!(sum[1], poly_from_u32s(&[13, 15]));
 
@@ -492,11 +518,15 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Polynomial vector lengths must match for addition")]
+    #[should_panic(
+        expected = "Polynomial vector lengths must match for addition"
+    )]
     fn add_assign_panics_on_length_mismatch() {
         let mut lhs = PolynomialVector::from_vec(vec![poly_from_u32s(&[1])]);
-        let rhs =
-            PolynomialVector::from_vec(vec![poly_from_u32s(&[2]), poly_from_u32s(&[3])]);
+        let rhs = PolynomialVector::from_vec(vec![
+            poly_from_u32s(&[2]),
+            poly_from_u32s(&[3]),
+        ]);
         lhs += &rhs;
     }
 
@@ -516,47 +546,3 @@ mod tests {
         assert_eq!(product[1], poly_from_u32s(&[8, 10]));
     }
 }
-
-impl<FF: FiniteField> Mul<u64> for PolynomialVector<'static, FF> {
-    type Output = PolynomialVector<'static, FF>;
-
-    fn mul(self, scalar: u64) -> Self::Output {
-        let scalar_ff = FF::from(scalar);
-
-        let polys = self
-            .polys
-            .iter()
-            .map(|p| {
-                let scaled_coeffs: Vec<FF> =
-                    p.coefficients().iter().map(|&c| c * scalar_ff).collect();
-                Polynomial::new(scaled_coeffs)
-            })
-            .collect();
-
-        PolynomialVector { polys }
-    }
-}
-
-impl<FF: FiniteField> Mul<Polynomial<'static, FF>>
-    for PolynomialVector<'static, FF>
-{
-    type Output = Self;
-
-    fn mul(self, poly: Polynomial<'static, FF>) -> Self {
-        self * &poly
-    }
-}
-
-impl<FF: FiniteField> Mul<&Polynomial<'static, FF>>
-    for PolynomialVector<'static, FF>
-{
-    type Output = Self;
-
-    fn mul(self, poly: &Polynomial<'static, FF>) -> Self {
-        Self {
-            polys: self.polys.into_iter().map(|p| p * poly).collect(),
-        }
-    }
-}
-
-//TODO add test coeverage
