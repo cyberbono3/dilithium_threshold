@@ -1,10 +1,16 @@
+use crate::basic::sign::{
+    Signature, sign as sign_message, verify as verify_signature,
+};
+use crate::dilithium::error::DilithiumError;
 use crate::dilithium::params::{K, L, N};
 use crate::dilithium::utils::{random_bytes, shake256_squeezed, zero_polyvec};
 use crate::matrix::{MatrixMulExt, expand_a_from_rho};
-use math::{Matrix, error::MatrixError, poly::Polynomial, traits::FiniteField};
+use math::{
+    Matrix, error::MatrixError, field_element::FieldElement, poly::Polynomial,
+    traits::FiniteField,
+};
 
-type KeyPairResult<FF> =
-    Result<(PublicKey<'static, FF>, PrivateKey<'static, FF>), MatrixError>;
+type KeyPairResult<FF> = Result<KeyPair<'static, FF>, MatrixError>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PublicKey<'a, FF: FiniteField> {
@@ -40,6 +46,47 @@ impl<'a, FF: FiniteField> PrivateKey<'a, FF> {
         s2: [Polynomial<'a, FF>; K],
     ) -> Self {
         Self { a, s1, s2 }
+    }
+}
+
+/// Convenience container bundling a Dilithium keypair.
+#[derive(Clone, Debug)]
+pub struct KeyPair<'a, FF: FiniteField> {
+    pub public: PublicKey<'a, FF>,
+    pub private: PrivateKey<'a, FF>,
+}
+
+impl<'a, FF: FiniteField> KeyPair<'a, FF> {
+    pub fn new(public: PublicKey<'a, FF>, private: PrivateKey<'a, FF>) -> Self {
+        Self { public, private }
+    }
+
+    pub fn split(self) -> (PublicKey<'a, FF>, PrivateKey<'a, FF>) {
+        (self.public, self.private)
+    }
+}
+
+impl<FF> KeyPair<'static, FF>
+where
+    FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64>,
+{
+    /// Sign `msg` with the embedded private key.
+    pub fn sign(
+        &self,
+        msg: &[u8],
+    ) -> Result<Signature<'static, FF>, DilithiumError>
+    where
+        i64: From<FF>,
+    {
+        sign_message::<FF>(&self.private, msg)
+    }
+
+    /// Verify `sig` against `msg` using the embedded public key.
+    pub fn verify(&self, msg: &[u8], sig: &Signature<'_, FF>) -> bool
+    where
+        i64: From<FF>,
+    {
+        verify_signature::<FF>(&self.public, msg, sig)
     }
 }
 
@@ -123,7 +170,7 @@ impl KeypairSeeds {
         let public_key = PublicKey::new(a.clone(), t, rho);
         let private_key = PrivateKey::new(a, s1, s2);
 
-        Ok((public_key, private_key))
+        Ok(KeyPair::new(public_key, private_key))
     }
 }
 
@@ -149,8 +196,10 @@ mod tests {
     /// Ensure key generation returns structures with expected dimensions.
     #[test]
     fn keygen_shapes_and_secret_bounds() {
-        let (pk, sk) =
-            keygen::<FieldElement>().expect("key generation should succeed");
+        let KeyPair {
+            public: pk,
+            private: sk,
+        } = keygen::<FieldElement>().expect("key generation should succeed");
 
         // Shapes
         assert_eq!(pk.a.rows(), K);
@@ -166,8 +215,10 @@ mod tests {
     /// Confirm the public matrix matches the rho-derived matrix and secret key.
     #[test]
     fn public_matrix_matches_rho_and_secret_matrix() {
-        let (pk, sk) =
-            keygen::<FieldElement>().expect("key generation should succeed");
+        let KeyPair {
+            public: pk,
+            private: sk,
+        } = keygen::<FieldElement>().expect("key generation should succeed");
 
         // pk.a should equal expand_a_from_rho(pk.rho)
         let a_from_rho = expand_a_from_rho(pk.rho);
@@ -194,8 +245,10 @@ mod tests {
     /// Validate that t equals A*s1 + s2 for generated keys.
     #[test]
     fn t_equals_a_times_s1_plus_s2() {
-        let (pk, sk) =
-            keygen::<FieldElement>().expect("key generation should succeed");
+        let KeyPair {
+            public: pk,
+            private: sk,
+        } = keygen::<FieldElement>().expect("key generation should succeed");
 
         let as1: [Polynomial<'static, FieldElement>; K] =
             sk.a.mul_polynomials(&sk.s1)
@@ -216,9 +269,15 @@ mod tests {
         let s1 = [5u8; 32];
         let s2 = [7u8; 32];
         let seeds = KeypairSeeds::new(rho, s1, s2);
-        let (pk1, sk1) = keygen_with_seeds::<FieldElement>(seeds)
+        let KeyPair {
+            public: pk1,
+            private: sk1,
+        } = keygen_with_seeds::<FieldElement>(seeds)
             .expect("key generation should succeed");
-        let (pk2, sk2) = keygen_with_seeds::<FieldElement>(seeds)
+        let KeyPair {
+            public: pk2,
+            private: sk2,
+        } = keygen_with_seeds::<FieldElement>(seeds)
             .expect("key generation should succeed");
 
         // Matrices and secrets identical

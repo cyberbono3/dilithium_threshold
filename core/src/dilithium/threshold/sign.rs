@@ -1,4 +1,4 @@
-use crate::basic::keypair::{PublicKey, keygen};
+use crate::basic::keypair::{KeyPair, PublicKey, keygen};
 use crate::dilithium::error::{DilithiumError, DilithiumResult};
 use crate::dilithium::params::{L, validate_threshold_config};
 use crate::dilithium::shamir::AdaptedShamirSSS;
@@ -68,7 +68,10 @@ impl ThresholdSignature {
         FF: FiniteField + From<i64>,
         rand::distributions::Standard: rand::distributions::Distribution<FF>,
     {
-        let (pub_key, priv_key) = keygen::<FF>()?;
+        let KeyPair {
+            public: pub_key,
+            private: priv_key,
+        } = keygen::<FF>()?;
         let s1_shares = self.shamir_s1.split_secret(&priv_key.s1)?;
         let s2_shares = self.shamir_s2.split_secret(&priv_key.s2)?;
 

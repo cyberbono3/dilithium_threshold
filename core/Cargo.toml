@@ -11,7 +11,6 @@ rand_distr = "0.4"
 num-traits = "0.2"
 sha2 = "0.10"
 arbitrary = { version = "1", features = ["derive"] }
-thiserror = "2.0.12"
 
 [dev-dependencies]
 criterion = "0.5"
@@ -22,5 +21,5 @@ default-features = false
 features = ["user-hooks"]
 
 [[bench]]
-name = "sign"
+name = "basic"
 harness = false
