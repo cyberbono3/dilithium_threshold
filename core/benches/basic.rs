@@ -26,7 +26,7 @@ fn bench_verify(c: &mut Criterion) {
 
     c.bench_function("verify", move |b| {
         b.iter(|| {
-            assert!(keypair.verify(black_box(msg), &signature));
+            assert!(keypair.verify(black_box(msg), black_box(&signature)));
         });
     });
 }

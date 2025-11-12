@@ -23,3 +23,7 @@ features = ["user-hooks"]
 [[bench]]
 name = "basic"
 harness = false
+
+[[bench]]
+name = "threshold"
+harness = false
