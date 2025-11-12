@@ -22,7 +22,7 @@ fn bench_sign(c: &mut Criterion) {
 fn bench_verify(c: &mut Criterion) {
     let keypair = fresh_keypair();
     let msg = b"Hello";
-    let signature = keypair.sign(black_box(msg)).expect("signing succeeds");
+    let signature = keypair.sign(msg).expect("signing succeeds");
 
     c.bench_function("verify", move |b| {
         b.iter(|| {
