@@ -1,5 +1,5 @@
-use core::basic::keypair::{self, KeyPair};
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use dilithium_core::basic::keypair::{self, KeyPair};
 use math::field_element::FieldElement;
 
 fn fresh_keypair() -> KeyPair<'static, FieldElement> {
