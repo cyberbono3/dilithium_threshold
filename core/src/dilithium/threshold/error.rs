@@ -2,6 +2,7 @@ use std::error::Error as StdError;
 use std::fmt;
 
 /// Errors specific to the threshold Dilithium module.
+//Add thiserror variants as needed.
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum ThresholdError {

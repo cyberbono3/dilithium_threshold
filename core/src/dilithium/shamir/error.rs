@@ -5,6 +5,7 @@ use std::fmt;
 pub type ShamirResult<T> = Result<T, ShamirError>;
 
 /// Errors originating from the Shamir secret sharing module.
+// Add thiserror variants as needed.
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum ShamirError {

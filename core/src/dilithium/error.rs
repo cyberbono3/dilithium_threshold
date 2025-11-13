@@ -8,6 +8,7 @@ use std::fmt;
 pub type DilithiumResult<T> = std::result::Result<T, DilithiumError>;
 
 /// Errors that can arise while executing the threshold Dilithium protocol.
+/// Add thiserror variants as needed.
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum DilithiumError {
