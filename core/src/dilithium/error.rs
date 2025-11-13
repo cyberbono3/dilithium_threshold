@@ -7,7 +7,6 @@ use thiserror::Error;
 pub type DilithiumResult<T> = std::result::Result<T, DilithiumError>;
 
 /// Errors that can arise while executing the threshold Dilithium protocol.
-/// Add thiserror variants as needed.
 #[derive(Debug, Error)]
 pub enum DilithiumError {
     #[error(

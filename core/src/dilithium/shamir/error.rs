@@ -4,7 +4,6 @@ use thiserror::Error;
 pub type ShamirResult<T> = Result<T, ShamirError>;
 
 /// Errors originating from the Shamir secret sharing module.
-// Add thiserror variants as needed.
 #[derive(Debug, Error)]
 pub enum ShamirError {
     #[error("Invalid participant ID: {0}")]
