@@ -47,8 +47,9 @@ mod tests {
         let s1_share = ShamirShare::new(1, vec![poly1]).unwrap();
         let s2_share = ShamirShare::new(1, vec![poly2]).unwrap();
 
-        let (pub_key, _) =
-            keygen::<FieldElement>().expect("key generation should succeed");
+        let pub_key = keygen::<FieldElement>()
+            .expect("key generation should succeed")
+            .public;
 
         let key_share = ThresholdKeyShare::new(1, s1_share, s2_share, pub_key);
 
@@ -64,8 +65,9 @@ mod tests {
         let s1_share = ShamirShare::new(5, vec![poly1]).unwrap();
         let s2_share = ShamirShare::new(5, vec![poly2]).unwrap();
 
-        let (pub_key, _) =
-            keygen::<FieldElement>().expect("key generation should succeed");
+        let pub_key = keygen::<FieldElement>()
+            .expect("key generation should succeed")
+            .public;
         let key_share = ThresholdKeyShare::new(5, s1_share, s2_share, pub_key);
 
         let display_str = format!("{}", key_share);

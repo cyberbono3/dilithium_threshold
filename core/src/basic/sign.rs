@@ -250,7 +250,6 @@ where
 /// Produce a Dilithium signature using rejection sampling.
 pub fn sign<FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64>>(
     priv_key: &PrivateKey<'static, FF>,
-    _t: &[Polynomial<'_, FF>; K], // kept for API parity
     msg: &[u8],
 ) -> Result<Signature<'static, FF>, DilithiumError>
 where
@@ -303,8 +302,8 @@ mod tests {
     use math::field_element::FieldElement;
 
     /// Deterministic fixture producing a reproducible keypair.
-    fn keypair_fixture_1<FF: FiniteField + From<i64>>()
-    -> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
+    fn keypair_fixture_1<FF: FiniteField + From<i64>>() -> KeyPair<'static, FF>
+    {
         let rho = [0x42u8; 32];
         let s1 = [0x24u8; 32];
         let s2 = [0x18u8; 32];
@@ -313,8 +312,8 @@ mod tests {
     }
 
     /// Alternate deterministic keypair fixture used across tests.
-    fn keypair_fixture_2<FF: FiniteField + From<i64>>()
-    -> (PublicKey<'static, FF>, PrivateKey<'static, FF>) {
+    fn keypair_fixture_2<FF: FiniteField + From<i64>>() -> KeyPair<'static, FF>
+    {
         let rho = [0xA5u8; 32];
         let s1 = [0x5Au8; 32];
         let s2 = [0x33u8; 32];
@@ -329,7 +328,10 @@ mod tests {
         #[test]
         fn engine_produces_signatures_within_limit() {
             let message = b"engine-test";
-            let (pub_key, priv_key) = keypair_fixture_1::<FieldElement>();
+            let KeyPair {
+                public: pub_key,
+                private: priv_key,
+            } = keypair_fixture_1::<FieldElement>();
             let engine = SigningEngine::new(&priv_key, message);
 
             let mut produced = None;
@@ -362,10 +364,12 @@ mod tests {
             let seeds =
                 KeypairSeeds::new([0x42u8; 32], [0x24u8; 32], [0x18u8; 32]);
 
-            let (_, priv_key_a) = keygen_with_seeds::<FieldElement>(seeds)
-                .expect("key generation should succeed");
-            let (_, priv_key_b) = keygen_with_seeds::<FieldElement>(seeds)
-                .expect("key generation should succeed");
+            let priv_key_a = keygen_with_seeds::<FieldElement>(seeds)
+                .expect("key generation should succeed")
+                .private;
+            let priv_key_b = keygen_with_seeds::<FieldElement>(seeds)
+                .expect("key generation should succeed")
+                .private;
 
             let engine_a = SigningEngine::new(&priv_key_a, message);
             let engine_b = SigningEngine::new(&priv_key_b, message);
@@ -382,7 +386,10 @@ mod tests {
         #[test]
         fn engine_rejects_when_mask_norm_exceeds_bounds() {
             let message = b"rejection-test";
-            let (_, mut priv_key) = keypair_fixture_1::<FieldElement>();
+            let KeyPair {
+                public: _,
+                private: mut priv_key,
+            } = keypair_fixture_1::<FieldElement>();
 
             for poly in priv_key.s1.iter_mut() {
                 let coeffs = vec![FieldElement::from(GAMMA1 + BETA + 1); N];
@@ -623,9 +630,12 @@ mod tests {
     /// Signing then verifying with the same key should succeed.
     #[test]
     fn sign_and_verify_roundtrip() {
-        let (pub_key, priv_key) = keypair_fixture_1();
+        let KeyPair {
+            public: pub_key,
+            private: priv_key,
+        } = keypair_fixture_1();
         let msg = b"hello, sign+verify!";
-        let sig = super::sign::<FieldElement>(&priv_key, &pub_key.t, msg)
+        let sig = super::sign::<FieldElement>(&priv_key, msg)
             .expect("signing should succeed");
         assert!(super::verify::<FieldElement>(&pub_key, msg, &sig));
     }
@@ -633,9 +643,12 @@ mod tests {
     /// Verification must fail if the message changes after signing.
     #[test]
     fn verify_rejects_modified_message() {
-        let (pub_key, priv_key) = keypair_fixture_1();
+        let KeyPair {
+            public: pub_key,
+            private: priv_key,
+        } = keypair_fixture_1();
         let msg = b"immutable message";
-        let sig = super::sign::<FieldElement>(&priv_key, &pub_key.t, msg)
+        let sig = super::sign::<FieldElement>(&priv_key, msg)
             .expect("signing should succeed");
 
         // Verify against a different message
@@ -649,9 +662,12 @@ mod tests {
     /// Tampering with z should cause signature verification to fail.
     #[test]
     fn verify_rejects_tampered_z() {
-        let (pub_key, priv_key) = keypair_fixture_1();
+        let KeyPair {
+            public: pub_key,
+            private: priv_key,
+        } = keypair_fixture_1();
         let msg = b"tamper z";
-        let mut sig = super::sign::<FieldElement>(&priv_key, &pub_key.t, msg)
+        let mut sig = super::sign::<FieldElement>(&priv_key, msg)
             .expect("signing should succeed");
 
         // Flip one coefficient in z[0]
@@ -669,9 +685,12 @@ mod tests {
     /// Tampering with the challenge polynomial must invalidate the signature.
     #[test]
     fn verify_rejects_tampered_c() {
-        let (pub_key, priv_key) = keypair_fixture_1();
+        let KeyPair {
+            public: pub_key,
+            private: priv_key,
+        } = keypair_fixture_1();
         let msg = b"tamper c";
-        let mut sig = super::sign::<FieldElement>(&priv_key, &pub_key.t, msg)
+        let mut sig = super::sign::<FieldElement>(&priv_key, msg)
             .expect("signing should succeed");
 
         // Replace the challenge with a sparse poly that's *not* the derived one
@@ -688,11 +707,17 @@ mod tests {
     /// Signatures must not validate under a different public key.
     #[test]
     fn verify_fails_with_wrong_public_key() {
-        let (pub_key1, priv_key1) = keypair_fixture_1();
-        let (pub_key2, _) = keypair_fixture_2();
+        let KeyPair {
+            public: pub_key1,
+            private: priv_key1,
+        } = keypair_fixture_1();
+        let KeyPair {
+            public: pub_key2,
+            private: _,
+        } = keypair_fixture_2();
 
         let msg = b"use the right key, please";
-        let sig = super::sign::<FieldElement>(&priv_key1, &pub_key1.t, msg)
+        let sig = super::sign::<FieldElement>(&priv_key1, msg)
             .expect("signing should succeed");
 
         assert!(super::verify::<FieldElement>(&pub_key1, msg, &sig));
@@ -705,11 +730,13 @@ mod tests {
     /// Verification should fail when checked against a different message.
     #[test]
     fn verify_rejects_wrong_message() {
-        let (pub_key, priv_key) = keypair_fixture_1();
+        let KeyPair {
+            public: pub_key,
+            private: priv_key,
+        } = keypair_fixture_1();
         let message = b"hello world";
-        let signature =
-            super::sign::<FieldElement>(&priv_key, &pub_key.t, message)
-                .expect("signing should succeed");
+        let signature = super::sign::<FieldElement>(&priv_key, message)
+            .expect("signing should succeed");
 
         let wrong = b"hello wurld";
         assert!(
@@ -722,12 +749,15 @@ mod tests {
     #[test]
     fn signatures_are_deterministic_for_same_message() {
         // With the current design (y derived from msg via SHAKE256), signing is deterministic.
-        let (pub_key1, priv_key1) = keypair_fixture_1();
+        let KeyPair {
+            public: _,
+            private: priv_key1,
+        } = keypair_fixture_1();
         let msg = b"deterministic";
 
-        let sig1 = super::sign::<FieldElement>(&priv_key1, &pub_key1.t, msg)
+        let sig1 = super::sign::<FieldElement>(&priv_key1, msg)
             .expect("signing should succeed");
-        let sig2 = super::sign::<FieldElement>(&priv_key1, &pub_key1.t, msg)
+        let sig2 = super::sign::<FieldElement>(&priv_key1, msg)
             .expect("signing should succeed");
 
         // Compare c and each z[i] (Signature doesn't implement PartialEq)
@@ -740,29 +770,33 @@ mod tests {
     /// Signing should work for both empty and long messages.
     #[test]
     fn handles_empty_and_long_messages() {
-        let (pub_key1, priv_key1) = keypair_fixture_1();
+        let KeyPair {
+            public: pub_key1,
+            private: priv_key1,
+        } = keypair_fixture_1();
 
         // Empty message
         let empty = b"";
-        let sig_empty =
-            super::sign::<FieldElement>(&priv_key1, &pub_key1.t, empty)
-                .expect("signing should succeed");
+        let sig_empty = super::sign::<FieldElement>(&priv_key1, empty)
+            .expect("signing should succeed");
         assert!(super::verify::<FieldElement>(&pub_key1, empty, &sig_empty));
 
         // Long message
         let long = vec![0xABu8; 8192];
-        let sig_long =
-            super::sign::<FieldElement>(&priv_key1, &pub_key1.t, &long)
-                .expect("signing should succeed");
+        let sig_long = super::sign::<FieldElement>(&priv_key1, &long)
+            .expect("signing should succeed");
         assert!(super::verify::<FieldElement>(&pub_key1, &long, &sig_long));
     }
 
     /// The infinity norm of z should always remain within the specified bound.
     #[test]
     fn z_infinity_norm_is_within_bound() {
-        let (pub_key1, priv_key1) = keypair_fixture_1();
+        let KeyPair {
+            public: _,
+            private: priv_key1,
+        } = keypair_fixture_1();
         let msg = b"bounds check";
-        let sig = super::sign::<FieldElement>(&priv_key1, &pub_key1.t, msg)
+        let sig = super::sign::<FieldElement>(&priv_key1, msg)
             .expect("signing should succeed");
 
         for (i, poly) in sig.z.iter().enumerate() {
