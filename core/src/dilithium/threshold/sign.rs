@@ -259,10 +259,9 @@ impl ThresholdSignature {
     }
 }
 
-#[cfg(test)]
 impl Default for ThresholdSignature {
     fn default() -> Self {
-        Self::new(3, 5).unwrap()
+        Self::new(3, 5).expect("default threshold configuration is valid")
     }
 }
 
