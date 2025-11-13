@@ -1,5 +1,5 @@
-use core::dilithium::threshold::ThresholdSignature;
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use dilithium_core::dilithium::threshold::ThresholdSignature;
 use math::field_element::FieldElement;
 
 const MESSAGE: &[u8] = b"benchmark threshold Dilithium workflow";
