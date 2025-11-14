@@ -1,4 +1,4 @@
-use std::ops::{Add, Deref, DerefMut, Index, IndexMut, Mul, Sub};
+use std::ops::{Add, Index, IndexMut, Mul, Sub};
 
 use crate::{
     error::{MatrixError, Result},
@@ -37,6 +37,11 @@ impl<FF: FiniteField> Matrix<'static, FF> {
     /// Borrow the underlying rows.
     pub fn as_slice(&self) -> &[Vec<Polynomial<'static, FF>>] {
         &self.rows
+    }
+
+    /// Mutably borrow the underlying rows.
+    pub fn as_mut_slice(&mut self) -> &mut [Vec<Polynomial<'static, FF>>] {
+        &mut self.rows
     }
 
     /// Number of rows.
@@ -231,21 +236,6 @@ impl<FF: FiniteField> Index<usize> for Matrix<'static, FF> {
 impl<FF: FiniteField> IndexMut<usize> for Matrix<'static, FF> {
     fn index_mut(&mut self, i: usize) -> &mut Self::Output {
         &mut self.rows[i]
-    }
-}
-
-/// Deref to a slice of rows.
-impl<FF: FiniteField> Deref for Matrix<'static, FF> {
-    type Target = [Vec<Polynomial<'static, FF>>];
-    fn deref(&self) -> &Self::Target {
-        &self.rows
-    }
-}
-
-/// DerefMut to a slice of rows.
-impl<FF: FiniteField> DerefMut for Matrix<'static, FF> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.rows
     }
 }
 
