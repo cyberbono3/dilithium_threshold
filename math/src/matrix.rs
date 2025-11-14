@@ -39,11 +39,6 @@ impl<FF: FiniteField> Matrix<'static, FF> {
         &self.rows
     }
 
-    /// Mutably borrow the underlying rows.
-    pub fn as_mut_slice(&mut self) -> &mut [Vec<Polynomial<'static, FF>>] {
-        &mut self.rows
-    }
-
     /// Number of rows.
     pub fn rows(&self) -> usize {
         self.rows.len()
