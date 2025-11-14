@@ -1,13 +1,15 @@
 use crate::basic::keypair::{KeyPair, PublicKey, keygen};
+use crate::basic::sign::utils::{make_hints, poly_high, polyvec_sub_scaled};
 use crate::dilithium::error::{DilithiumError, DilithiumResult};
 use crate::dilithium::params::{K, L, validate_threshold_config};
 use crate::dilithium::shamir::AdaptedShamirSSS;
 use crate::dilithium::sign::DilithiumSignature;
 use crate::dilithium::utils::{
     derive_challenge_polynomial, get_randomness, hash_message,
-    reconstruct_vector_from_points, sample_gamma1_vector, zero_polyvec,
+    reconstruct_vector_from_points, sample_gamma1_vector,
 };
 use crate::matrix::MatrixMulExt;
+use crate::traits::PolyVectorSource;
 use math::{prelude::*, traits::FiniteField};
 use sha2::{Digest, Sha256};
 
@@ -132,17 +134,25 @@ impl ThresholdSignature {
     }
 
     /// Combine `threshold` partial signatures into a full Dilithium signature.
-    pub fn combine_signatures<FF: FiniteField>(
+    pub fn combine_signatures<FF>(
         &self,
         partial_signatures: &[PartialSignature<'static, FF>],
         public_key: &PublicKey<'static, FF>,
-    ) -> DilithiumResult<DilithiumSignature<'static, FF>> {
+    ) -> DilithiumResult<DilithiumSignature<'static, FF>>
+    where
+        FF: FiniteField + From<i64>,
+        i64: From<FF>,
+    {
         Self::verify_partial_signatures(partial_signatures, self.threshold)?;
 
         let active_partials = &partial_signatures[..self.threshold];
         let z = self.reconstruct_z_vector(active_partials)?;
-        let h = self.reconstruct_hint(active_partials, public_key)?;
+        let az: [Polynomial<'static, FF>; K] =
+            public_key.a.mul_polynomials(&z)?;
         let challenge = partial_signatures[0].challenge.clone();
+        let az_minus_ct =
+            polyvec_sub_scaled::<FF, K>(&az, &challenge, &public_key.t);
+        let h = self.reconstruct_hint(active_partials, &az_minus_ct)?;
 
         Ok(DilithiumSignature::new(z, h, challenge))
     }
@@ -256,19 +266,76 @@ impl ThresholdSignature {
         })
     }
 
-    /// Recompute the hint vector; placeholder implementation for now.
-    fn reconstruct_hint<FF: FiniteField>(
+    fn reconstruct_commitment_vector<FF: FiniteField>(
         &self,
-        _partial_signatures: &[PartialSignature<'static, FF>],
-        _public_key: &PublicKey<'static, FF>,
+        partial_signatures: &[PartialSignature<'static, FF>],
     ) -> DilithiumResult<[Polynomial<'static, FF>; K]> {
-        Ok(zero_polyvec::<K, FF>())
+        if partial_signatures.is_empty() {
+            return Err(DilithiumError::InsufficientShares(1, 0));
+        }
+
+        let vector_length = partial_signatures
+            .first()
+            .map(|ps| ps.commitment.len())
+            .unwrap_or_default();
+
+        if vector_length != K {
+            return Err(DilithiumError::InvalidThreshold(K, vector_length));
+        }
+
+        let sources: Vec<_> = partial_signatures
+            .iter()
+            .map(|ps| CommitmentSource {
+                participant_id: ps.participant_id,
+                commitment: ps.commitment.as_slice(),
+            })
+            .collect();
+
+        let indices: Vec<usize> = (0..K).collect();
+        let reconstructed =
+            reconstruct_vector_from_points::<FF, _>(&sources, &indices)?;
+
+        reconstructed.try_into().map_err(|vec: Vec<_>| {
+            DilithiumError::InvalidThreshold(K, vec.len())
+        })
+    }
+
+    fn reconstruct_hint<FF>(
+        &self,
+        partial_signatures: &[PartialSignature<'static, FF>],
+        az_minus_ct: &[Polynomial<'static, FF>; K],
+    ) -> DilithiumResult<[Polynomial<'static, FF>; K]>
+    where
+        FF: FiniteField + From<i64>,
+        i64: From<FF>,
+    {
+        let commitments =
+            self.reconstruct_commitment_vector(partial_signatures)?;
+        let w1 = std::array::from_fn(|idx| poly_high(&commitments[idx]));
+        Ok(make_hints(&w1, az_minus_ct))
     }
 }
 
 impl Default for ThresholdSignature {
     fn default() -> Self {
         Self::new(3, 5).expect("default threshold configuration is valid")
+    }
+}
+
+struct CommitmentSource<'a, FF: FiniteField + 'static> {
+    participant_id: usize,
+    commitment: &'a [Polynomial<'static, FF>],
+}
+
+impl<'a, FF: FiniteField + 'static> PolyVectorSource<FF>
+    for CommitmentSource<'a, FF>
+{
+    fn participant_id(&self) -> usize {
+        self.participant_id
+    }
+
+    fn polynomials(&self) -> &[Polynomial<'static, FF>] {
+        self.commitment
     }
 }
 
@@ -374,9 +441,10 @@ mod tests {
             let partials = (0..threshold_sig.threshold)
                 .map(|i| zero_partial(i + 1))
                 .collect::<Vec<_>>();
+            let az_minus_ct = zero_polyvec::<K, FieldElement>();
 
             let hints = threshold_sig
-                .reconstruct_hint(&partials, &shares[0].public_key)
+                .reconstruct_hint(&partials, &az_minus_ct)
                 .unwrap();
 
             assert_eq!(hints.len(), shares[0].public_key.t.len());
@@ -385,14 +453,13 @@ mod tests {
         #[test]
         fn returns_zero_polynomials() {
             let threshold_sig = ThresholdSignature::default();
-            let shares =
-                threshold_sig.distributed_keygen::<FieldElement>().unwrap();
             let partials = (0..threshold_sig.threshold)
                 .map(|i| zero_partial(i + 1))
                 .collect::<Vec<_>>();
+            let az_minus_ct = zero_polyvec::<K, FieldElement>();
 
             let hints = threshold_sig
-                .reconstruct_hint(&partials, &shares[0].public_key)
+                .reconstruct_hint(&partials, &az_minus_ct)
                 .unwrap();
 
             for poly in hints.iter() {

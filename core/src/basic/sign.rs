@@ -1,12 +1,13 @@
 use crate::basic::keypair::{PrivateKey, PublicKey};
 use crate::dilithium::error::DilithiumError;
-use crate::dilithium::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N};
+use crate::dilithium::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N, Q};
 use crate::matrix::{MatrixMulExt, hash::shake256};
 
 use math::prelude::FieldElement;
 use math::{poly::Polynomial, traits::FiniteField};
 use std::array::from_fn;
 const REJECTION_LIMIT: u32 = 10000;
+const HINT_MODULUS: i64 = (Q - 1) / ALPHA;
 
 /// Uncompressed Dilithium signature with response vector `z`, hint vector `h`, and challenge `c`.
 #[derive(Clone, Debug, PartialEq)]
@@ -27,14 +28,14 @@ impl<'a, FF: FiniteField> DilithiumSignature<'a, FF> {
     }
 }
 
-mod utils {
+pub(crate) mod utils {
     use super::*;
     use crate::dilithium::utils::{
         derive_challenge_polynomial, shake256_squeezed, zero_polyvec,
     };
 
     /// Split a polynomial into its high and low components.
-    pub(super) fn poly_high_low<FF: FiniteField + From<i64>>(
+    pub(crate) fn poly_high_low<FF: FiniteField + From<i64>>(
         p: &Polynomial<'_, FF>,
     ) -> (Polynomial<'static, FF>, Polynomial<'static, FF>)
     where
@@ -47,7 +48,7 @@ mod utils {
     }
 
     /// Extract only the high component of a polynomial used for hashing.
-    pub(super) fn poly_high<FF: FiniteField + From<i64>>(
+    pub(crate) fn poly_high<FF: FiniteField + From<i64>>(
         p: &Polynomial<'_, FF>,
     ) -> Polynomial<'static, FF>
     where
@@ -58,7 +59,7 @@ mod utils {
     }
 
     /// Extract only the low component of a polynomial.
-    pub(super) fn poly_low<FF: FiniteField + From<i64>>(
+    pub(crate) fn poly_low<FF: FiniteField + From<i64>>(
         p: &Polynomial<'_, FF>,
     ) -> Polynomial<'static, FF>
     where
@@ -69,7 +70,7 @@ mod utils {
     }
 
     /// Serialize the w1 vector into bytes that feed the challenge hash.
-    pub(super) fn pack_w1_for_hash<
+    pub(crate) fn pack_w1_for_hash<
         FF: FiniteField + Into<[u8; FieldElement::BYTES]>,
     >(
         w1: &[Polynomial<'_, FF>; K],
@@ -85,7 +86,7 @@ mod utils {
     }
 
     /// Sample the y polynomial vector for a given message seed and counter.
-    pub(super) fn sample_y<FF: FiniteField + From<i64>>(
+    pub(crate) fn sample_y<FF: FiniteField + From<i64>>(
         seed: &[u8],
         ctr: u32,
     ) -> [Polynomial<'static, FF>; L] {
@@ -111,7 +112,7 @@ mod utils {
     }
 
     /// Derive the sparse challenge polynomial from message and w1 bytes.
-    pub(super) fn derive_challenge<FF: FiniteField + From<i64>>(
+    pub(crate) fn derive_challenge<FF: FiniteField + From<i64>>(
         message: &[u8],
         w1_pack: &[u8],
     ) -> Polynomial<'static, FF> {
@@ -147,7 +148,7 @@ mod utils {
 
     /// Compute element-wise addition of `base` and `scale * mult`.
     #[inline]
-    pub(super) fn polyvec_add_scaled<
+    pub(crate) fn polyvec_add_scaled<
         FF: FiniteField + 'static,
         const LEN: usize,
     >(
@@ -160,7 +161,7 @@ mod utils {
 
     /// Compute element-wise subtraction of `scale * mult` from `base`.
     #[inline]
-    pub(super) fn polyvec_sub_scaled<
+    pub(crate) fn polyvec_sub_scaled<
         FF: FiniteField + 'static,
         const LEN: usize,
     >(
@@ -171,9 +172,88 @@ mod utils {
         polyvec_add_scaled_with_sign(base, scale, mult, true)
     }
 
+    /// Fetch the coefficient at `idx`, returning zero when out of bounds.
+    fn coeff_at_or_zero<FF: FiniteField>(
+        poly: &Polynomial<'_, FF>,
+        idx: usize,
+    ) -> FF {
+        poly.coefficients().get(idx).copied().unwrap_or(FF::ZERO)
+    }
+
+    fn make_hint_poly<FF>(
+        target_high: &Polynomial<'_, FF>,
+        base: &Polynomial<'_, FF>,
+    ) -> Polynomial<'static, FF>
+    where
+        FF: FiniteField + From<i64>,
+        i64: From<FF>,
+    {
+        let mut coeffs = vec![FF::ZERO; N];
+        for (idx, coeff) in coeffs.iter_mut().enumerate() {
+            let target_hi = i64::from(coeff_at_or_zero(target_high, idx));
+            let base_value = i64::from(coeff_at_or_zero(base, idx));
+            let (base_hi, _) = high_low_bits(base_value);
+            if target_hi != base_hi {
+                *coeff = FF::ONE;
+            }
+        }
+        coeffs.into()
+    }
+
+    /// Generate per-coefficient hints enabling reconstruction of the reference high bits.
+    pub(crate) fn make_hints<'a, FF>(
+        target_high: &[Polynomial<'a, FF>; K],
+        base: &[Polynomial<'a, FF>; K],
+    ) -> [Polynomial<'static, FF>; K]
+    where
+        FF: FiniteField + From<i64>,
+        i64: From<FF>,
+    {
+        std::array::from_fn(|idx| make_hint_poly(&target_high[idx], &base[idx]))
+    }
+
+    fn use_hint_poly<FF>(
+        hint: &Polynomial<'_, FF>,
+        base: &Polynomial<'_, FF>,
+    ) -> Polynomial<'static, FF>
+    where
+        FF: FiniteField + From<i64>,
+        i64: From<FF>,
+    {
+        let mut coeffs = vec![FF::ZERO; N];
+        for (idx, coeff) in coeffs.iter_mut().enumerate() {
+            let hint_bit = !coeff_at_or_zero(hint, idx).is_zero();
+            let base_value = i64::from(coeff_at_or_zero(base, idx));
+            let (mut hi, lo) = high_low_bits(base_value);
+            if hint_bit {
+                if lo > 0 {
+                    hi += 1;
+                } else {
+                    hi -= 1;
+                }
+            }
+            let modulus = super::HINT_MODULUS;
+            hi = ((hi % modulus) + modulus) % modulus;
+            *coeff = FF::from(hi);
+        }
+        coeffs.into()
+    }
+
+    /// Apply stored hints to recover the original high-bit decomposition.
+    pub(crate) fn use_hints<'hint, 'poly, FF>(
+        hints: &[Polynomial<'hint, FF>; K],
+        base: &[Polynomial<'poly, FF>; K],
+    ) -> [Polynomial<'static, FF>; K]
+    where
+        FF: FiniteField + From<i64>,
+        i64: From<FF>,
+    {
+        std::array::from_fn(|idx| use_hint_poly(&hints[idx], &base[idx]))
+    }
+
     /// Check whether each polynomial's infinity norm stays below `bound`.
     #[inline]
-    pub(super) fn all_infty_norm_below<FF: FiniteField, const LEN: usize>(
+    pub(crate) fn all_infty_norm_below<FF: FiniteField, const LEN: usize>(
         polys: &[Polynomial<'_, FF>; LEN],
         bound: i64,
     ) -> bool
@@ -206,8 +286,9 @@ mod utils {
 }
 
 use utils::{
-    all_infty_norm_below, derive_challenge, pack_w1_for_hash, poly_high,
-    poly_low, polyvec_add_scaled, polyvec_sub_scaled, sample_y,
+    all_infty_norm_below, derive_challenge, make_hints, pack_w1_for_hash,
+    poly_high, poly_low, polyvec_add_scaled, polyvec_sub_scaled, sample_y,
+    use_hints,
 };
 
 /// Internal helper driving the rejection-sampling signing loop.
@@ -253,14 +334,16 @@ where
 
         let ay_minus_cs2 =
             polyvec_sub_scaled::<FF, K>(&w, &challenge, &self.priv_key.s2);
-        let w0 = ay_minus_cs2.map(|p| poly_low(&p));
+        let w0 = from_fn(|idx| poly_low(&ay_minus_cs2[idx]));
         if !all_infty_norm_below::<FF, K>(&w0, GAMMA2 - BETA) {
             return None;
         }
 
+        let hints = make_hints::<FF>(&w1, &ay_minus_cs2);
+
         Some(DilithiumSignature {
             z,
-            h: w0,
+            h: hints,
             c: challenge,
         })
     }
@@ -304,10 +387,8 @@ where
     let Some(az) = pub_key.a.matrix_mul_output(&sig.z) else {
         return false;
     };
-    let w1_prime = {
-        let az_minus_ct = polyvec_sub_scaled::<FF, K>(&az, &sig.c, &pub_key.t);
-        az_minus_ct.map(|poly| poly_high(&poly))
-    };
+    let az_minus_ct = polyvec_sub_scaled::<FF, K>(&az, &sig.c, &pub_key.t);
+    let w1_prime = use_hints(&sig.h, &az_minus_ct);
 
     let derived = derive_challenge(msg, &pack_w1_for_hash(&w1_prime));
     derived == sig.c
@@ -318,6 +399,7 @@ mod tests {
     use super::*; // brings sign/verify + private helpers into scope
     use crate::basic::keypair::*;
     use crate::dilithium::params::{BETA, GAMMA1, L, N};
+    use crate::dilithium::utils::zero_polyvec;
     use math::field_element::FieldElement;
 
     /// Deterministic fixture producing a reproducible keypair.
@@ -338,6 +420,26 @@ mod tests {
         let s2 = [0x33u8; 32];
         keygen_with_seeds::<FF>(KeypairSeeds::new(rho, s1, s2))
             .expect("key generation should succeed")
+    }
+
+    mod hint_tests {
+        use super::*;
+
+        #[test]
+        fn hints_restore_reference_high_bits() {
+            let mut reference = zero_polyvec::<K, FieldElement>();
+            let mut base = zero_polyvec::<K, FieldElement>();
+            // Choose coefficients that differ by a single ALPHA window.
+            reference[0] = vec![FieldElement::from(ALPHA + 5)].into();
+            base[0] = vec![FieldElement::from(5)].into();
+
+            let target_high =
+                std::array::from_fn(|idx| poly_high(&reference[idx]));
+            let hints = utils::make_hints(&target_high, &base);
+            let recovered = utils::use_hints(&hints, &base);
+
+            assert_eq!(recovered[0], target_high[0]);
+        }
     }
 
     mod signing_engine_tests {
