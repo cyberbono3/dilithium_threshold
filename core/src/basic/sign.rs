@@ -8,11 +8,23 @@ use math::{poly::Polynomial, traits::FiniteField};
 use std::array::from_fn;
 const REJECTION_LIMIT: u32 = 10000;
 
-/// Uncompressed Dilithium signature containing the response vector and challenge polynomial.
+/// Uncompressed Dilithium signature with response vector `z`, hint vector `h`, and challenge `c`.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Signature<'a, FF: FiniteField> {
+pub struct DilithiumSignature<'a, FF: FiniteField> {
     pub z: [Polynomial<'a, FF>; L],
+    pub h: [Polynomial<'a, FF>; K],
     pub c: Polynomial<'a, FF>, // challenge polynomial with TAU non-zeros in {-1,0,1}
+}
+
+impl<'a, FF: FiniteField> DilithiumSignature<'a, FF> {
+    /// Construct a signature from its response, hint, and challenge components.
+    pub fn new(
+        z: [Polynomial<'a, FF>; L],
+        h: [Polynomial<'a, FF>; K],
+        c: Polynomial<'a, FF>,
+    ) -> Self {
+        Self { z, h, c }
+    }
 }
 
 mod utils {
@@ -224,7 +236,10 @@ where
     }
 
     /// Attempt one signing iteration; returns `None` if bounds are violated.
-    fn try_with_counter(&self, ctr: u32) -> Option<Signature<'static, FF>> {
+    fn try_with_counter(
+        &self,
+        ctr: u32,
+    ) -> Option<DilithiumSignature<'static, FF>> {
         let y = sample_y::<FF>(&self.y_seed, ctr);
         let w: [Polynomial<'static, FF>; K] =
             self.priv_key.a.matrix_mul_output(&y)?;
@@ -243,7 +258,11 @@ where
             return None;
         }
 
-        Some(Signature { z, c: challenge })
+        Some(DilithiumSignature {
+            z,
+            h: w0,
+            c: challenge,
+        })
     }
 }
 
@@ -251,7 +270,7 @@ where
 pub fn sign<FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64>>(
     priv_key: &PrivateKey<'static, FF>,
     msg: &[u8],
-) -> Result<Signature<'static, FF>, DilithiumError>
+) -> Result<DilithiumSignature<'static, FF>, DilithiumError>
 where
     i64: From<FF>,
 {
@@ -273,7 +292,7 @@ pub fn verify<
 >(
     pub_key: &PublicKey<'static, FF>,
     msg: &[u8],
-    sig: &Signature<'_, FF>,
+    sig: &DilithiumSignature<'_, FF>,
 ) -> bool
 where
     i64: From<FF>,
@@ -760,7 +779,7 @@ mod tests {
         let sig2 = super::sign::<FieldElement>(&priv_key1, msg)
             .expect("signing should succeed");
 
-        // Compare c and each z[i] (Signature doesn't implement PartialEq)
+        // Compare c and each z[i] explicitly to highlight determinism.
         assert_eq!(sig1.c, sig2.c);
         for i in 0..L {
             assert_eq!(sig1.z[i], sig2.z[i], "z[{}] differs", i);

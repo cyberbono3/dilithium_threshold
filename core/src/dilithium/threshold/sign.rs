@@ -1,15 +1,14 @@
 use crate::basic::keypair::{KeyPair, PublicKey, keygen};
 use crate::dilithium::error::{DilithiumError, DilithiumResult};
-use crate::dilithium::params::{L, validate_threshold_config};
+use crate::dilithium::params::{K, L, validate_threshold_config};
 use crate::dilithium::shamir::AdaptedShamirSSS;
 use crate::dilithium::sign::DilithiumSignature;
 use crate::dilithium::utils::{
     derive_challenge_polynomial, get_randomness, hash_message,
-    reconstruct_vector_from_points, sample_gamma1_vector,
+    reconstruct_vector_from_points, sample_gamma1_vector, zero_polyvec,
 };
 use crate::matrix::MatrixMulExt;
 use math::{prelude::*, traits::FiniteField};
-use num_traits::Zero;
 use sha2::{Digest, Sha256};
 
 use super::error::ThresholdError;
@@ -227,7 +226,7 @@ impl ThresholdSignature {
     fn reconstruct_z_vector<FF: FiniteField>(
         &self,
         partial_signatures: &[PartialSignature<'static, FF>],
-    ) -> DilithiumResult<Vec<Polynomial<'static, FF>>> {
+    ) -> DilithiumResult<[Polynomial<'static, FF>; L]> {
         if partial_signatures.is_empty() {
             return Err(DilithiumError::InsufficientShares(1, 0));
         }
@@ -244,18 +243,26 @@ impl ThresholdSignature {
             .map(|ps| ps.z_partial.len())
             .unwrap_or_default();
 
-        let indices: Vec<usize> = (0..vector_length).collect();
-        reconstruct_vector_from_points::<FF, _>(active, &indices)
+        if vector_length != L {
+            return Err(DilithiumError::InvalidThreshold(L, vector_length));
+        }
+
+        let indices: Vec<usize> = (0..L).collect();
+        let reconstructed =
+            reconstruct_vector_from_points::<FF, _>(active, &indices)?;
+
+        reconstructed.try_into().map_err(|vec: Vec<_>| {
+            DilithiumError::InvalidThreshold(L, vec.len())
+        })
     }
 
     /// Recompute the hint vector; placeholder implementation for now.
     fn reconstruct_hint<FF: FiniteField>(
         &self,
         _partial_signatures: &[PartialSignature<'static, FF>],
-        public_key: &PublicKey<'static, FF>,
-    ) -> DilithiumResult<Vec<Polynomial<'static, FF>>> {
-        let hint_len = public_key.t.len();
-        Ok(vec![Polynomial::<FF>::zero(); hint_len])
+        _public_key: &PublicKey<'static, FF>,
+    ) -> DilithiumResult<[Polynomial<'static, FF>; K]> {
+        Ok(zero_polyvec::<K, FF>())
     }
 }
 
@@ -271,6 +278,7 @@ mod tests {
     use crate::dilithium::params::{K, L};
     use crate::dilithium::utils::zero_polyvec;
     use math::field_element::FieldElement;
+    use num_traits::Zero;
 
     /// Build a deterministic 32-byte seed filled with the provided value.
     fn create_test_seed(value: u8) -> Vec<u8> {
@@ -280,14 +288,18 @@ mod tests {
     mod reconstruct_z_vector_tests {
         use super::*;
 
-        /// Helper to create a partial signature containing a single shared polynomial.
+        /// Helper to create a partial signature containing a shared polynomial vector.
         fn make_partial(
             participant_id: usize,
             poly: &Polynomial<'static, FieldElement>,
         ) -> PartialSignature<'static, FieldElement> {
+            let mut z_partial = Vec::from(zero_polyvec::<L, FieldElement>());
+            if let Some(slot) = z_partial.first_mut() {
+                *slot = poly.clone();
+            }
             PartialSignature::new(
                 participant_id,
-                vec![poly.clone()],
+                z_partial,
                 vec![Polynomial::<FieldElement>::zero()],
                 Polynomial::<FieldElement>::zero(),
             )
@@ -307,7 +319,10 @@ mod tests {
             let reconstructed =
                 threshold_sig.reconstruct_z_vector(&partials).unwrap();
 
-            assert_eq!(reconstructed, vec![shared_poly]);
+            assert_eq!(reconstructed[0], shared_poly);
+            for poly in reconstructed.iter().skip(1) {
+                assert!(poly.coefficients().iter().all(|c| c.is_zero()));
+            }
         }
 
         #[test]
@@ -380,7 +395,7 @@ mod tests {
                 .reconstruct_hint(&partials, &shares[0].public_key)
                 .unwrap();
 
-            for poly in hints {
+            for poly in hints.iter() {
                 assert!(poly.coefficients().iter().all(|c| c.is_zero()));
             }
         }

@@ -1,5 +1,5 @@
 use crate::basic::sign::{
-    Signature, sign as sign_message, verify as verify_signature,
+    DilithiumSignature, sign as sign_message, verify as verify_signature,
 };
 use crate::dilithium::error::DilithiumError;
 use crate::dilithium::params::{K, L, N};
@@ -74,7 +74,7 @@ where
     pub fn sign(
         &self,
         msg: &[u8],
-    ) -> Result<Signature<'static, FF>, DilithiumError>
+    ) -> Result<DilithiumSignature<'static, FF>, DilithiumError>
     where
         i64: From<FF>,
     {
@@ -82,7 +82,7 @@ where
     }
 
     /// Verify `sig` against `msg` using the embedded public key.
-    pub fn verify(&self, msg: &[u8], sig: &Signature<'_, FF>) -> bool
+    pub fn verify(&self, msg: &[u8], sig: &DilithiumSignature<'_, FF>) -> bool
     where
         i64: From<FF>,
     {
