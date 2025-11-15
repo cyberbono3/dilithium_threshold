@@ -1,12 +1,10 @@
-use crate::basic::keypair::{PrivateKey, PublicKey};
-use crate::dilithium::error::DilithiumError;
+use crate::basic::keypair::PrivateKey;
 use crate::dilithium::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N, Q};
 use crate::matrix::{MatrixMulExt, hash::shake256};
 
 use math::prelude::FieldElement;
 use math::{poly::Polynomial, traits::FiniteField};
 use std::array::from_fn;
-const REJECTION_LIMIT: u32 = 10000;
 const HINT_MODULUS: i64 = (Q - 1) / ALPHA;
 
 /// Uncompressed Dilithium signature with response vector `z`, hint vector `h`, and challenge `c`.
@@ -26,6 +24,16 @@ impl<'a, FF: FiniteField> DilithiumSignature<'a, FF> {
     ) -> Self {
         Self { z, h, c }
     }
+}
+
+pub trait SigningField:
+    FiniteField + From<i64> + Into<[u8; FieldElement::BYTES]> + 'static
+{
+}
+
+impl<T> SigningField for T where
+    T: FiniteField + From<i64> + Into<[u8; FieldElement::BYTES]> + 'static
+{
 }
 
 pub(crate) mod utils {
@@ -288,13 +296,12 @@ pub(crate) mod utils {
 use utils::{
     all_infty_norm_below, derive_challenge, make_hints, pack_w1_for_hash,
     poly_high, poly_low, polyvec_add_scaled, polyvec_sub_scaled, sample_y,
-    use_hints,
 };
 
 /// Internal helper driving the rejection-sampling signing loop.
-struct SigningEngine<'pk, 'msg, FF>
+pub(crate) struct SigningEngine<'pk, 'msg, FF>
 where
-    FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64> + 'static,
+    FF: SigningField,
     i64: From<FF>,
 {
     priv_key: &'pk PrivateKey<'static, FF>,
@@ -304,11 +311,21 @@ where
 
 impl<'pk, 'msg, FF> SigningEngine<'pk, 'msg, FF>
 where
-    FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64> + 'static,
+    FF: SigningField,
     i64: From<FF>,
 {
+    pub(crate) const REJECTION_LIMIT: u32 = 10000;
+
+    #[inline]
+    pub(crate) fn rejection_attempts() -> std::ops::Range<u32> {
+        0..Self::REJECTION_LIMIT
+    }
+
     /// Construct a new engine for the supplied private key and message.
-    fn new(priv_key: &'pk PrivateKey<'static, FF>, msg: &'msg [u8]) -> Self {
+    pub(crate) fn new(
+        priv_key: &'pk PrivateKey<'static, FF>,
+        msg: &'msg [u8],
+    ) -> Self {
         Self {
             priv_key,
             msg,
@@ -317,7 +334,7 @@ where
     }
 
     /// Attempt one signing iteration; returns `None` if bounds are violated.
-    fn try_with_counter(
+    pub(crate) fn try_with_counter(
         &self,
         ctr: u32,
     ) -> Option<DilithiumSignature<'static, FF>> {
@@ -349,50 +366,7 @@ where
     }
 }
 
-/// Produce a Dilithium signature using rejection sampling.
-pub fn sign<FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64>>(
-    priv_key: &PrivateKey<'static, FF>,
-    msg: &[u8],
-) -> Result<DilithiumSignature<'static, FF>, DilithiumError>
-where
-    i64: From<FF>,
-{
-    let engine = SigningEngine::new(priv_key, msg);
-
-    (0u32..REJECTION_LIMIT)
-        .find_map(|ctr| engine.try_with_counter(ctr))
-        .ok_or(DilithiumError::SignatureGenerationFailed)
-}
-
-/// Verify (uncompressed template):
-/// 1) compute w1' = HighBits(Az - c t, 2*GAMMA2)
-/// 2) check ||z||_∞ < GAMMA1 - BETA
-/// 3) check c == H(M || pack(w1'))
-///
-/// Returns true when the signature is valid.
-pub fn verify<
-    FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64> + 'static,
->(
-    pub_key: &PublicKey<'static, FF>,
-    msg: &[u8],
-    sig: &DilithiumSignature<'_, FF>,
-) -> bool
-where
-    i64: From<FF>,
-{
-    if !all_infty_norm_below::<FF, L>(&sig.z, GAMMA1 - BETA) {
-        return false;
-    }
-
-    let Some(az) = pub_key.a.matrix_mul_output(&sig.z) else {
-        return false;
-    };
-    let az_minus_ct = polyvec_sub_scaled::<FF, K>(&az, &sig.c, &pub_key.t);
-    let w1_prime = use_hints(&sig.h, &az_minus_ct);
-
-    let derived = derive_challenge(msg, &pack_w1_for_hash(&w1_prime));
-    derived == sig.c
-}
+pub(crate) type SigningEngineConfig<FF> = SigningEngine<'static, 'static, FF>;
 
 #[cfg(test)]
 mod tests {
@@ -456,7 +430,9 @@ mod tests {
             let engine = SigningEngine::new(&priv_key, message);
 
             let mut produced = None;
-            for ctr in 0..REJECTION_LIMIT {
+            for ctr in
+                super::SigningEngineConfig::<FieldElement>::rejection_attempts()
+            {
                 if let Some(sig) = engine.try_with_counter(ctr) {
                     produced = Some(sig);
                     break;
@@ -473,7 +449,7 @@ mod tests {
                 "z exceeds bound"
             );
             assert!(
-                verify::<FieldElement>(&pub_key, message, &signature),
+                pub_key.verify(message, &signature),
                 "engine output should verify against the public key"
             );
         }
@@ -754,11 +730,10 @@ mod tests {
         let KeyPair {
             public: pub_key,
             private: priv_key,
-        } = keypair_fixture_1();
+        } = keypair_fixture_1::<FieldElement>();
         let msg = b"hello, sign+verify!";
-        let sig = super::sign::<FieldElement>(&priv_key, msg)
-            .expect("signing should succeed");
-        assert!(super::verify::<FieldElement>(&pub_key, msg, &sig));
+        let sig = priv_key.sign(msg).expect("signing should succeed");
+        assert!(pub_key.verify(msg, &sig));
     }
 
     /// Verification must fail if the message changes after signing.
@@ -767,15 +742,14 @@ mod tests {
         let KeyPair {
             public: pub_key,
             private: priv_key,
-        } = keypair_fixture_1();
+        } = keypair_fixture_1::<FieldElement>();
         let msg = b"immutable message";
-        let sig = super::sign::<FieldElement>(&priv_key, msg)
-            .expect("signing should succeed");
+        let sig = priv_key.sign(msg).expect("signing should succeed");
 
         // Verify against a different message
         let other = b"immutable message (edited)";
         assert!(
-            !super::verify::<FieldElement>(&pub_key, other, &sig),
+            !pub_key.verify(other, &sig),
             "verification must fail if the message changes"
         );
     }
@@ -786,10 +760,9 @@ mod tests {
         let KeyPair {
             public: pub_key,
             private: priv_key,
-        } = keypair_fixture_1();
+        } = keypair_fixture_1::<FieldElement>();
         let msg = b"tamper z";
-        let mut sig = super::sign::<FieldElement>(&priv_key, msg)
-            .expect("signing should succeed");
+        let mut sig = priv_key.sign(msg).expect("signing should succeed");
 
         // Flip one coefficient in z[0]
         let mut plus_one = [0i64; N];
@@ -798,7 +771,7 @@ mod tests {
         sig.z[0] += &add1;
 
         assert!(
-            !super::verify::<FieldElement>(&pub_key, msg, &sig),
+            !pub_key.verify(msg, &sig),
             "verification must fail when z is altered"
         );
     }
@@ -809,10 +782,9 @@ mod tests {
         let KeyPair {
             public: pub_key,
             private: priv_key,
-        } = keypair_fixture_1();
+        } = keypair_fixture_1::<FieldElement>();
         let msg = b"tamper c";
-        let mut sig = super::sign::<FieldElement>(&priv_key, msg)
-            .expect("signing should succeed");
+        let mut sig = priv_key.sign(msg).expect("signing should succeed");
 
         // Replace the challenge with a sparse poly that's *not* the derived one
         let mut c = [0i64; N];
@@ -820,7 +792,7 @@ mod tests {
         sig.c = c.into();
 
         assert!(
-            !super::verify::<FieldElement>(&pub_key, msg, &sig),
+            !pub_key.verify(msg, &sig),
             "verification must fail when c is altered"
         );
     }
@@ -831,19 +803,18 @@ mod tests {
         let KeyPair {
             public: pub_key1,
             private: priv_key1,
-        } = keypair_fixture_1();
+        } = keypair_fixture_1::<FieldElement>();
         let KeyPair {
             public: pub_key2,
             private: _,
-        } = keypair_fixture_2();
+        } = keypair_fixture_2::<FieldElement>();
 
         let msg = b"use the right key, please";
-        let sig = super::sign::<FieldElement>(&priv_key1, msg)
-            .expect("signing should succeed");
+        let sig = priv_key1.sign(msg).expect("signing should succeed");
 
-        assert!(super::verify::<FieldElement>(&pub_key1, msg, &sig));
+        assert!(pub_key1.verify(msg, &sig));
         assert!(
-            !super::verify::<FieldElement>(&pub_key2, msg, &sig),
+            !pub_key2.verify(msg, &sig),
             "verification must fail under a different public key"
         );
     }
@@ -854,14 +825,13 @@ mod tests {
         let KeyPair {
             public: pub_key,
             private: priv_key,
-        } = keypair_fixture_1();
+        } = keypair_fixture_1::<FieldElement>();
         let message = b"hello world";
-        let signature = super::sign::<FieldElement>(&priv_key, message)
-            .expect("signing should succeed");
+        let signature = priv_key.sign(message).expect("signing should succeed");
 
         let wrong = b"hello wurld";
         assert!(
-            !super::verify::<FieldElement>(&pub_key, wrong, &signature),
+            !pub_key.verify(wrong, &signature),
             "verification must fail for a different message"
         );
     }
@@ -873,13 +843,11 @@ mod tests {
         let KeyPair {
             public: _,
             private: priv_key1,
-        } = keypair_fixture_1();
+        } = keypair_fixture_1::<FieldElement>();
         let msg = b"deterministic";
 
-        let sig1 = super::sign::<FieldElement>(&priv_key1, msg)
-            .expect("signing should succeed");
-        let sig2 = super::sign::<FieldElement>(&priv_key1, msg)
-            .expect("signing should succeed");
+        let sig1 = priv_key1.sign(msg).expect("signing should succeed");
+        let sig2 = priv_key1.sign(msg).expect("signing should succeed");
 
         // Compare c and each z[i] explicitly to highlight determinism.
         assert_eq!(sig1.c, sig2.c);
@@ -894,19 +862,17 @@ mod tests {
         let KeyPair {
             public: pub_key1,
             private: priv_key1,
-        } = keypair_fixture_1();
+        } = keypair_fixture_1::<FieldElement>();
 
         // Empty message
         let empty = b"";
-        let sig_empty = super::sign::<FieldElement>(&priv_key1, empty)
-            .expect("signing should succeed");
-        assert!(super::verify::<FieldElement>(&pub_key1, empty, &sig_empty));
+        let sig_empty = priv_key1.sign(empty).expect("signing should succeed");
+        assert!(pub_key1.verify(empty, &sig_empty));
 
         // Long message
         let long = vec![0xABu8; 8192];
-        let sig_long = super::sign::<FieldElement>(&priv_key1, &long)
-            .expect("signing should succeed");
-        assert!(super::verify::<FieldElement>(&pub_key1, &long, &sig_long));
+        let sig_long = priv_key1.sign(&long).expect("signing should succeed");
+        assert!(pub_key1.verify(&long, &sig_long));
     }
 
     /// The infinity norm of z should always remain within the specified bound.
@@ -915,10 +881,9 @@ mod tests {
         let KeyPair {
             public: _,
             private: priv_key1,
-        } = keypair_fixture_1();
+        } = keypair_fixture_1::<FieldElement>();
         let msg = b"bounds check";
-        let sig = super::sign::<FieldElement>(&priv_key1, msg)
-            .expect("signing should succeed");
+        let sig = priv_key1.sign(msg).expect("signing should succeed");
 
         for (i, poly) in sig.z.iter().enumerate() {
             let norm = poly.norm_infinity() as i64;

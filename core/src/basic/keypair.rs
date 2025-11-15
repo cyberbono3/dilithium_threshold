@@ -1,14 +1,15 @@
 use crate::basic::sign::{
-    DilithiumSignature, sign as sign_message, verify as verify_signature,
+    DilithiumSignature, SigningEngine, SigningEngineConfig, SigningField,
+    utils::{
+        all_infty_norm_below, derive_challenge, pack_w1_for_hash,
+        polyvec_sub_scaled, use_hints,
+    },
 };
 use crate::dilithium::error::DilithiumError;
-use crate::dilithium::params::{K, L, N};
+use crate::dilithium::params::{BETA, GAMMA1, K, L, N};
 use crate::dilithium::utils::{random_bytes, shake256_squeezed, zero_polyvec};
 use crate::matrix::{MatrixMulExt, expand_a_from_rho};
-use math::{
-    Matrix, error::MatrixError, field_element::FieldElement, poly::Polynomial,
-    traits::FiniteField,
-};
+use math::{Matrix, error::MatrixError, poly::Polynomial, traits::FiniteField};
 
 type KeyPairResult<FF> = Result<KeyPair<'static, FF>, MatrixError>;
 
@@ -31,6 +32,28 @@ impl<'a, FF: FiniteField> PublicKey<'a, FF> {
     }
 }
 
+impl<FF> PublicKey<'static, FF>
+where
+    FF: SigningField,
+    i64: From<FF>,
+{
+    /// Verify `sig` against `msg` using only the public key.
+    pub fn verify(&self, msg: &[u8], sig: &DilithiumSignature<'_, FF>) -> bool {
+        if !all_infty_norm_below::<FF, L>(&sig.z, GAMMA1 - BETA) {
+            return false;
+        }
+
+        let Some(az) = self.a.matrix_mul_output(&sig.z) else {
+            return false;
+        };
+        let az_minus_ct = polyvec_sub_scaled::<FF, K>(&az, &sig.c, &self.t);
+        let w1_prime = use_hints(&sig.h, &az_minus_ct);
+
+        let derived = derive_challenge(msg, &pack_w1_for_hash(&w1_prime));
+        derived == sig.c
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PrivateKey<'a, FF: FiniteField> {
     pub a: Matrix<'a, FF>, // include A here for convenience
@@ -46,6 +69,24 @@ impl<'a, FF: FiniteField> PrivateKey<'a, FF> {
         s2: [Polynomial<'a, FF>; K],
     ) -> Self {
         Self { a, s1, s2 }
+    }
+}
+
+impl<FF> PrivateKey<'static, FF>
+where
+    FF: SigningField,
+    i64: From<FF>,
+{
+    /// Produce a Dilithium signature using the embedded secret key.
+    pub fn sign(
+        &self,
+        msg: &[u8],
+    ) -> Result<DilithiumSignature<'static, FF>, DilithiumError> {
+        let engine = SigningEngine::new(self, msg);
+
+        SigningEngineConfig::<FF>::rejection_attempts()
+            .find_map(|ctr| engine.try_with_counter(ctr))
+            .ok_or(DilithiumError::SignatureGenerationFailed)
     }
 }
 
@@ -68,25 +109,20 @@ impl<'a, FF: FiniteField> KeyPair<'a, FF> {
 
 impl<FF> KeyPair<'static, FF>
 where
-    FF: FiniteField + Into<[u8; FieldElement::BYTES]> + From<i64>,
+    FF: SigningField,
+    i64: From<FF>,
 {
     /// Sign `msg` with the embedded private key.
     pub fn sign(
         &self,
         msg: &[u8],
-    ) -> Result<DilithiumSignature<'static, FF>, DilithiumError>
-    where
-        i64: From<FF>,
-    {
-        sign_message::<FF>(&self.private, msg)
+    ) -> Result<DilithiumSignature<'static, FF>, DilithiumError> {
+        self.private.sign(msg)
     }
 
     /// Verify `sig` against `msg` using the embedded public key.
-    pub fn verify(&self, msg: &[u8], sig: &DilithiumSignature<'_, FF>) -> bool
-    where
-        i64: From<FF>,
-    {
-        verify_signature::<FF>(&self.public, msg, sig)
+    pub fn verify(&self, msg: &[u8], sig: &DilithiumSignature<'_, FF>) -> bool {
+        self.public.verify(msg, sig)
     }
 }
 
