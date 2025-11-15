@@ -249,3 +249,246 @@ fn padded_coefficients<'a, FF: FiniteField>(
         .chain(std::iter::repeat(FF::ZERO))
         .take(N)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dilithium::params::{ALPHA, GAMMA1, K, TAU};
+    use crate::dilithium::utils::zero_polyvec;
+    use math::field_element::FieldElement;
+
+    mod hint_tests {
+        use super::*;
+
+        #[test]
+        fn hints_restore_reference_high_bits() {
+            let mut reference = zero_polyvec::<K, FieldElement>();
+            let mut base = zero_polyvec::<K, FieldElement>();
+            // Choose coefficients that differ by a single ALPHA window.
+            reference[0] = vec![FieldElement::from(ALPHA + 5)].into();
+            base[0] = vec![FieldElement::from(5)].into();
+
+            let target_high =
+                std::array::from_fn(|idx| poly_high(&reference[idx]));
+            let hints = make_hints(&target_high, &base);
+            let recovered = use_hints(&hints, &base);
+
+            assert_eq!(recovered[0], target_high[0]);
+        }
+    }
+
+    mod sample_y_tests {
+        use super::*;
+
+        /// Convert a field element into a centered signed integer.
+        fn centered_value(fe: FieldElement) -> i64 {
+            let mut v = i64::from(fe);
+            let p = FieldElement::P as i64;
+            if v > p / 2 {
+                v -= p;
+            }
+            v
+        }
+
+        /// Return true if all coefficients stay within the ±GAMMA1 bound.
+        fn coeffs_within_bounds(
+            polys: &[Polynomial<'_, FieldElement>],
+        ) -> bool {
+            polys
+                .iter()
+                .flat_map(|poly| poly.coefficients())
+                .map(|&c| centered_value(c).abs())
+                .all(|abs| abs <= GAMMA1)
+        }
+
+        /// Sampling with identical seed and counter should be deterministic.
+        #[test]
+        fn deterministic_per_seed_and_counter() {
+            let seed = [0x11u8; 32];
+            let first = sample_y::<FieldElement>(&seed, 7);
+            let second = sample_y::<FieldElement>(&seed, 7);
+            assert_eq!(first, second);
+        }
+
+        /// Different counters must yield distinct sampled vectors.
+        #[test]
+        fn different_counters_produce_distinct_vectors() {
+            let seed = [0x77u8; 32];
+            let first = sample_y::<FieldElement>(&seed, 1);
+            let second = sample_y::<FieldElement>(&seed, 2);
+            assert_ne!(first, second);
+        }
+
+        /// All coefficients should remain centered within the permitted bound.
+        #[test]
+        fn coefficients_are_centered() {
+            let seed = [0xC3u8; 32];
+            let polys = sample_y::<FieldElement>(&seed, 5);
+            assert!(coeffs_within_bounds(&polys));
+        }
+    }
+
+    mod pack_w1_tests {
+        use super::*;
+
+        /// Helper to create a polynomial from integer coefficients.
+        fn simple_poly(coeffs: &[i64]) -> Polynomial<'static, FieldElement> {
+            Polynomial::from(
+                coeffs
+                    .iter()
+                    .map(|&c| FieldElement::from(c))
+                    .collect::<Vec<_>>(),
+            )
+        }
+
+        /// Packing should be deterministic when the input polynomials are fixed.
+        #[test]
+        fn deterministic_for_fixed_polys() {
+            let polys = [
+                simple_poly(&[1, 2, 3]),
+                simple_poly(&[4, 5, 6]),
+                simple_poly(&[7, 8, 9]),
+                simple_poly(&[10, 11, 12]),
+            ];
+
+            let first = pack_w1_for_hash(&polys);
+            let second = pack_w1_for_hash(&polys);
+            assert_eq!(first, second);
+        }
+
+        /// Different polynomials must lead to different packed byte arrays.
+        #[test]
+        fn different_inputs_produce_different_outputs() {
+            let polys_a = [
+                simple_poly(&[1, 2, 3]),
+                simple_poly(&[4, 5, 6]),
+                simple_poly(&[7, 8, 9]),
+                simple_poly(&[10, 11, 12]),
+            ];
+
+            let polys_b = [
+                simple_poly(&[1, 2, 3]),
+                simple_poly(&[4, 5, 6]),
+                simple_poly(&[7, 8, 9]),
+                simple_poly(&[10, 11, 13]),
+            ];
+
+            let hash_a = pack_w1_for_hash(&polys_a);
+            let hash_b = pack_w1_for_hash(&polys_b);
+            assert_ne!(hash_a, hash_b);
+        }
+    }
+
+    mod derive_challenge_tests {
+        use super::*;
+
+        /// Derive challenge should be deterministic for identical inputs.
+        #[test]
+        fn deterministic_for_same_inputs() {
+            let msg = b"challenge";
+            let hash = vec![0x42; 32];
+            let c1 = derive_challenge::<FieldElement>(msg, &hash);
+            let c2 = derive_challenge::<FieldElement>(msg, &hash);
+            assert_eq!(c1, c2);
+        }
+
+        /// Different messages should produce different challenge polynomials.
+        #[test]
+        fn changing_message_changes_challenge() {
+            let hash = vec![0x77; 64];
+            let c1 = derive_challenge::<FieldElement>(b"m1", &hash);
+            let c2 = derive_challenge::<FieldElement>(b"m2", &hash);
+            assert_ne!(c1, c2);
+        }
+
+        /// The derived challenge must contain exactly TAU non-zero coefficients.
+        #[test]
+        fn challenge_has_tau_non_zero_entries() {
+            use num_traits::ConstZero;
+
+            let msg = b"nonzero-count";
+            let hash = vec![0xAB; 128];
+            let challenge = derive_challenge::<FieldElement>(msg, &hash);
+            let non_zero = challenge
+                .coefficients()
+                .iter()
+                .filter(|&&c| !FieldElement::ZERO.eq(&c))
+                .count();
+            assert_eq!(non_zero, TAU);
+        }
+    }
+
+    mod infty_norm_tests {
+        use super::*;
+
+        /// Helper to construct polynomials for infinity norm tests.
+        fn make_poly(coeffs: &[i64]) -> Polynomial<'static, FieldElement> {
+            Polynomial::from(
+                coeffs
+                    .iter()
+                    .map(|&c| FieldElement::from(c))
+                    .collect::<Vec<_>>(),
+            )
+        }
+
+        #[test]
+        fn polyvec_add_scaled_adds_scaled_component() {
+            let base = [
+                Polynomial::from(vec![FieldElement::from(1i32)]),
+                Polynomial::from(vec![FieldElement::from(2i32)]),
+            ];
+            let mult = [
+                Polynomial::from(vec![FieldElement::from(3i32)]),
+                Polynomial::from(vec![FieldElement::from(-1i32)]),
+            ];
+            let scale = Polynomial::from(vec![FieldElement::from(2i32)]);
+
+            let result =
+                polyvec_add_scaled::<FieldElement, 2>(&base, &scale, &mult);
+
+            let expected = [
+                Polynomial::from(vec![FieldElement::from(7i32)]),
+                Polynomial::from(vec![FieldElement::from(0i32)]),
+            ];
+
+            assert_eq!(result, expected);
+        }
+
+        #[test]
+        fn polyvec_sub_scaled_subtracts_scaled_component() {
+            let base = [
+                Polynomial::from(vec![FieldElement::from(5i32)]),
+                Polynomial::from(vec![FieldElement::from(-3i32)]),
+            ];
+            let mult = [
+                Polynomial::from(vec![FieldElement::from(2i32)]),
+                Polynomial::from(vec![FieldElement::from(4i32)]),
+            ];
+            let scale = Polynomial::from(vec![FieldElement::from(3i32)]);
+
+            let result =
+                polyvec_sub_scaled::<FieldElement, 2>(&base, &scale, &mult);
+
+            let expected = [
+                Polynomial::from(vec![FieldElement::from(-1i32)]),
+                Polynomial::from(vec![FieldElement::from(-15i32)]),
+            ];
+
+            assert_eq!(result, expected);
+        }
+
+        /// Detect cases where all polynomials stay within the supplied bound.
+        #[test]
+        fn detects_within_bound() {
+            let polys = [make_poly(&[1, -2, 3]), make_poly(&[0, 0, 4])];
+            assert!(all_infty_norm_below(&polys, 5));
+        }
+
+        /// Detect cases where the infinity norm exceeds the bound.
+        #[test]
+        fn detects_violation() {
+            let polys = [make_poly(&[1, -2, 3]), make_poly(&[0, 0, 6])];
+            assert!(!all_infty_norm_below(&polys, 5));
+        }
+    }
+}
