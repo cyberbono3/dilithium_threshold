@@ -1,12 +1,10 @@
 use crate::basic::keypair::PrivateKey;
-use crate::dilithium::params::{ALPHA, BETA, GAMMA1, GAMMA2, K, L, N, Q};
+use crate::dilithium::params::{BETA, GAMMA1, GAMMA2, K, L};
 use crate::matrix::{MatrixMulExt, hash::shake256};
 
 use math::prelude::FieldElement;
 use math::{poly::Polynomial, traits::FiniteField};
 use std::array::from_fn;
-const HINT_MODULUS: i64 = (Q - 1) / ALPHA;
-
 /// Uncompressed Dilithium signature with response vector `z`, hint vector `h`, and challenge `c`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DilithiumSignature<'a, FF: FiniteField> {
@@ -36,264 +34,7 @@ impl<T> SigningField for T where
 {
 }
 
-pub(crate) mod utils {
-    use super::*;
-    use crate::dilithium::utils::{
-        derive_challenge_polynomial, shake256_squeezed, zero_polyvec,
-    };
-
-    /// Split a polynomial into its high and low components.
-    pub(crate) fn poly_high_low<FF: FiniteField + From<i64>>(
-        p: &Polynomial<'_, FF>,
-    ) -> (Polynomial<'static, FF>, Polynomial<'static, FF>)
-    where
-        i64: From<FF>,
-    {
-        let (hi, lo): (Vec<_>, Vec<_>) = padded_coefficients(p)
-            .map(|coeff| high_low_bits(i64::from(coeff)))
-            .unzip();
-        (hi.into(), lo.into())
-    }
-
-    /// Extract only the high component of a polynomial used for hashing.
-    pub(crate) fn poly_high<FF: FiniteField + From<i64>>(
-        p: &Polynomial<'_, FF>,
-    ) -> Polynomial<'static, FF>
-    where
-        i64: From<FF>,
-    {
-        let (high, _) = poly_high_low(p);
-        high
-    }
-
-    /// Extract only the low component of a polynomial.
-    pub(crate) fn poly_low<FF: FiniteField + From<i64>>(
-        p: &Polynomial<'_, FF>,
-    ) -> Polynomial<'static, FF>
-    where
-        i64: From<FF>,
-    {
-        let (_, low) = poly_high_low(p);
-        low
-    }
-
-    /// Serialize the w1 vector into bytes that feed the challenge hash.
-    pub(crate) fn pack_w1_for_hash<
-        FF: FiniteField + Into<[u8; FieldElement::BYTES]>,
-    >(
-        w1: &[Polynomial<'_, FF>; K],
-    ) -> Vec<u8> {
-        let mut out = Vec::with_capacity(K * N * 2);
-        for poly in w1 {
-            for v in poly.coefficients() {
-                let arr: [u8; FieldElement::BYTES] = (*v).into();
-                out.extend_from_slice(&arr);
-            }
-        }
-        out
-    }
-
-    /// Sample the y polynomial vector for a given message seed and counter.
-    pub(crate) fn sample_y<FF: FiniteField + From<i64>>(
-        seed: &[u8],
-        ctr: u32,
-    ) -> [Polynomial<'static, FF>; L] {
-        let mut out = zero_polyvec::<L, FF>();
-
-        for (j, slot) in out.iter_mut().enumerate() {
-            let idx_bytes = (j as u16).to_le_bytes();
-            let ctr_bytes = ctr.to_le_bytes();
-            let bytes =
-                shake256_squeezed(seed, &[&idx_bytes, &ctr_bytes], 3 * N);
-            let mut coeffs = [0i64; N];
-            for (i, chunk) in bytes.chunks_exact(3).take(N).enumerate() {
-                let v = (chunk[0] as i64)
-                    | ((chunk[1] as i64) << 8)
-                    | ((chunk[2] as i64) << 16);
-                let modulus = 2 * GAMMA1 + 1;
-                let centered = (v % modulus + modulus) % modulus - GAMMA1;
-                coeffs[i] = centered;
-            }
-            *slot = coeffs.into();
-        }
-        out
-    }
-
-    /// Derive the sparse challenge polynomial from message and w1 bytes.
-    pub(crate) fn derive_challenge<FF: FiniteField + From<i64>>(
-        message: &[u8],
-        w1_pack: &[u8],
-    ) -> Polynomial<'static, FF> {
-        let mut seed = Vec::with_capacity(message.len() + w1_pack.len());
-        seed.extend_from_slice(message);
-        seed.extend_from_slice(w1_pack);
-        derive_challenge_polynomial::<FF>(&seed)
-    }
-
-    #[inline]
-    fn polyvec_add_scaled_with_sign<
-        FF: FiniteField + 'static,
-        const LEN: usize,
-    >(
-        base: &[Polynomial<'static, FF>; LEN],
-        scale: &Polynomial<'_, FF>,
-        mult: &[Polynomial<'static, FF>; LEN],
-        negate: bool,
-    ) -> [Polynomial<'static, FF>; LEN] {
-        let mut dest = zero_polyvec::<LEN, FF>();
-        for ((slot, base_poly), mult_poly) in
-            dest.iter_mut().zip(base).zip(mult)
-        {
-            slot.clone_from(base_poly);
-            let mut scaled = mult_poly * scale;
-            if negate {
-                scaled = -scaled;
-            }
-            *slot += scaled;
-        }
-        dest
-    }
-
-    /// Compute element-wise addition of `base` and `scale * mult`.
-    #[inline]
-    pub(crate) fn polyvec_add_scaled<
-        FF: FiniteField + 'static,
-        const LEN: usize,
-    >(
-        base: &[Polynomial<'static, FF>; LEN],
-        scale: &Polynomial<'_, FF>,
-        mult: &[Polynomial<'static, FF>; LEN],
-    ) -> [Polynomial<'static, FF>; LEN] {
-        polyvec_add_scaled_with_sign(base, scale, mult, false)
-    }
-
-    /// Compute element-wise subtraction of `scale * mult` from `base`.
-    #[inline]
-    pub(crate) fn polyvec_sub_scaled<
-        FF: FiniteField + 'static,
-        const LEN: usize,
-    >(
-        base: &[Polynomial<'static, FF>; LEN],
-        scale: &Polynomial<'_, FF>,
-        mult: &[Polynomial<'static, FF>; LEN],
-    ) -> [Polynomial<'static, FF>; LEN] {
-        polyvec_add_scaled_with_sign(base, scale, mult, true)
-    }
-
-    /// Fetch the coefficient at `idx`, returning zero when out of bounds.
-    fn coeff_at_or_zero<FF: FiniteField>(
-        poly: &Polynomial<'_, FF>,
-        idx: usize,
-    ) -> FF {
-        poly.coefficients().get(idx).copied().unwrap_or(FF::ZERO)
-    }
-
-    fn make_hint_poly<FF>(
-        target_high: &Polynomial<'_, FF>,
-        base: &Polynomial<'_, FF>,
-    ) -> Polynomial<'static, FF>
-    where
-        FF: FiniteField + From<i64>,
-        i64: From<FF>,
-    {
-        let mut coeffs = vec![FF::ZERO; N];
-        for (idx, coeff) in coeffs.iter_mut().enumerate() {
-            let target_hi = i64::from(coeff_at_or_zero(target_high, idx));
-            let base_value = i64::from(coeff_at_or_zero(base, idx));
-            let (base_hi, _) = high_low_bits(base_value);
-            if target_hi != base_hi {
-                *coeff = FF::ONE;
-            }
-        }
-        coeffs.into()
-    }
-
-    /// Generate per-coefficient hints enabling reconstruction of the reference high bits.
-    pub(crate) fn make_hints<'a, FF>(
-        target_high: &[Polynomial<'a, FF>; K],
-        base: &[Polynomial<'a, FF>; K],
-    ) -> [Polynomial<'static, FF>; K]
-    where
-        FF: FiniteField + From<i64>,
-        i64: From<FF>,
-    {
-        std::array::from_fn(|idx| make_hint_poly(&target_high[idx], &base[idx]))
-    }
-
-    fn use_hint_poly<FF>(
-        hint: &Polynomial<'_, FF>,
-        base: &Polynomial<'_, FF>,
-    ) -> Polynomial<'static, FF>
-    where
-        FF: FiniteField + From<i64>,
-        i64: From<FF>,
-    {
-        let mut coeffs = vec![FF::ZERO; N];
-        for (idx, coeff) in coeffs.iter_mut().enumerate() {
-            let hint_bit = !coeff_at_or_zero(hint, idx).is_zero();
-            let base_value = i64::from(coeff_at_or_zero(base, idx));
-            let (mut hi, lo) = high_low_bits(base_value);
-            if hint_bit {
-                if lo > 0 {
-                    hi += 1;
-                } else {
-                    hi -= 1;
-                }
-            }
-            let modulus = super::HINT_MODULUS;
-            hi = ((hi % modulus) + modulus) % modulus;
-            *coeff = FF::from(hi);
-        }
-        coeffs.into()
-    }
-
-    /// Apply stored hints to recover the original high-bit decomposition.
-    pub(crate) fn use_hints<'hint, 'poly, FF>(
-        hints: &[Polynomial<'hint, FF>; K],
-        base: &[Polynomial<'poly, FF>; K],
-    ) -> [Polynomial<'static, FF>; K]
-    where
-        FF: FiniteField + From<i64>,
-        i64: From<FF>,
-    {
-        std::array::from_fn(|idx| use_hint_poly(&hints[idx], &base[idx]))
-    }
-
-    /// Check whether each polynomial's infinity norm stays below `bound`.
-    #[inline]
-    pub(crate) fn all_infty_norm_below<FF: FiniteField, const LEN: usize>(
-        polys: &[Polynomial<'_, FF>; LEN],
-        bound: i64,
-    ) -> bool
-    where
-        i64: From<FF>,
-    {
-        polys.iter().all(|p| (p.norm_infinity() as i64) < bound)
-    }
-
-    /// Split a coefficient into high and low parts relative to ALPHA.
-    fn high_low_bits(x: i64) -> (i64, i64) {
-        let w1 = x / ALPHA;
-        let mut w0 = x - w1 * ALPHA;
-        if w0 > ALPHA / 2 {
-            w0 -= ALPHA;
-        }
-        (w1, w0)
-    }
-
-    /// Iterate coefficients padded with zeros up to length N.
-    fn padded_coefficients<'a, FF: FiniteField>(
-        poly: &'a Polynomial<'a, FF>,
-    ) -> impl Iterator<Item = FF> + 'a {
-        poly.coefficients()
-            .iter()
-            .copied()
-            .chain(std::iter::repeat(FF::ZERO))
-            .take(N)
-    }
-}
-
-use utils::{
+use crate::basic::utils::{
     all_infty_norm_below, derive_challenge, make_hints, pack_w1_for_hash,
     poly_high, poly_low, polyvec_add_scaled, polyvec_sub_scaled, sample_y,
 };
@@ -372,6 +113,7 @@ pub(crate) type SigningEngineConfig<FF> = SigningEngine<'static, 'static, FF>;
 mod tests {
     use super::*; // brings sign/verify + private helpers into scope
     use crate::basic::keypair::*;
+    use crate::basic::utils;
     use crate::dilithium::params::{BETA, GAMMA1, L, N};
     use crate::dilithium::utils::zero_polyvec;
     use math::field_element::FieldElement;
@@ -398,6 +140,7 @@ mod tests {
 
     mod hint_tests {
         use super::*;
+        use crate::dilithium::params::ALPHA;
 
         #[test]
         fn hints_restore_reference_high_bits() {
@@ -532,8 +275,8 @@ mod tests {
         #[test]
         fn deterministic_per_seed_and_counter() {
             let seed = [0x11u8; 32];
-            let first = super::utils::sample_y::<FieldElement>(&seed, 7);
-            let second = super::utils::sample_y::<FieldElement>(&seed, 7);
+            let first = utils::sample_y::<FieldElement>(&seed, 7);
+            let second = utils::sample_y::<FieldElement>(&seed, 7);
             assert_eq!(first, second);
         }
 
@@ -541,8 +284,8 @@ mod tests {
         #[test]
         fn different_counters_produce_distinct_vectors() {
             let seed = [0x77u8; 32];
-            let first = super::utils::sample_y::<FieldElement>(&seed, 1);
-            let second = super::utils::sample_y::<FieldElement>(&seed, 2);
+            let first = utils::sample_y::<FieldElement>(&seed, 1);
+            let second = utils::sample_y::<FieldElement>(&seed, 2);
             assert_ne!(first, second);
         }
 
@@ -550,7 +293,7 @@ mod tests {
         #[test]
         fn coefficients_are_centered() {
             let seed = [0xC3u8; 32];
-            let polys = super::utils::sample_y::<FieldElement>(&seed, 5);
+            let polys = utils::sample_y::<FieldElement>(&seed, 5);
             assert!(coeffs_within_bounds(&polys));
         }
     }
@@ -578,8 +321,8 @@ mod tests {
                 simple_poly(&[10, 11, 12]),
             ];
 
-            let first = super::utils::pack_w1_for_hash(&polys);
-            let second = super::utils::pack_w1_for_hash(&polys);
+            let first = utils::pack_w1_for_hash(&polys);
+            let second = utils::pack_w1_for_hash(&polys);
             assert_eq!(first, second);
         }
 
@@ -600,8 +343,8 @@ mod tests {
                 simple_poly(&[10, 11, 13]),
             ];
 
-            let hash_a = super::utils::pack_w1_for_hash(&polys_a);
-            let hash_b = super::utils::pack_w1_for_hash(&polys_b);
+            let hash_a = utils::pack_w1_for_hash(&polys_a);
+            let hash_b = utils::pack_w1_for_hash(&polys_b);
             assert_ne!(hash_a, hash_b);
         }
     }
@@ -616,8 +359,8 @@ mod tests {
         fn deterministic_for_same_inputs() {
             let msg = b"challenge";
             let hash = vec![0x42; 32];
-            let c1 = super::utils::derive_challenge::<FieldElement>(msg, &hash);
-            let c2 = super::utils::derive_challenge::<FieldElement>(msg, &hash);
+            let c1 = utils::derive_challenge::<FieldElement>(msg, &hash);
+            let c2 = utils::derive_challenge::<FieldElement>(msg, &hash);
             assert_eq!(c1, c2);
         }
 
@@ -625,10 +368,8 @@ mod tests {
         #[test]
         fn changing_message_changes_challenge() {
             let hash = vec![0x77; 64];
-            let c1 =
-                super::utils::derive_challenge::<FieldElement>(b"m1", &hash);
-            let c2 =
-                super::utils::derive_challenge::<FieldElement>(b"m2", &hash);
+            let c1 = utils::derive_challenge::<FieldElement>(b"m1", &hash);
+            let c2 = utils::derive_challenge::<FieldElement>(b"m2", &hash);
             assert_ne!(c1, c2);
         }
 
@@ -637,8 +378,7 @@ mod tests {
         fn challenge_has_tau_non_zero_entries() {
             let msg = b"nonzero-count";
             let hash = vec![0xAB; 128];
-            let challenge =
-                super::utils::derive_challenge::<FieldElement>(msg, &hash);
+            let challenge = utils::derive_challenge::<FieldElement>(msg, &hash);
             let non_zero = challenge
                 .coefficients()
                 .iter()
@@ -673,7 +413,7 @@ mod tests {
             ];
             let scale = Polynomial::from(vec![FieldElement::from(2i32)]);
 
-            let result = super::utils::polyvec_add_scaled::<FieldElement, 2>(
+            let result = utils::polyvec_add_scaled::<FieldElement, 2>(
                 &base, &scale, &mult,
             );
 
@@ -697,7 +437,7 @@ mod tests {
             ];
             let scale = Polynomial::from(vec![FieldElement::from(3i32)]);
 
-            let result = super::utils::polyvec_sub_scaled::<FieldElement, 2>(
+            let result = utils::polyvec_sub_scaled::<FieldElement, 2>(
                 &base, &scale, &mult,
             );
 
@@ -713,14 +453,14 @@ mod tests {
         #[test]
         fn detects_within_bound() {
             let polys = [make_poly(&[1, -2, 3]), make_poly(&[0, 0, 4])];
-            assert!(super::utils::all_infty_norm_below(&polys, 5));
+            assert!(utils::all_infty_norm_below(&polys, 5));
         }
 
         /// Detect cases where the infinity norm exceeds the bound.
         #[test]
         fn detects_violation() {
             let polys = [make_poly(&[1, -2, 3]), make_poly(&[0, 0, 6])];
-            assert!(!super::utils::all_infty_norm_below(&polys, 5));
+            assert!(!utils::all_infty_norm_below(&polys, 5));
         }
     }
 

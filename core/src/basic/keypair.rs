@@ -1,9 +1,9 @@
 use crate::basic::sign::{
     DilithiumSignature, SigningEngine, SigningEngineConfig, SigningField,
-    utils::{
-        all_infty_norm_below, derive_challenge, pack_w1_for_hash,
-        polyvec_sub_scaled, use_hints,
-    },
+};
+use crate::basic::utils::{
+    all_infty_norm_below, derive_challenge, pack_w1_for_hash,
+    polyvec_sub_scaled, use_hints,
 };
 use crate::dilithium::error::DilithiumError;
 use crate::dilithium::params::{BETA, GAMMA1, K, L, N};

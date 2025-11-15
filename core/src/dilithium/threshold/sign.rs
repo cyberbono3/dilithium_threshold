@@ -1,5 +1,5 @@
 use crate::basic::keypair::{KeyPair, PublicKey, keygen};
-use crate::basic::sign::utils::{make_hints, poly_high, polyvec_sub_scaled};
+use crate::basic::utils::{make_hints, poly_high, polyvec_sub_scaled};
 use crate::dilithium::error::{DilithiumError, DilithiumResult};
 use crate::dilithium::params::{K, L, validate_threshold_config};
 use crate::dilithium::shamir::AdaptedShamirSSS;
