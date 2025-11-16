@@ -28,3 +28,11 @@ harness = false
 [[bench]]
 name = "threshold"
 harness = false
+
+[[example]]
+name = "basic"
+path = "examples/basic.rs"
+
+[[example]]
+name = "threshold"
+path = "examples/threshold.rs"
