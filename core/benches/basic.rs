@@ -23,10 +23,11 @@ fn bench_verify(c: &mut Criterion) {
     let keypair = fresh_keypair();
     let msg = b"Hello";
     let signature = keypair.sign(msg).expect("signing succeeds");
+    let pub_key = keypair.public.clone();
 
     c.bench_function("verify", move |b| {
         b.iter(|| {
-            assert!(keypair.verify(black_box(msg), &signature));
+            assert!(pub_key.verify(black_box(msg), &signature));
         });
     });
 }
