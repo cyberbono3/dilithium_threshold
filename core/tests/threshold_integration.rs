@@ -1,9 +1,11 @@
 use dilithium_core::basic::PublicKey;
+use dilithium_core::dilithium::params::{K, L};
 use dilithium_core::dilithium::threshold::{
     PartialSignature, ThresholdKeyShare, ThresholdSignature,
 };
-use dilithium_core::dilithium::params::{K, L};
-use dilithium_core::dilithium::utils::{derive_challenge_polynomial, hash_message};
+use dilithium_core::dilithium::utils::{
+    derive_challenge_polynomial, hash_message,
+};
 use math::{field_element::FieldElement, poly::Polynomial};
 
 const MESSAGE: &[u8] = b"threshold integration test message";
@@ -28,7 +30,10 @@ fn verify_combined(
     ts: &ThresholdSignature,
     shares: &[ThresholdKeyShare<'static, FieldElement>],
     message: &[u8],
-) -> (PublicKey<'static, FieldElement>, Vec<PartialSignature<'static, FieldElement>>) {
+) -> (
+    PublicKey<'static, FieldElement>,
+    Vec<PartialSignature<'static, FieldElement>>,
+) {
     let public_key = shares[0].public_key.clone();
     let partials = generate_partials(
         ts,
@@ -122,8 +127,7 @@ fn insufficient_signatures_fail() {
     let threshold = ts.get_threshold_info().threshold;
     let partials =
         generate_partials(&ts, &shares[..threshold - 1], MESSAGE, &RANDOMNESS);
-    let err =
-        ts.combine_signatures::<FieldElement>(&partials, &public_key);
+    let err = ts.combine_signatures::<FieldElement>(&partials, &public_key);
     assert!(err.is_err(), "expected error for insufficient shares");
 }
 
