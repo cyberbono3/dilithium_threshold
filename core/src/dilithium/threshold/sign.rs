@@ -1,9 +1,9 @@
-use crate::basic::keypair::{KeyPair, PublicKey, keygen};
+use crate::basic::sign::DilithiumSignature;
 use crate::basic::utils::{make_hints, poly_high, polyvec_sub_scaled};
+use crate::basic::{KeyPair, PublicKey, keygen};
 use crate::dilithium::error::{DilithiumError, DilithiumResult};
 use crate::dilithium::params::{K, L, validate_threshold_config};
 use crate::dilithium::shamir::AdaptedShamirSSS;
-use crate::dilithium::sign::DilithiumSignature;
 use crate::dilithium::utils::{
     derive_challenge_polynomial, get_randomness, hash_message,
     reconstruct_vector_from_points, sample_gamma1_vector,
@@ -86,7 +86,6 @@ impl ThresholdSignature {
                 )
             })
             .collect();
-
         Ok(threshold_shares)
     }
 
@@ -248,10 +247,10 @@ impl ThresholdSignature {
             ),
         )?;
 
-        let vector_length = active
+        let first = active
             .first()
-            .map(|ps| ps.z_partial.len())
-            .unwrap_or_default();
+            .ok_or(DilithiumError::InsufficientShares(self.threshold, 0))?;
+        let vector_length = first.z_partial.len();
 
         if vector_length != L {
             return Err(DilithiumError::InvalidThreshold(L, vector_length));
@@ -274,10 +273,10 @@ impl ThresholdSignature {
             return Err(DilithiumError::InsufficientShares(1, 0));
         }
 
-        let vector_length = partial_signatures
+        let first = partial_signatures
             .first()
-            .map(|ps| ps.commitment.len())
-            .unwrap_or_default();
+            .ok_or(DilithiumError::InsufficientShares(self.threshold, 0))?;
+        let vector_length = first.commitment.len();
 
         if vector_length != K {
             return Err(DilithiumError::InvalidThreshold(K, vector_length));
@@ -347,6 +346,18 @@ mod tests {
     use math::field_element::FieldElement;
     use num_traits::Zero;
 
+    fn threshold_instance(
+        threshold: usize,
+        participants: usize,
+    ) -> ThresholdSignature {
+        ThresholdSignature::new(threshold, participants)
+            .expect("threshold configuration should be valid")
+    }
+
+    fn default_threshold() -> ThresholdSignature {
+        threshold_instance(3, 5)
+    }
+
     /// Build a deterministic 32-byte seed filled with the provided value.
     fn create_test_seed(value: u8) -> Vec<u8> {
         vec![value; 32]
@@ -374,7 +385,7 @@ mod tests {
 
         #[test]
         fn reconstructs_constant_polynomials() {
-            let threshold_sig = ThresholdSignature::new(2, 3).unwrap();
+            let threshold_sig = threshold_instance(2, 3);
             let shared_poly: Polynomial<'static, FieldElement> =
                 poly![5, -3, 8];
 
@@ -394,7 +405,7 @@ mod tests {
 
         #[test]
         fn errors_when_not_enough_partials() {
-            let threshold_sig = ThresholdSignature::default();
+            let threshold_sig = default_threshold();
             let poly: Polynomial<'static, FieldElement> = poly![1, 2, 3];
             let partials = vec![make_partial(1, &poly), make_partial(2, &poly)];
 
@@ -410,7 +421,7 @@ mod tests {
 
         #[test]
         fn errors_on_empty_input() {
-            let threshold_sig = ThresholdSignature::default();
+            let threshold_sig = default_threshold();
             let err = threshold_sig
                 .reconstruct_z_vector::<FieldElement>(&[])
                 .unwrap_err();
@@ -435,7 +446,7 @@ mod tests {
 
         #[test]
         fn matches_public_key_dimension() {
-            let threshold_sig = ThresholdSignature::default();
+            let threshold_sig = default_threshold();
             let shares =
                 threshold_sig.distributed_keygen::<FieldElement>().unwrap();
             let partials = (0..threshold_sig.threshold)
@@ -452,7 +463,7 @@ mod tests {
 
         #[test]
         fn returns_zero_polynomials() {
-            let threshold_sig = ThresholdSignature::default();
+            let threshold_sig = default_threshold();
             let partials = (0..threshold_sig.threshold)
                 .map(|i| zero_partial(i + 1))
                 .collect::<Vec<_>>();
@@ -530,7 +541,7 @@ mod tests {
 
         #[test]
         fn test_threshold_info_matches_configuration() {
-            let threshold_sig = ThresholdSignature::new(4, 7).unwrap();
+            let threshold_sig = threshold_instance(4, 7);
             let info = threshold_sig.get_threshold_info();
 
             assert_eq!(info.threshold, 4);
@@ -550,7 +561,7 @@ mod tests {
 
         #[test]
         fn test_distributed_keygen() {
-            let threshold_sig = ThresholdSignature::default();
+            let threshold_sig = default_threshold();
 
             let shares =
                 threshold_sig.distributed_keygen::<FieldElement>().unwrap();
@@ -571,7 +582,7 @@ mod tests {
 
         #[test]
         fn test_partial_sign_basic() {
-            let threshold_sig = ThresholdSignature::default();
+            let threshold_sig = default_threshold();
             let shares =
                 threshold_sig.distributed_keygen::<FieldElement>().unwrap();
             let message = b"Test message";
@@ -587,7 +598,7 @@ mod tests {
 
         #[test]
         fn test_partial_sign_deterministic() {
-            let threshold_sig = ThresholdSignature::new(2, 3).unwrap();
+            let threshold_sig = threshold_instance(2, 3);
             let shares =
                 threshold_sig.distributed_keygen::<FieldElement>().unwrap();
             let message = b"Determenistic test";
@@ -607,7 +618,7 @@ mod tests {
 
         #[test]
         fn test_verify_partial_signature() {
-            let threshold_sig = ThresholdSignature::new(3, 5).unwrap();
+            let threshold_sig = threshold_instance(3, 5);
             let shares =
                 threshold_sig.distributed_keygen::<FieldElement>().unwrap();
             let message = b"verified_test";
@@ -623,7 +634,7 @@ mod tests {
 
         #[test]
         fn test_verify_partial_signature_wrong_message() {
-            let threshold_sig = ThresholdSignature::new(3, 5).unwrap();
+            let threshold_sig = threshold_instance(3, 5);
             let shares =
                 threshold_sig.distributed_keygen::<FieldElement>().unwrap();
             let message = b"Original message";
