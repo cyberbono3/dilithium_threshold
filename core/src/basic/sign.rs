@@ -1,4 +1,4 @@
-use crate::basic::keypair::PrivateKey;
+use crate::basic::keys::PrivateKey;
 use crate::dilithium::params::{BETA, GAMMA1, GAMMA2, K, L};
 use crate::matrix::{MatrixMulExt, hash::shake256};
 
@@ -112,8 +112,8 @@ pub(crate) type SigningEngineConfig<FF> = SigningEngine<'static, 'static, FF>;
 #[cfg(test)]
 mod tests {
     use super::*; // brings sign/verify + private helpers into scope
-    use crate::basic::keypair::*;
     use crate::basic::utils;
+    use crate::basic::{KeyPair, KeypairSeeds, keygen_with_seeds};
     use crate::dilithium::params::{BETA, GAMMA1, L, N};
     use math::field_element::FieldElement;
 

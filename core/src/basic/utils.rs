@@ -83,6 +83,41 @@ pub(crate) fn sample_y<FF: FiniteField + From<i64>>(
     out
 }
 
+/// Expand a 32-byte seed into an η=2 vector of secret polynomials.
+pub(crate) fn expand_secret_vector<const LEN: usize, FF>(
+    seed: &[u8; 32],
+) -> [Polynomial<'static, FF>; LEN]
+where
+    FF: FiniteField + From<i64>,
+{
+    let mut secrets = zero_polyvec::<LEN, FF>();
+    for (index, slot) in secrets.iter_mut().enumerate() {
+        let idx_bytes = (index as u16).to_le_bytes();
+        let bytes = shake256_squeezed(seed, &[&idx_bytes], 2 * N);
+        *slot = cbd_eta2::<FF>(&bytes);
+    }
+    secrets
+}
+
+/// CBD for η=2 from an XOF stream.
+pub(crate) fn cbd_eta2<FF: FiniteField + From<i64>>(
+    stream: &[u8],
+) -> Polynomial<'static, FF> {
+    let mut out = [0i64; N];
+    let mut bitpos = 0usize;
+    for out_i in out.iter_mut().take(N) {
+        let byte_idx = bitpos / 8;
+        let two =
+            u16::from_le_bytes([stream[byte_idx], stream[byte_idx + 1]]) as u32;
+        let bits = two;
+        let a0 = (bits & 1) + ((bits >> 1) & 1);
+        let a1 = ((bits >> 2) & 1) + ((bits >> 3) & 1);
+        *out_i = (a0 as i64) - (a1 as i64);
+        bitpos += 4;
+    }
+    out.into()
+}
+
 /// Derive the sparse challenge polynomial from message and w1 bytes.
 pub(crate) fn derive_challenge<FF: FiniteField + From<i64>>(
     message: &[u8],

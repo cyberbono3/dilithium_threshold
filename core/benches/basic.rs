@@ -1,9 +1,9 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use dilithium_core::basic::keypair::{self, KeyPair};
+use dilithium_core::basic::{KeyPair, keygen};
 use math::field_element::FieldElement;
 
 fn fresh_keypair() -> KeyPair<'static, FieldElement> {
-    keypair::keygen::<FieldElement>().expect("random key generation succeeds")
+    keygen::<FieldElement>().expect("random key generation succeeds")
 }
 
 fn bench_sign(c: &mut Criterion) {
