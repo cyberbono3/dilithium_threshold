@@ -1,0 +1,45 @@
+name: Benchmarks
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+jobs:
+  benchmark:
+    name: Benchmark Performance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run benchmarks
+        run: cargo bench --bench basic -- --output-format bencher > bench_current.txt
+
+      - name: Check benchmark regression
+        run: |
+          if [ -f bench_baseline.txt ]; then
+            echo "Comparing benchmarks against baseline"
+            python3 scripts/compare_bench.py bench_baseline.txt bench_current.txt
+          else
+            echo "No baseline benchmark found. Skipping regression check."
+          fi
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench_current.txt
