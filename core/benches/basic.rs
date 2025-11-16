@@ -1,9 +1,9 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use dilithium_core::basic::keypair::{self, KeyPair};
+use dilithium_core::basic::{KeyPair, keygen};
 use math::field_element::FieldElement;
 
 fn fresh_keypair() -> KeyPair<'static, FieldElement> {
-    keypair::keygen::<FieldElement>().expect("random key generation succeeds")
+    keygen::<FieldElement>().expect("random key generation succeeds")
 }
 
 fn bench_sign(c: &mut Criterion) {
@@ -23,10 +23,11 @@ fn bench_verify(c: &mut Criterion) {
     let keypair = fresh_keypair();
     let msg = b"Hello";
     let signature = keypair.sign(msg).expect("signing succeeds");
+    let pub_key = keypair.public.clone();
 
     c.bench_function("verify", move |b| {
         b.iter(|| {
-            assert!(keypair.verify(black_box(msg), &signature));
+            assert!(pub_key.verify(black_box(msg), &signature));
         });
     });
 }
