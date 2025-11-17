@@ -261,6 +261,24 @@ where
         }
     }
 
+    fn take_coefficients(&mut self) -> Vec<FF> {
+        match std::mem::replace(&mut self.coefficients, Cow::Owned(Vec::new()))
+        {
+            Cow::Owned(vec) => vec,
+            Cow::Borrowed(slice) => slice.to_vec(),
+        }
+    }
+
+    fn update_coefficients<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&mut Vec<FF>),
+    {
+        let mut coeffs = self.take_coefficients();
+        f(&mut coeffs);
+        self.coefficients = Cow::Owned(coeffs);
+        self.normalize();
+    }
+
     /// The coefficient of the polynomial's term of highest power. `None` if (and only if) `self`
     /// [is zero](Self::is_zero).
     ///
@@ -415,12 +433,11 @@ where
         S: Clone,
         FF: MulAssign<S>,
     {
-        let mut coefficients =
-            std::mem::take(&mut self.coefficients).into_owned();
-        for coefficient in &mut coefficients {
-            *coefficient *= scalar.clone();
-        }
-        self.coefficients = Cow::Owned(coefficients);
+        self.update_coefficients(|coefficients| {
+            for coefficient in coefficients {
+                *coefficient *= scalar.clone();
+            }
+        });
     }
 
     /// Multiply a polynomial with a scalar, _i.e._, compute `scalar · self(x)`.
@@ -2281,21 +2298,21 @@ impl<'rhs, FF: FiniteField> AddAssign<&Polynomial<'rhs, FF>>
     for Polynomial<'_, FF>
 {
     fn add_assign(&mut self, rhs: &Polynomial<'rhs, FF>) {
-        let rhs_len = rhs.coefficients.len();
-        let self_len = self.coefficients.len();
-        let mut self_coefficients =
-            std::mem::take(&mut self.coefficients).into_owned();
+        let rhs_coefficients = rhs.coefficients.as_ref();
+        let rhs_len = rhs_coefficients.len();
+        self.update_coefficients(|self_coefficients| {
+            let self_len = self_coefficients.len();
+            for (l, &r) in
+                self_coefficients.iter_mut().zip(rhs_coefficients.iter())
+            {
+                *l += r;
+            }
 
-        for (l, &r) in self_coefficients.iter_mut().zip(rhs.coefficients.iter())
-        {
-            *l += r;
-        }
-
-        if rhs_len > self_len {
-            self_coefficients.extend(&rhs.coefficients[self_len..]);
-        }
-
-        self.coefficients = Cow::Owned(self_coefficients);
+            if rhs_len > self_len {
+                self_coefficients
+                    .extend_from_slice(&rhs_coefficients[self_len..]);
+            }
+        });
     }
 }
 
@@ -2309,25 +2326,24 @@ impl<'rhs, FF: FiniteField> SubAssign<&Polynomial<'rhs, FF>>
     for Polynomial<'_, FF>
 {
     fn sub_assign(&mut self, rhs: &Polynomial<'rhs, FF>) {
-        let rhs_len = rhs.coefficients.len();
-        let self_len = self.coefficients.len();
-        let mut self_coefficients =
-            std::mem::take(&mut self.coefficients).into_owned();
+        let rhs_coefficients = rhs.coefficients.as_ref();
+        let rhs_len = rhs_coefficients.len();
+        self.update_coefficients(|self_coefficients| {
+            let self_len = self_coefficients.len();
+            for (l, &r) in
+                self_coefficients.iter_mut().zip(rhs_coefficients.iter())
+            {
+                *l -= r;
+            }
 
-        for (l, &r) in self_coefficients.iter_mut().zip(rhs.coefficients.iter())
-        {
-            *l -= r;
-        }
-
-        if rhs_len > self_len {
-            self_coefficients.extend(
-                rhs.coefficients[self_len..]
-                    .iter()
-                    .map(|&val| FF::ZERO - val),
-            );
-        }
-
-        self.coefficients = Cow::Owned(self_coefficients);
+            if rhs_len > self_len {
+                self_coefficients.extend(
+                    rhs_coefficients[self_len..]
+                        .iter()
+                        .map(|&val| FF::ZERO - val),
+                );
+            }
+        });
     }
 }
 
