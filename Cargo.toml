@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "core",
-    "math"
+    "math",
+    "xtask"
 ]
 resolver = "3"
 
@@ -47,4 +48,3 @@ lto = false
 incremental = false
 codegen-units = 16
 rpath = false
-

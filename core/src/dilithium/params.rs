@@ -1,7 +1,28 @@
 use std::fmt;
 
-/// Default security level used throughout the logic layer (Dilithium-2).
-pub const DEFAULT_SECURITY_LEVEL: usize = SecurityLevel::Level2.as_usize();
+#[cfg(not(any(feature = "level2", feature = "level3", feature = "level5")))]
+compile_error!(
+    "Enable at least one Dilithium security level feature: level2, level3, or level5."
+);
+
+#[cfg(any(
+    all(feature = "level2", feature = "level3"),
+    all(feature = "level2", feature = "level5"),
+    all(feature = "level3", feature = "level5"),
+))]
+compile_error!(
+    "Multiple Dilithium security level features enabled. Select exactly one of level2, level3, or level5."
+);
+
+#[cfg(feature = "level2")]
+const ACTIVE_SECURITY_LEVEL: SecurityLevel = SecurityLevel::Level2;
+#[cfg(feature = "level3")]
+const ACTIVE_SECURITY_LEVEL: SecurityLevel = SecurityLevel::Level3;
+#[cfg(feature = "level5")]
+const ACTIVE_SECURITY_LEVEL: SecurityLevel = SecurityLevel::Level5;
+
+/// Default security level used throughout the logic layer (selected via Cargo feature).
+pub const DEFAULT_SECURITY_LEVEL: usize = ACTIVE_SECURITY_LEVEL.as_usize();
 
 /// Supported Dilithium security levels as defined in the ML-DSA specification.
 pub const SUPPORTED_SECURITY_LEVELS: [SecurityLevel; 3] = [
@@ -14,16 +35,20 @@ pub const SUPPORTED_SECURITY_LEVELS: [SecurityLevel; 3] = [
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(usize)]
 pub enum SecurityLevel {
-    Level2 = 2,
-    Level3 = 3,
-    Level5 = 5,
+    Level2,
+    Level3,
+    Level5,
 }
 
 impl SecurityLevel {
     /// Return the numeric identifier used by the Dilithium specification.
     #[inline]
     pub const fn as_usize(self) -> usize {
-        self as usize
+        match self {
+            SecurityLevel::Level2 => 2,
+            SecurityLevel::Level3 => 3,
+            SecurityLevel::Level5 => 5,
+        }
     }
 
     /// Retrieve the parameter set associated with this security level.
@@ -42,13 +67,13 @@ impl TryFrom<usize> for SecurityLevel {
 
     fn try_from(value: usize) -> Result<Self, Self::Error> {
         match value {
-            x if x == SecurityLevel::Level2 as usize => {
+            x if x == SecurityLevel::Level2.as_usize() => {
                 Ok(SecurityLevel::Level2)
             }
-            x if x == SecurityLevel::Level3 as usize => {
+            x if x == SecurityLevel::Level3.as_usize() => {
                 Ok(SecurityLevel::Level3)
             }
-            x if x == SecurityLevel::Level5 as usize => {
+            x if x == SecurityLevel::Level5.as_usize() => {
                 Ok(SecurityLevel::Level5)
             }
             other => Err(InvalidSecurityLevel(other)),
@@ -136,7 +161,7 @@ impl DilithiumConfig {
 
 impl Default for DilithiumConfig {
     fn default() -> Self {
-        SecurityLevel::Level2.config()
+        config_for_active_level()
     }
 }
 
@@ -193,8 +218,16 @@ const DILITHIUM_L5_CONFIG: DilithiumConfig =
         gamma2: 261_888,
     });
 
+const fn config_for_active_level() -> DilithiumConfig {
+    match ACTIVE_SECURITY_LEVEL {
+        SecurityLevel::Level2 => DILITHIUM_L2_CONFIG,
+        SecurityLevel::Level3 => DILITHIUM_L3_CONFIG,
+        SecurityLevel::Level5 => DILITHIUM_L5_CONFIG,
+    }
+}
+
 /// Default parameter set backing the module-level constants.
-pub const DEFAULT_CONFIG: DilithiumConfig = DILITHIUM_L2_CONFIG;
+pub const DEFAULT_CONFIG: DilithiumConfig = config_for_active_level();
 
 pub const N: usize = DEFAULT_CONFIG.n;
 pub const Q: i64 = DEFAULT_CONFIG.q;
@@ -227,10 +260,11 @@ mod tests {
     ];
 
     #[test]
-    fn default_config_matches_level2() {
-        assert_eq!(DilithiumConfig::default(), DILITHIUM_L2_CONFIG);
-        assert_eq!(DEFAULT_CONFIG, DILITHIUM_L2_CONFIG);
-        assert_eq!(DEFAULT_SECURITY_LEVEL, SecurityLevel::Level2.as_usize());
+    fn default_config_matches_active_level() {
+        let expected_config = config_for_active_level();
+        assert_eq!(DilithiumConfig::default(), expected_config);
+        assert_eq!(DEFAULT_CONFIG, expected_config);
+        assert_eq!(DEFAULT_SECURITY_LEVEL, ACTIVE_SECURITY_LEVEL.as_usize());
     }
 
     #[test]
@@ -285,8 +319,8 @@ mod tests {
         let config = DilithiumConfig::default();
         let debug_str = format!("{config:?}");
         assert!(debug_str.contains("DilithiumConfig"));
-        assert!(debug_str.contains("k: 4"));
-        assert!(debug_str.contains("l: 4"));
+        assert!(debug_str.contains(&format!("k: {}", DEFAULT_CONFIG.k)));
+        assert!(debug_str.contains(&format!("l: {}", DEFAULT_CONFIG.l)));
     }
 
     #[test]

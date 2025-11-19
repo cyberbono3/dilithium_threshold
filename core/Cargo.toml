@@ -3,6 +3,12 @@ name = "dilithium-core"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["level2"]
+level2 = []
+level3 = []
+level5 = []
+
 [dependencies]
 math = { path = "../math"}
 sha3 = "0.10"      # SHAKE128/SHAKE256
