@@ -5,7 +5,7 @@ use crate::dilithium::error::DilithiumError;
 use crate::dilithium::params::{K, L};
 use crate::dilithium::utils::random_bytes;
 use crate::matrix::expand_a_from_rho;
-use math::{error::MatrixError, poly::Polynomial, traits::FiniteField};
+use math::{Matrix, error::MatrixError, poly::Polynomial, traits::FiniteField};
 
 pub type KeyPairResult<FF> = Result<KeyPair<'static, FF>, MatrixError>;
 
@@ -16,12 +16,37 @@ pub struct KeyPair<'a, FF: FiniteField> {
     pub(crate) private: PrivateKey<'a, FF>,
 }
 
+/// Read-only view into the secret key components.
+#[derive(Clone, Copy)]
+pub struct SecretKeyView<'a, FF: FiniteField> {
+    pub a: &'a Matrix<'a, FF>,
+    pub s1: &'a [Polynomial<'a, FF>; L],
+    pub s2: &'a [Polynomial<'a, FF>; K],
+}
+
+impl<'a, FF: FiniteField> From<&'a PrivateKey<'a, FF>>
+    for SecretKeyView<'a, FF>
+{
+    fn from(value: &'a PrivateKey<'a, FF>) -> Self {
+        Self {
+            a: &value.a,
+            s1: &value.s1,
+            s2: &value.s2,
+        }
+    }
+}
+
 impl<'a, FF: FiniteField> KeyPair<'a, FF> {
     pub(crate) fn new(
         public: PublicKey<'a, FF>,
         private: PrivateKey<'a, FF>,
     ) -> Self {
         Self { public, private }
+    }
+
+    /// Expose the secret key fields for verification/testing purposes.
+    pub fn secret(&self) -> SecretKeyView<'_, FF> {
+        SecretKeyView::from(&self.private)
     }
 }
 
