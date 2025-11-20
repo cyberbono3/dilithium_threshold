@@ -553,8 +553,17 @@ mod tests {
 
         assert_eq!(coeffs.len(), N);
 
-        let expected_prefix =
-            [-20913, -23768, 65620, 79162, 37547, 104412, 62380, 51601];
+        let expected_prefix = match GAMMA1 {
+            131_072 => [
+                -20_913, -23_768, 65_620, 79_162, 37_547, 104_412, 62_380,
+                51_601,
+            ],
+            524_288 => [
+                374_409, 370_387, 470_128, 212_006, -344_422, 241_729, -63_885,
+                -77_193,
+            ],
+            other => panic!("Unsupported GAMMA1 bound for test: {other}"),
+        };
         assert_eq!(&coeffs[..expected_prefix.len()], expected_prefix);
     }
 

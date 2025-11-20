@@ -376,37 +376,28 @@ mod tests {
             )
         }
 
+        fn sample_polyvec() -> [Polynomial<'static, FieldElement>; K] {
+            std::array::from_fn(|i| {
+                let base = 10 * (i as i64);
+                simple_poly(&[base + 1, base + 2, base + 3])
+            })
+        }
+
         /// Packing should be deterministic when the input polynomials are fixed.
         #[test]
         fn deterministic_for_fixed_polys() {
-            let polys = [
-                simple_poly(&[1, 2, 3]),
-                simple_poly(&[4, 5, 6]),
-                simple_poly(&[7, 8, 9]),
-                simple_poly(&[10, 11, 12]),
-            ];
-
+            let polys = sample_polyvec();
             let first = pack_w1_for_hash(&polys);
-            let second = pack_w1_for_hash(&polys);
+            let second = pack_w1_for_hash(&sample_polyvec());
             assert_eq!(first, second);
         }
 
         /// Different polynomials must lead to different packed byte arrays.
         #[test]
         fn different_inputs_produce_different_outputs() {
-            let polys_a = [
-                simple_poly(&[1, 2, 3]),
-                simple_poly(&[4, 5, 6]),
-                simple_poly(&[7, 8, 9]),
-                simple_poly(&[10, 11, 12]),
-            ];
-
-            let polys_b = [
-                simple_poly(&[1, 2, 3]),
-                simple_poly(&[4, 5, 6]),
-                simple_poly(&[7, 8, 9]),
-                simple_poly(&[10, 11, 13]),
-            ];
+            let polys_a = sample_polyvec();
+            let mut polys_b = sample_polyvec();
+            polys_b[K - 1] = simple_poly(&[99, 100, 101]);
 
             let hash_a = pack_w1_for_hash(&polys_a);
             let hash_b = pack_w1_for_hash(&polys_b);
