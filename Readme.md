@@ -1,5 +1,5 @@
-Experimental implementatino of [Dilithium Threshold sginature scheme](https://repository.ubn.ru.nl/bitstream/handle/2066/191703/191703.pdf)
-Work in progress
+Experimental implementation of [CRYSTALS – Dilithium: Digital Signatures from Module Lattices](https://tches.iacr.org/index.php/TCHES/article/view/839/791)
+
 
 ## Examples
 
