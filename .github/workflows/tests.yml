@@ -8,8 +8,12 @@ on:
 
 jobs:
   test:
-    name: Run all tests
+    name: Run tests (matrix)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        level: [level2, level3, level5]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,5 +30,5 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Run tests
-        run: cargo test --workspace --all-targets --all-features
+      - name: Run tests for ${{ matrix.level }}
+        run: cargo test --workspace --all-targets --no-default-features --features ${{ matrix.level }}
