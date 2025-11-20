@@ -14,12 +14,20 @@ compile_error!(
     "Multiple Dilithium security level features enabled. Select exactly one of level2, level3, or level5."
 );
 
-#[cfg(feature = "level2")]
-const ACTIVE_SECURITY_LEVEL: SecurityLevel = SecurityLevel::Level2;
-#[cfg(feature = "level3")]
-const ACTIVE_SECURITY_LEVEL: SecurityLevel = SecurityLevel::Level3;
-#[cfg(feature = "level5")]
-const ACTIVE_SECURITY_LEVEL: SecurityLevel = SecurityLevel::Level5;
+#[allow(unreachable_code)]
+const fn active_security_level() -> SecurityLevel {
+    #[cfg(feature = "level2")]
+    return SecurityLevel::Level2;
+    #[cfg(feature = "level3")]
+    return SecurityLevel::Level3;
+    #[cfg(feature = "level5")]
+    return SecurityLevel::Level5;
+
+    // compile_error! guards ensure this path is never hit.
+    unreachable!("No Dilithium security level feature selected")
+}
+
+const ACTIVE_SECURITY_LEVEL: SecurityLevel = active_security_level();
 
 /// Default security level used throughout the logic layer (selected via Cargo feature).
 pub const DEFAULT_SECURITY_LEVEL: usize = ACTIVE_SECURITY_LEVEL.as_usize();
