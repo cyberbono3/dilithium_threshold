@@ -2,7 +2,6 @@ Experimental implementatino of [Dilithium Threshold sginature scheme](https://re
 Work in progress
 
 [![Tests](https://github.com/cyberbono3/dilithium_threshold/actions/workflows/tests.yml/badge.svg)](https://github.com/cyberbono3/dilithium_threshold/actions/workflows/tests.yml)
-[![Coverage](https://github.com/cyberbono3/dilithium_threshold/actions/workflows/coverage.yml/badge.svg)](https://github.com/cyberbono3/dilithium_threshold/actions/workflows/coverage.yml)
 [![Benchmarks](https://github.com/cyberbono3/dilithium_threshold/actions/workflows/benchmarks.yml/badge.svg)](https://github.com/cyberbono3/dilithium_threshold/actions/workflows/benchmarks.yml)
 
 
