@@ -25,6 +25,11 @@ Dilithium was submitted to [NIST's Post-Quantum Cryptography standardization pro
 - `math` crate: finite field arithmetic, polynomials, NTT, matrix ops, and supporting traits.
 - Examples: `core/examples/basic.rs` (single signer) and `core/examples/threshold.rs` (partial signing and verification).
 
+## Security levels
+- The code targets Dilithium Level 2 by default (`DEFAULT_SECURITY_LEVEL` and `DEFAULT_CONFIG` in `core/src/dilithium/params.rs`).
+- Parameter sets for Levels 2, 3, and 5 are defined in `core/src/dilithium/params.rs` and can be selected via `DilithiumConfig::new` or `SecurityLevel`.
+- Constants such as `K`, `L`, `BETA`, `GAMMA1`, and `GAMMA2` are derived from the default config and used throughout the implementation.
+
 ## Examples
 
 ### 1. Basic scanario
@@ -72,6 +77,5 @@ make test
 
 ## License 
 Some code in `math` crate has been adopted from [twenty-first](https://github.com/Neptune-Crypto/twenty-first)  library under GPL-2.0 license
-
 
 
