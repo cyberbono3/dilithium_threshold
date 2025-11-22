@@ -6,8 +6,6 @@ Unofficial experimental rust implementation of [Dilithium post-quantum digital s
 
 Dilithium was submitted to [NIST's Post-Quantum Cryptography standardization process](https://csrc.nist.gov/projects/post-quantum-cryptography/post-quantum-cryptography-standardization) and was selected as one of the algorithms to be standardized. It is one of the digital signature algorithms chosen by NIST, alongside FALCON and SPHINCS+. 
 
-Falcon comes in two variants. Falcon512 claims at least 108 bits of security, and Falcon1024 claims at least 252 bits of security, both against quantum computers.
-
 
 ## Examples
 
@@ -48,6 +46,8 @@ make bench-basic
 ```bash
 make bench-threshold
 ```
+
+## License 
 
 
 
