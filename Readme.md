@@ -8,6 +8,20 @@ Unofficial experimental rust implementation of [Dilithium post-quantum digital s
 
 Dilithium was submitted to [NIST's Post-Quantum Cryptography standardization process](https://csrc.nist.gov/projects/post-quantum-cryptography/post-quantum-cryptography-standardization) and was selected as one of the algorithms to be standardized. It is one of the digital signature algorithms chosen by NIST, alongside FALCON and SPHINCS+. 
 
+## Project structure
+- `core/`: Dilithium implementation with basic and threshold signing APIs, examples, benches.
+- `math/`: Field, polynomial, NTT, and matrix utilities used by the core crate.
+- `scripts/`: Helper scripts (e.g., benchmark comparison).
+- `.github/workflows/`: CI for tests, benchmarks, and coverage.
+- `Makefile`: Convenience targets for examples, benches, and tests.
+- `clippy.toml`: Lint configuration shared in CI and local runs.
+
+## Library contents
+- `basic` (in `core/src/basic`): keygen/sign/verify and signature serialization helpers.
+- `threshold` (in `core/src/dilithium/threshold`): distributed keygen, partial signing, combination, and verification utilities.
+- `dilithium/utils` (in `core/src/dilithium/utils.rs`): randomness, hashing, and polynomial helpers used across algorithms.
+- `math` crate: finite field arithmetic, polynomials, NTT, matrix ops, and supporting traits.
+- Examples: `core/examples/basic.rs` (single signer) and `core/examples/threshold.rs` (partial signing and verification).
 
 ## Examples
 
@@ -51,8 +65,6 @@ make bench-threshold
 
 ## License 
 Some code in `math` crate has been adopted from [twenty-first](https://github.com/Neptune-Crypto/twenty-first)  library under GPL-2.0 license
-
-
 
 
 
