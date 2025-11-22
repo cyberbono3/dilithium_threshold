@@ -201,6 +201,35 @@ impl<FF: FiniteField> PolynomialVector<'static, FF> {
             polys: vec![zero_poly; length],
         }
     }
+
+    fn apply_componentwise<F>(&mut self, rhs: &Self, context: &str, mut f: F)
+    where
+        F: FnMut(&mut Polynomial<'static, FF>, &Polynomial<'static, FF>),
+    {
+        expect_same_len(self.polys.len(), rhs.polys.len(), context);
+        for (lhs_poly, rhs_poly) in self.polys.iter_mut().zip(rhs.polys.iter())
+        {
+            f(lhs_poly, rhs_poly);
+        }
+    }
+
+    fn combine_owned<F>(self, rhs: Self, context: &str, mut f: F) -> Self
+    where
+        F: FnMut(
+            Polynomial<'static, FF>,
+            Polynomial<'static, FF>,
+        ) -> Polynomial<'static, FF>,
+    {
+        let Self { polys: lhs_polys } = self;
+        let Self { polys: rhs_polys } = rhs;
+        expect_same_len(lhs_polys.len(), rhs_polys.len(), context);
+        let polys = lhs_polys
+            .into_iter()
+            .zip(rhs_polys)
+            .map(|(lhs, rhs)| f(lhs, rhs))
+            .collect();
+        Self { polys }
+    }
 }
 
 impl<'coeffs, FF: FiniteField> IntoIterator for PolynomialVector<'coeffs, FF> {
@@ -293,11 +322,7 @@ impl<FF: FiniteField> AddAssign<&PolynomialVector<'static, FF>>
     for PolynomialVector<'static, FF>
 {
     fn add_assign(&mut self, rhs: &Self) {
-        expect_same_len(self.polys.len(), rhs.polys.len(), "addition");
-        for (lhs_poly, rhs_poly) in self.polys.iter_mut().zip(rhs.polys.iter())
-        {
-            *lhs_poly += rhs_poly;
-        }
+        self.apply_componentwise(rhs, "addition", |lhs, rhs| *lhs += rhs);
     }
 }
 
@@ -327,11 +352,7 @@ impl<FF: FiniteField> SubAssign<&PolynomialVector<'static, FF>>
     for PolynomialVector<'static, FF>
 {
     fn sub_assign(&mut self, rhs: &Self) {
-        expect_same_len(self.polys.len(), rhs.polys.len(), "subtraction");
-        for (lhs_poly, rhs_poly) in self.polys.iter_mut().zip(rhs.polys.iter())
-        {
-            *lhs_poly -= rhs_poly;
-        }
+        self.apply_componentwise(rhs, "subtraction", |lhs, rhs| *lhs -= rhs);
     }
 }
 // TODO add proper testing
@@ -339,15 +360,7 @@ impl<FF: FiniteField> Mul for PolynomialVector<'static, FF> {
     type Output = Self;
 
     fn mul(self, other: Self) -> Self::Output {
-        expect_same_len(self.polys.len(), other.polys.len(), "multiplication");
-        let polys = self
-            .polys
-            .into_iter()
-            .zip(other.polys)
-            .map(|(a, b)| a * b)
-            .collect();
-
-        Self { polys }
+        self.combine_owned(other, "multiplication", |lhs, rhs| lhs * rhs)
     }
 }
 

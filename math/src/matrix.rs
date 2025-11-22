@@ -138,6 +138,23 @@ impl<FF: FiniteField> Matrix<'static, FF> {
 
         PolynomialVector::from_vec(polys)
     }
+
+    fn elementwise_op(
+        self,
+        rhs: Self,
+        context: &str,
+        op: impl FnMut(
+            Polynomial<'static, FF>,
+            Polynomial<'static, FF>,
+        ) -> Polynomial<'static, FF>,
+    ) -> Self {
+        let left_shape = self.shape();
+        let right_shape = rhs.shape();
+        expect_same_shape(left_shape, right_shape, context);
+
+        let rows = combine_rows(self.rows, rhs.rows, op);
+        Self { rows }
+    }
 }
 
 impl<FF: FiniteField> TryFrom<Vec<Vec<Polynomial<'static, FF>>>>
@@ -239,12 +256,7 @@ impl<FF: FiniteField> Add for Matrix<'static, FF> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let left_shape = self.shape();
-        let right_shape = rhs.shape();
-        expect_same_shape(left_shape, right_shape, "addition");
-
-        let rows = combine_rows(self.rows, rhs.rows, |a, b| a + b);
-        Self { rows }
+        self.elementwise_op(rhs, "addition", |a, b| a + b)
     }
 }
 
@@ -253,12 +265,7 @@ impl<FF: FiniteField> Sub for Matrix<'static, FF> {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let left_shape = self.shape();
-        let right_shape = rhs.shape();
-        expect_same_shape(left_shape, right_shape, "subtraction");
-
-        let rows = combine_rows(self.rows, rhs.rows, |a, b| a - b);
-        Self { rows }
+        self.elementwise_op(rhs, "subtraction", |a, b| a - b)
     }
 }
 
