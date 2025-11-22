@@ -4,7 +4,9 @@
 [![Tests](https://github.com/cyberbono3/dilithium_threshold/actions/workflows/tests.yml/badge.svg)](https://github.com/cyberbono3/dilithium_threshold/actions/workflows/tests.yml)
 [![Benchmarks](https://github.com/cyberbono3/dilithium_threshold/actions/workflows/benchmarks.yml/badge.svg)](https://github.com/cyberbono3/dilithium_threshold/actions/workflows/benchmarks.yml)
 
-Unofficial experimental rust implementation of [Dilithium post-quantum digital signature scheme](https://repository.ubn.ru.nl/bitstream/handle/2066/191703/191703.pdf)
+Unofficial rust implementation of [Dilithium post-quantum digital signature scheme](https://repository.ubn.ru.nl/bitstream/handle/2066/191703/191703.pdf)
+
+## Do not use in production. This is the experimental implementation.
 
 Dilithium was submitted to [NIST's Post-Quantum Cryptography standardization process](https://csrc.nist.gov/projects/post-quantum-cryptography/post-quantum-cryptography-standardization) and was selected as one of the algorithms to be standardized. It is one of the digital signature algorithms chosen by NIST, alongside FALCON and SPHINCS+. 
 
