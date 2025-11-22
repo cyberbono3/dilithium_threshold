@@ -6,13 +6,13 @@ test:
 	cargo test --all-targets
 
 bench:
-	cargo bench -p core basic threshold
+	cargo bench -p dilithium-core basic threshold
 
 bench-basic:
-	cargo bench -p core basic
+	cargo bench -p dilithium-core basic
 
 bench-threshold:
-	cargo bench -p core threshold
+	cargo bench -p dilithium-core  threshold
 
 examples: examples-basic examples-threshold
 
