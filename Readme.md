@@ -48,6 +48,7 @@ make bench-threshold
 ```
 
 ## License 
+Some code in `math` crate has been adopted from [twenty-first](https://github.com/Neptune-Crypto/twenty-first)  library under GPL-2.0 license
 
 
 
