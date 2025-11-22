@@ -26,9 +26,10 @@ Dilithium was submitted to [NIST's Post-Quantum Cryptography standardization pro
 - Examples: `core/examples/basic.rs` (single signer) and `core/examples/threshold.rs` (partial signing and verification).
 
 ## Security levels
-- The code targets Dilithium Level 2 by default (`DEFAULT_SECURITY_LEVEL` and `DEFAULT_CONFIG` in `core/src/dilithium/params.rs`).
-- Parameter sets for Levels 2, 3, and 5 are defined in `core/src/dilithium/params.rs` and can be selected via `DilithiumConfig::new` or `SecurityLevel`.
-- Constants such as `K`, `L`, `BETA`, `GAMMA1`, and `GAMMA2` are derived from the default config and used throughout the implementation.
+- Default: Level 2 (ML-DSA-44 / Dilithium-2) via `DEFAULT_CONFIG` in `core/src/dilithium/params.rs`; exported constants like `K`, `L`, `BETA`, `GAMMA1`, `GAMMA2`, and `ETA` are derived from it and drive keygen, signing, and verification.
+- Available sets: Levels 2, 3, and 5 are defined as `DILITHIUM_L{2,3,5}_CONFIG` and can be selected with `SecurityLevel` or `DilithiumConfig::new(level)` (returns an error if an unsupported level is requested).
+- Tuning code: use `DilithiumConfig::for_level(SecurityLevel::Level3)` (or `.new(3)`) to retrieve parameters; consumers must thread the chosen config through any code that should differ from the defaults.
+- Tests guard that `DEFAULT_CONFIG` equals the Level 2 constants; `DEFAULT_SECURITY_LEVEL` is kept for compatibility but not consumed outside tests.
 
 ## Examples
 
@@ -77,5 +78,4 @@ make test
 
 ## License 
 Some code in `math` crate has been adopted from [twenty-first](https://github.com/Neptune-Crypto/twenty-first)  library under GPL-2.0 license
-
 
