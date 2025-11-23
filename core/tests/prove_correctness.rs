@@ -190,14 +190,12 @@ fn equation_1_holds_for_random_signatures() {
         rng.fill_bytes(&mut msg);
 
         let sig = sign_message(&mut rng, &keypair, &msg);
-        let sk = keypair.secret();
+        let (_, s1, s2) = keypair.secret();
 
         // ── 1. Extract secret-key components: ρ, s1, s2, t ───────
         //
         // In the paper: sk = (ρ, s1, s2, t). :contentReference[oaicite:5]{index=5}
         let rho = &keypair.public.rho;
-        let s1 = sk.s1;
-        let s2 = sk.s2;
         let t = &keypair.public.t;
 
         // ── 2. Extract signature components: z, c ───────────────

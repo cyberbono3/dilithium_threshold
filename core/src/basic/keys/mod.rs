@@ -3,8 +3,7 @@ mod private;
 pub mod public;
 
 pub use keypair::{
-    KeyPair, KeyPairResult, KeypairSeeds, SecretKeyView, keygen,
-    keygen_with_seeds,
+    KeyPair, KeyPairResult, KeypairSeeds, keygen, keygen_with_seeds,
 };
 pub(crate) use private::PrivateKey;
 pub use public::PublicKey;

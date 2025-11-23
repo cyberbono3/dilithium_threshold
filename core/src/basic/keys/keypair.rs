@@ -16,26 +16,6 @@ pub struct KeyPair<'a, FF: FiniteField> {
     pub(crate) private: PrivateKey<'a, FF>,
 }
 
-/// Read-only view into the secret key components.
-#[derive(Clone, Copy)]
-pub struct SecretKeyView<'a, FF: FiniteField> {
-    pub a: &'a Matrix<'a, FF>,
-    pub s1: &'a [Polynomial<'a, FF>; L],
-    pub s2: &'a [Polynomial<'a, FF>; K],
-}
-
-impl<'a, FF: FiniteField> From<&'a PrivateKey<'a, FF>>
-    for SecretKeyView<'a, FF>
-{
-    fn from(value: &'a PrivateKey<'a, FF>) -> Self {
-        Self {
-            a: &value.a,
-            s1: &value.s1,
-            s2: &value.s2,
-        }
-    }
-}
-
 impl<'a, FF: FiniteField> KeyPair<'a, FF> {
     pub(crate) fn new(
         public: PublicKey<'a, FF>,
@@ -45,8 +25,16 @@ impl<'a, FF: FiniteField> KeyPair<'a, FF> {
     }
 
     /// Expose the secret key fields for verification/testing purposes.
-    pub fn secret(&self) -> SecretKeyView<'_, FF> {
-        SecretKeyView::from(&self.private)
+    /// This is intentionally public to keep integration tests simple.
+    #[cfg_attr(not(test), doc(hidden))]
+    pub fn secret(
+        &self,
+    ) -> (
+        &Matrix<'_, FF>,
+        &[Polynomial<'_, FF>; L],
+        &[Polynomial<'_, FF>; K],
+    ) {
+        (&self.private.a, &self.private.s1, &self.private.s2)
     }
 }
 
