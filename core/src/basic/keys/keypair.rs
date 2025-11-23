@@ -5,7 +5,7 @@ use crate::dilithium::error::DilithiumError;
 use crate::dilithium::params::{K, L};
 use crate::dilithium::utils::random_bytes;
 use crate::matrix::expand_a_from_rho;
-use math::{error::MatrixError, poly::Polynomial, traits::FiniteField};
+use math::{Matrix, error::MatrixError, poly::Polynomial, traits::FiniteField};
 
 pub type KeyPairResult<FF> = Result<KeyPair<'static, FF>, MatrixError>;
 
@@ -22,6 +22,19 @@ impl<'a, FF: FiniteField> KeyPair<'a, FF> {
         private: PrivateKey<'a, FF>,
     ) -> Self {
         Self { public, private }
+    }
+
+    /// Expose the secret key fields for verification/testing purposes.
+    /// This is intentionally public to keep integration tests simple.
+    #[cfg_attr(not(test), doc(hidden))]
+    pub fn secret(
+        &self,
+    ) -> (
+        &Matrix<'_, FF>,
+        &[Polynomial<'_, FF>; L],
+        &[Polynomial<'_, FF>; K],
+    ) {
+        (&self.private.a, &self.private.s1, &self.private.s2)
     }
 }
 
