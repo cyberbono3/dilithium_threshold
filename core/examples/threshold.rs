@@ -1,88 +1,39 @@
-use dilithium_core::basic::PublicKey;
-use dilithium_core::dilithium::threshold::{
-    PartialSignature, ThresholdKeyShare, ThresholdSignature,
-};
-use dilithium_core::dilithium::utils::{
-    derive_challenge_polynomial, hash_message,
-};
-use math::{field_element::FieldElement, poly::Polynomial};
+use dilithium_core::dilithium::threshold::ThresholdSignature;
+use math::field_element::FieldElement;
 
-const MESSAGE: &[u8] = b"example threshold Dilithium message";
-const RANDOMNESS: [u8; 32] = [0x5Au8; 32];
+const MESSAGE: &[u8] = b"Original message";
+const WRONG_MESSAGE: &[u8] = b"Wrong message";
+const RANDOMNESS: [u8; 32] = [0x5A; 32];
 
-fn collect_partials(
-    ts: &ThresholdSignature,
-    shares: &[ThresholdKeyShare<'static, FieldElement>],
-    randomness: &[u8],
-) -> Vec<PartialSignature<'static, FieldElement>> {
-    shares
-        .iter()
-        .map(|share| {
-            ts.partial_sign::<FieldElement>(MESSAGE, share, Some(randomness))
-                .expect("partial signature should succeed")
-        })
-        .collect()
-}
-
+/// Demonstrate partial signing and verification for a threshold instance.
+/// The partial signature should verify the intended message and fail for a
+/// mismatched message.
 fn main() {
     let ts = ThresholdSignature::default();
     let shares = ts
         .distributed_keygen::<FieldElement>()
         .expect("distributed key generation should succeed");
 
-    let ThresholdSignatureInfo {
-        public_key,
-        partial_signatures,
-    } = build_threshold_signature(&ts, &shares);
+    let partial_sig = ts
+        .partial_sign::<FieldElement>(MESSAGE, &shares[0], Some(&RANDOMNESS))
+        .expect("partial signature should succeed");
 
-    println!(
-        "Threshold signature created with {} partials",
-        partial_signatures.len()
+    let is_valid = ts.verify_partial_signature(MESSAGE, &partial_sig);
+    let is_wrong_message_valid =
+        ts.verify_partial_signature(WRONG_MESSAGE, &partial_sig);
+
+    assert!(
+        is_valid,
+        "expected partial signature to verify for its message"
     );
-    println!(
-        "Public key matrix has dimensions {}x{}",
-        public_key.a.rows(),
-        public_key.a.cols()
+    assert!(
+        !is_wrong_message_valid,
+        "partial signature must not verify a different message"
     );
-}
 
-struct ThresholdSignatureInfo {
-    public_key: PublicKey<'static, FieldElement>,
-    partial_signatures: Vec<PartialSignature<'static, FieldElement>>,
-}
-
-fn build_threshold_signature(
-    ts: &ThresholdSignature,
-    shares: &[ThresholdKeyShare<'static, FieldElement>],
-) -> ThresholdSignatureInfo {
-    let threshold = ts.get_threshold_info().threshold;
-    let public_key = shares[0].public_key.clone();
-    let partial_signatures =
-        collect_partials(ts, &shares[..threshold], &RANDOMNESS);
-
-    let signature = ts
-        .combine_signatures::<FieldElement>(&partial_signatures, &public_key)
-        .expect("threshold combination should succeed");
-
-    let expected_challenge = derive_expected_challenge(MESSAGE);
-    assert_eq!(signature.c, expected_challenge);
-
+    println!("Partial signature verified successfully.");
     println!(
-        "Combined signature challenge matches derived value ({} coefficients)",
-        signature.c.coefficients().len()
+        "Cross-message verification rejected as expected: {}",
+        is_wrong_message_valid
     );
-    ThresholdSignatureInfo {
-        public_key,
-        partial_signatures,
-    }
-}
-
-fn derive_expected_challenge(
-    message: &[u8],
-) -> Polynomial<'static, FieldElement> {
-    let mu = hash_message(message);
-    let mut seed = Vec::with_capacity(mu.len() + b"challenge".len());
-    seed.extend_from_slice(&mu);
-    seed.extend_from_slice(b"challenge");
-    derive_challenge_polynomial::<FieldElement>(&seed)
 }
