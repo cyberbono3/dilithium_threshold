@@ -31,6 +31,16 @@ Dilithium was submitted to [NIST's Post-Quantum Cryptography standardization pro
 - Tuning code: use `DilithiumConfig::for_level(SecurityLevel::Level3)` (or `.new(3)`) to retrieve parameters; consumers must thread the chosen config through any code that should differ from the defaults.
 - Tests guard that `DEFAULT_CONFIG` equals the Level 2 constants; `DEFAULT_SECURITY_LEVEL` is kept for compatibility but not consumed outside tests.
 
+## Building
+Use `cargo`, the standard Rust build tool, to build the library:
+
+```bash
+git clone https://github.com/cyberbono3/dilithium-threshold.git
+cd dilithium-threshold
+cargo build --release
+```
+
+
 ## Examples
 
 ### 1. Basic scanario
