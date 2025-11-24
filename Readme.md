@@ -6,7 +6,7 @@
 
 Unofficial rust implementation of [Dilithium post-quantum digital signature scheme](https://repository.ubn.ru.nl/bitstream/handle/2066/191703/191703.pdf)
 
-## Do not use in production. This is the experimental implementation.
+## Disclamer: Do not use it in production. This is the experimental implementation.
 
 Dilithium was submitted to [NIST's Post-Quantum Cryptography standardization process](https://csrc.nist.gov/projects/post-quantum-cryptography/post-quantum-cryptography-standardization) and was selected as one of the algorithms to be standardized. It is one of the digital signature algorithms chosen by NIST, alongside FALCON and SPHINCS+. 
 
